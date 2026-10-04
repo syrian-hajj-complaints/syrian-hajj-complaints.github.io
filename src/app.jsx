@@ -35,6 +35,10 @@
 //                بتبويبات (المتابعة، الجلسات، النتائج، الاعتراض) بعد المعلومات الأساسية؛ الترويسة في أعلى القائمة الجانبية
 //                والمستخدم في أسفلها؛ «دليل المنصة» بجانب «خروج»؛ «المكان / الوصف» للجلسة؛ التصدير واستعراض النسخ
 //                في «الإعدادات» فقط؛ رئيسية تملأ الشاشة (التاريخ الهجري، المطلوب الآن، أحدث الشكاوى، الجلسات القادمة).
+//    2026-10-04  القائمة الجانبية ثابتة على اليمين بشريط تمرير؛ إصلاح تمدد الصفحة على الجوال (قوائم الرئيسية)؛ «المدير»
+//                صار «المسؤول»؛ نافذة الشكوى فوق كل شيء بزر إغلاق ثابت وEsc؛ جداول Word عربية (العمود الرئيسي يميناً)؛
+//                «📚 المواسم السابقة» كروابط ملفات Google Sheets مع قالب للتنزيل (وفي صفحة التقارير)؛
+//                حذف «خطوات متبقية قبل التشغيل الفعلي» من دليل المنصة؛ زر «📲 تثبيت» (المنصة كتطبيق على الجوال).
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -45,6 +49,11 @@ const { useState, useEffect, useCallback } = React;
 // قراءة الإعدادات من config.js والتأكد من أنها ضُبطت
 const cfg = window.APP_CONFIG || {};
 const isConfigured = !!cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR_") && !!cfg.SUPABASE_ANON_KEY && !cfg.SUPABASE_ANON_KEY.includes("YOUR_");
+// التثبيت كتطبيق: المتصفح (أندرويد/حاسوب) يرسل حدث «جاهز للتثبيت» مرة واحدة عند التحميل؛ نحفظه لزر «📲 تثبيت»
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; window.dispatchEvent(new Event("install-ready")); });
+const isStandalone = () => window.matchMedia && window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
 // قائمتا التصنيفات والصفات: تبدآن من config.js، ثم تُستبدل محتوياتهما بما حفظه الأدمن في «الإعدادات»
 const CLASSIFICATIONS = [...(cfg.CLASSIFICATIONS || ["أخرى"])];
 const ROLES = [...(cfg.ROLES || ["حاج", "مرافق", "رئيس مجموعة", "مشرف", "مندوب", "موظف", "سائق"])];
@@ -119,7 +128,7 @@ const excelLock = { password: "" };
 
 // إنشاء ملف Excel من عدة أوراق [{name, headers, rows}] وتنزيله؛ الأوراق من اليمين إلى اليسار
 // كل ورقة مقفولة للعرض فقط: القراءة والتحديد والتصفية وتوسيع الأعمدة مسموحة، والكتابة والحذف ممنوعة
-async function saveWorkbook(sheets, filename) {
+async function saveWorkbook(sheets, filename, opts = {}) {
   const XLSX = await loadXLSX();
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
@@ -129,7 +138,7 @@ async function saveWorkbook(sheets, filename) {
     ws["!cols"] = sh.headers.map((h, i) => ({ wch: Math.min(60, Math.max(10, h.length + 2, ...sh.rows.map(r => String(r[i] ?? "").length + 2))) }));
     // أزرار التصفية على صف العناوين، ثم قفل الورقة
     if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
-    ws["!protect"] = { password: excelLock.password || undefined, autoFilter: false, formatColumns: false, formatRows: false };
+    if (opts.lock !== false) ws["!protect"] = { password: excelLock.password || undefined, autoFilter: false, formatColumns: false, formatRows: false };
     XLSX.utils.book_append_sheet(wb, ws, sh.name.slice(0, 31));
   });
   XLSX.writeFile(wb, filename);
@@ -174,9 +183,10 @@ function buildComplaintDoc(D, c, sess, logo, letterhead) {
     shading: head ? { type: ShadingType.CLEAR, fill: SAND, color: "auto" } : undefined,
     children: [para(text, { bold: head, color: head ? GREEN : INK, after: 0 })],
   });
+  // (الخلايا بترتيب معكوس: القيمة ثم العنوان، فيظهر العنوان على اليمين في Word وغيره من البرامج)
   const kv = rows => new Table({
-    visuallyRightToLeft: true, width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: rows.filter(r => r[1]).map(r => new TableRow({ children: [cell(r[0], true), cell(r[1], false)] })),
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: rows.filter(r => r[1]).map(r => new TableRow({ children: [cell(r[1], false), cell(r[0], true)] })),
   });
 
   // الجلسات مفصّلة: عنوان كل جلسة وتاريخها، ثم موضوعها ونتيجتها
@@ -984,6 +994,7 @@ const SECTIONS = {
   sessions:   { title: "🗓️ الجلسات" },
   links:      { title: "🔗 إرسال رابط", manager: true },
   decisions:  { title: "📑 القرارات الإدارية" },
+  archive:    { title: "📚 المواسم السابقة" },
   indicators: { title: "📈 المؤشرات" },
   guide:      { title: "📘 دليل المنصة" },
   access:     { title: "🔐 دخول المشتكين", manager: true },
@@ -1068,6 +1079,15 @@ function AdminPage({ secret, onLogout }) {
   const section = SECTIONS[tab];
   const allowed = tab === "home" || (section && (isManager || !section.manager));
 
+  // نافذة الشكوى المفتوحة: زر Esc يغلقها، والصفحة خلفها لا تتحرك أثناء فتحها
+  useEffect(() => {
+    if (!openId) return;
+    const onKey = e => { if (e.key === "Escape") setOpenId(null); };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [openId]);
+
   // سياق المكوّنات الصغيرة (قائمة الإحالة): كلمة السر، الدور، والجهات المستخدمة في الشكاوى
   ADMIN_CTX.secret = secret; ADMIN_CTX.manager = isManager;
   ADMIN_CTX.used = [...new Set((rows || []).map(r => (r.referred_to || "").trim()).filter(Boolean))];
@@ -1089,6 +1109,7 @@ function AdminPage({ secret, onLogout }) {
           <span className="only-phone"><Logo size={30} /></span>
           <h2 className="admin-title">{current === "home" ? "🏠 الرئيسية" : section.title}</h2>
           <div className="admin-top-actions">
+            <InstallButton />
             <button type="button" className={`btn secondary sm ${current === "guide" ? "is-on" : ""}`} onClick={() => pick("guide")}>📘 <span className="hide-xs">دليل المنصة</span></button>
             {onLogout && <button type="button" className="btn sm" onClick={onLogout}>خروج</button>}
           </div>
@@ -1100,6 +1121,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "decisions" && <AdminDecisions secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
+        {current === "archive" && <AdminPastSeasons secret={secret} isManager={isManager} />}
         {current === "complaints" && <AdminComplaints key={start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
                                    initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} />}
         {current === "sessions" && <AdminSessions secret={secret} version={sessVer} onOpen={c => openComplaint(c)} />}
@@ -1108,13 +1130,13 @@ function AdminPage({ secret, onLogout }) {
         {current === "staff" && <AdminStaff secret={secret} />}
         {current === "settings" && <AdminSettings secret={secret} rows={rows} reload={reload} />}
       </div>
-      {opened && (
+      {opened && ReactDOM.createPortal(
         <div className="modal-back" onClick={() => setOpenId(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-close"><button className="btn secondary sm" onClick={() => setOpenId(null)}>✕ إغلاق</button></div>
+            <div className="modal-close"><button className="btn sm" onClick={() => setOpenId(null)}>✕ إغلاق</button></div>
             <ComplaintCard key={opened.id} secret={secret} complaint={opened} onSaved={onSaved} onSessionsChanged={() => setSessVer(n => n + 1)} fromDue={openFromDue} />
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
@@ -1122,9 +1144,43 @@ function AdminPage({ secret, onLogout }) {
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
 const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
-                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"]];
+                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"], ["archive", "📚", "المواسم السابقة"]];
 const NAV_MANAGER = [["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "الموظفون"], ["settings", "⚙️", "الإعدادات"]];
+
+// زر «📲 تثبيت»: على أندرويد والحاسوب يفتح نافذة التثبيت مباشرة، وعلى آيفون يشرح «مشاركة ← إضافة إلى الشاشة الرئيسية»؛
+// يختفي إن كانت المنصة مفتوحة كتطبيق مثبّت
+function InstallButton() {
+  const [ready, setReady] = useState(!!installEvt);
+  const [help, setHelp] = useState(false);
+  useEffect(() => { const on = () => setReady(true); window.addEventListener("install-ready", on); return () => window.removeEventListener("install-ready", on); }, []);
+  if (isStandalone()) return null;
+  async function install() {
+    if (installEvt) { installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; setReady(false); }
+    else setHelp(true);
+  }
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  return (
+    <>
+      <button type="button" className="btn secondary sm" onClick={install} title="أيقونة المنصة على شاشة الجوال">📲 <span className="hide-xs">تثبيت</span></button>
+      {help && ReactDOM.createPortal(
+        <div className="modal-back" onClick={() => setHelp(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="card">
+              <h2>📲 أيقونة المنصة على شاشة الجوال</h2>
+              {ios ? (
+                <ol className="past-steps"><li>افتح المنصة في <b>Safari</b>.</li><li>اضغط زر <b>المشاركة</b> (المربع والسهم للأعلى).</li><li>اختر <b>«إضافة إلى الشاشة الرئيسية»</b> ثم «إضافة».</li></ol>
+              ) : (
+                <ol className="past-steps"><li>افتح المنصة في <b>Chrome</b>.</li><li>اضغط القائمة <b>⋮</b> أعلى المتصفح.</li><li>اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>.</li></ol>
+              )}
+              <p className="muted" style={{ fontSize: 14 }}>تظهر أيقونة النسر باسم «قسم الشكاوى»، وتفتح صفحة الإدارة مباشرة بلا شريط المتصفح.</p>
+              <button type="button" className="btn block" onClick={() => setHelp(false)}>تم</button>
+            </div>
+          </div>
+        </div>, document.body)}
+    </>
+  );
+}
 
 // القائمة الجانبية: الترويسة (الشعار واسم الإدارة) في أعلاها، ثم الأقسام بأعدادها، واسم المستخدم ودوره في أسفلها؛
 // على الجوال تنزلق من اليمين
@@ -1148,13 +1204,13 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose }) {
       <nav className="side-nav">{NAV_MAIN.map(item)}</nav>
       {isManager && (
         <>
-          <div className="side-group">للمدير</div>
+          <div className="side-group">للمسؤول</div>
           <nav className="side-nav">{NAV_MANAGER.map(item)}</nav>
         </>
       )}
       <div className="side-user">
         <span className="side-avatar">👤</span>
-        <div className="side-who"><b>{me.name || (isManager ? "المدير" : "الموظف")}</b><small>{isManager ? "مدير" : "موظف"} · قسم الشكاوى</small></div>
+        <div className="side-who"><b>{me.name || (isManager ? "المسؤول" : "الموظف")}</b><small>{isManager ? "مسؤول" : "موظف"} · قسم الشكاوى</small></div>
       </div>
     </aside>
   );
@@ -1609,6 +1665,7 @@ function AdminSettings({ secret, rows, reload }) {
   return (
     <div>
     <ExportCard secret={secret} rows={rows} />
+    <PastSeasonsCard secret={secret} />
     <SeasonCard secret={secret} reload={reload} />
     <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
       hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
@@ -1752,6 +1809,120 @@ function ExcelLockCard({ secret }) {
             <button type="button" className="btn gold" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
           </div>
         </Field>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// المواسم السابقة (1446، 1445…): كل موسم ملف Google Sheet على Drive تعدّل عليه الإدارة وتضيف مباشرة؛
+// المنصة تحفظ الروابط فقط (past_seasons) وتعرضها في قسم «📚 المواسم السابقة» وفي صفحة التقارير
+// ---------------------------------------------------------------------
+// أعمدة قالب الموسم السابق (نفس ترتيب تصدير المنصة تقريباً)
+const PAST_HEADERS = ["الموسم", "رقم الشكوى", "تاريخ الشكوى", "الحالة", "عنوان الشكوى", "المشتكي", "صفة المشتكي", "رقم الهاتف",
+  "المشتكى عليه", "صفة المشتكى عليه", "نص الشكوى", "التصنيف", "مُحالة إلى", "الجلسات (التاريخ — الموضوع — النتيجة)",
+  "نتيجة الشكوى", "الاعتراض", "نتيجة الاعتراض", "تاريخ الإغلاق", "ملاحظات"];
+
+// تنزيل قالب Excel فارغ (غير مقفول) لموسم سابق: ورقة الشكاوى بسطر مثال، وورقة القوائم المعتمدة
+function downloadPastTemplate(season) {
+  const example = [season, `${season}-00001`, "", "مغلقة", "", "", "حاج", "", "", "", "", "", "", "", "", "", "", "", "سطر مثال — احذفه"];
+  const lists = [["الحالات", "التصنيفات", "الصفات"],
+    ...Array.from({ length: Math.max(STATUSES.length, CLASSIFICATIONS.length, ROLES.length) }, (_, i) => [STATUSES.at(i) || "", CLASSIFICATIONS.at(i) || "", ROLES.at(i) || ""])];
+  return saveWorkbook([
+    { name: `شكاوى موسم ${season}`, headers: PAST_HEADERS, rows: [example] },
+    { name: "القوائم", headers: lists[0], rows: lists.slice(1) },
+  ], `قالب-موسم-${season}.xlsx`, { lock: false });
+}
+
+// قسم «📚 المواسم السابقة» (للجميع في اللوحة): بطاقة لكل موسم بزر فتحه في Google Sheets
+function AdminPastSeasons({ secret, isManager }) {
+  const [list, setList] = useState(null);
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    sb.rpc("admin_get_past_seasons", { p_secret: secret }).then(({ data, error }) => {
+      if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 31 من schema.sql في Supabase)." }); }
+      setList(Array.isArray(data) ? data : []);
+    });
+  }, [secret]);
+  if (list === null) return <Loading />;
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <p className="muted" style={{ marginTop: 0 }}>شكاوى المواسم السابقة محفوظة في ملفات Google Sheets على Drive؛ التعديل والإضافة تتمّان في الملف مباشرة.</p>
+      {list.length === 0 ? (
+        <div className="card"><p className="muted" style={{ margin: 0 }}>لم تُضف مواسم سابقة بعد.{isManager ? " أضفها من «الإعدادات ← 📚 المواسم السابقة»." : ""}</p></div>
+      ) : (
+        <div className="past-grid">
+          {[...list].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => (
+            <a key={x.season} className="past-card" href={x.url} target="_blank" rel="noopener">
+              <span className="past-icon">📊</span>
+              <b>موسم {x.season}</b>
+              <small>فتح في Google Sheets ↗</small>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// بطاقة الإعدادات «📚 المواسم السابقة»: إضافة موسم برابطه، حذفه، وتنزيل قالب فارغ مع خطوات الرفع إلى Drive
+function PastSeasonsCard({ secret }) {
+  const [list, setList] = useState(null);
+  const [form, setForm] = useState({ season: "", url: "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    sb.rpc("admin_get_past_seasons", { p_secret: secret }).then(({ data, error }) => {
+      if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 31 من schema.sql في Supabase)." }); }
+      setList(Array.isArray(data) ? data : []);
+    });
+  }, [secret]);
+
+  // حفظ القائمة كاملة
+  async function persist(next, okText) {
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: next });
+    setBusy(false);
+    if (error || data !== "OK") return setMsg({ type: "error", text: "تعذّر الحفظ. تأكد أن الموسم 4 أرقام والرابط يبدأ بـ https://" });
+    setList(next); setMsg({ type: "ok", text: okText });
+  }
+
+  // إضافة موسم (أو تحديث رابطه إن كان موجوداً)
+  function add(e) {
+    e.preventDefault();
+    const season = form.season.trim(), url = form.url.trim();
+    if (!/^\d{4}$/.test(season)) return setMsg({ type: "error", text: "اكتب الموسم بأربعة أرقام، مثل 1446." });
+    if (!/^https:\/\//i.test(url)) return setMsg({ type: "error", text: "الصق رابط ملف Google Sheet (يبدأ بـ https://)." });
+    setForm({ season: "", url: "" });
+    persist([...(list || []).filter(x => x.season !== season), { season, url }], `✅ حُفظ موسم ${season}.`);
+  }
+  const remove = season => { if (window.confirm(`حذف رابط موسم ${season}؟ (الملف على Drive لا يُحذف)`)) persist(list.filter(x => x.season !== season), `حُذف رابط موسم ${season}.`); };
+
+  return (
+    <div className="card">
+      <h2>📚 المواسم السابقة (Google Sheets)</h2>
+      <ol className="past-steps">
+        <li>نزّل القالب: <button type="button" className="btn secondary sm" onClick={() => downloadPastTemplate("1446")}>⬇ قالب 1446</button> <button type="button" className="btn secondary sm" onClick={() => downloadPastTemplate("1445")}>⬇ قالب 1445</button></li>
+        <li>ارفعه إلى Google Drive، ثم افتحه بـ «Google Sheets» واحفظه كملف Google Sheets (ملف ← حفظ كجدول بيانات Google).</li>
+        <li>شارِكه مع موظفي الإدارة بصلاحية «محرّر» ليعدّلوا ويضيفوا.</li>
+        <li>انسخ رابط الملف والصقه هنا مع رقم الموسم.</li>
+      </ol>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <form className="row" onSubmit={add}>
+        <input type="text" inputMode="numeric" dir="ltr" maxLength={4} placeholder="1446" value={form.season} onChange={e => setForm(f => ({ ...f, season: e.target.value }))} style={{ width: 110, flex: "0 0 110px" }} />
+        <input type="url" dir="ltr" placeholder="https://docs.google.com/spreadsheets/..." value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} />
+        <button className="btn" disabled={busy}>➕ حفظ</button>
+      </form>
+      {list && list.length > 0 && (
+        <ul className="list-items">
+          {[...list].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => (
+            <li key={x.season}>
+              <span><b>موسم {x.season}</b> · <a href={x.url} target="_blank" rel="noopener">فتح ↗</a></span>
+              <button type="button" className="btn danger-text" disabled={busy} onClick={() => remove(x.season)}>حذف</button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -2906,7 +3077,7 @@ function AdminDecisions({ secret, isManager }) {
 
 // ---------------------------------------------------------------------
 // دليل المنصة (للمدير والموظف): نبذة، الصفحات، تسلسل الشكوى بألوان الحالات، أقسام اللوحة، الصلاحيات،
-// التصدير، التقنية، ثم التوصيات؛ و«خطوات متبقية» للمدير فقط
+// التصدير، التقنية، ثم التوصيات
 // ---------------------------------------------------------------------
 // سطر في قائمة الدليل: عنوان بخط عريض ووصفه
 function GuideItem({ name, children }) {
@@ -2925,7 +3096,7 @@ function AdminGuide({ isManager }) {
         <h2>نبذة</h2>
         <p style={{ marginTop: 0 }}>منصة الشكاوى تستقبل شكاوى الحجاج من الجوال، ويتابعها قسم الشكاوى بالجلسات حتى الإغلاق، مع اعتراض واحد للمشتكى عليه.</p>
         <ul className="list">
-          <GuideItem name="لمن">الحجاج ومرافقوهم، والمشتكى عليه، وموظفو القسم ومديره، والإدارة العليا للتقارير.</GuideItem>
+          <GuideItem name="لمن">الحجاج ومرافقوهم، والمشتكى عليه، وموظفو القسم ومسؤوله، والإدارة العليا للتقارير.</GuideItem>
           <GuideItem name="الهدف">تسجيل كل شكوى برقم واضح، ومتابعتها حتى نتيجة موثّقة، دون أوراق ضائعة أو شكاوى منسية.</GuideItem>
           <GuideItem name="الترقيم">كل موسم يبدأ ترقيم شكاواه من 1، مثل 1448-00001.</GuideItem>
         </ul>
@@ -2956,7 +3127,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="📝 تقديم شكوى — للحاج">كلمة مرور عامة أو خاصة (4 أرقام لمرة واحدة)، أو التقديم المباشر إن فُعّل. النموذج ثلاث خطوات: بياناته وصفته، المشتكى عليه وصفته، الشكوى كتابةً أو بالصوت.</GuideItem>
           <GuideItem name="🔎 نتيجة الشكوى — للمشتكي">برقم الشكوى ورمز المتابعة: الحالة والنص الموجّه له وتاريخ الإغلاق فقط.</GuideItem>
           <GuideItem name="⚖️ الاعتراض — للمشتكى عليه">برقم الشكوى ورمز الاعتراض: يرى عنوان الشكوى فقط، ويعترض مرة واحدة ضمن المهلة (3 أيام افتراضياً).</GuideItem>
-          <GuideItem name="🛠️ لوحة الإدارة — للمدير والموظفين">متابعة الشكاوى والجلسات والقرارات.</GuideItem>
+          <GuideItem name="🛠️ لوحة الإدارة — للمسؤول والموظفين">متابعة الشكاوى والجلسات والقرارات.</GuideItem>
           <GuideItem name="📊 التقارير — للإدارة العليا">أعداد الشكاوى حسب الموسم والفترة، وجدول للاطلاع فقط.</GuideItem>
         </ul>
       </div>
@@ -2969,17 +3140,17 @@ function AdminGuide({ isManager }) {
           <GuideItem name="🗓️ الجلسات">جلسات اليوم والقادمة والسابقة؛ لكل جلسة عنوان وموضوع وإحالة ونتيجة.</GuideItem>
           <GuideItem name="🔗 إرسال رابط">رسالة جاهزة للنسخ: رابط التقديم مع كلمة مرور تُولّد بضغطة.</GuideItem>
           <GuideItem name="📑 القرارات الإدارية">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز.</GuideItem>
-          <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، الموظفون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
+          <GuideItem name="للمسؤول فقط">دخول المشتكين، كلمات مرور الإدارة، الموظفون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
         </ul>
       </div>
 
       <div className="card">
         <h2>الصلاحيات والحماية</h2>
         <ul className="list">
-          <GuideItem name="صلاحيتان">المدير يرى كل شيء؛ الموظف يرى الأقسام الأساسية دون الإعدادات وكلمات المرور.</GuideItem>
+          <GuideItem name="صلاحيتان">المسؤول يرى كل شيء؛ الموظف يرى الأقسام الأساسية دون الإعدادات وكلمات المرور.</GuideItem>
           <GuideItem name="ثلاث نتائج منفصلة">نتيجة داخلية للقسم والإدارة، ونص للمشتكي، ونص للمعترض.</GuideItem>
           <GuideItem name="خصوصية المشتكي">المعترض لا يرى اسم المشتكي ولا رقمه.</GuideItem>
-          <GuideItem name="التصفير">يحتاج كلمة المدير ورمز تصفير خاصاً وكتابة كلمة «تصفير».</GuideItem>
+          <GuideItem name="التصفير">يحتاج كلمة المسؤول ورمز تصفير خاصاً وكتابة كلمة «تصفير».</GuideItem>
         </ul>
       </div>
 
@@ -3001,27 +3172,14 @@ function AdminGuide({ isManager }) {
         </ul>
       </div>
 
-      {isManager && (
-        <div className="card">
-          <h2>خطوات متبقية قبل التشغيل الفعلي</h2>
-          <ul className="list">
-            <GuideItem name="١">تنفيذ الأقسام 26 ثم 28 ثم 29 من schema.sql في Supabase.</GuideItem>
-            <GuideItem name="٢">تغيير كلمة مرور المدير إلى كلمة طويلة.</GuideItem>
-            <GuideItem name="٣">تعيين رمز التصفير، وكلمة قفل ملفات Excel من «الإعدادات».</GuideItem>
-            <GuideItem name="٤">التأكد أن الموسم 1448، ثم تصفير المنصة لحذف الشكاوى التجريبية.</GuideItem>
-            <GuideItem name="٥">إضافة الموظفين، وكلمات مرور الإدارة العليا.</GuideItem>
-            <GuideItem name="٦">تجربة شكوى كاملة من جوال حتى تصدير ملف Word.</GuideItem>
-          </ul>
-        </div>
-      )}
 
       <div className="card">
         <h2>توصيات</h2>
         <ul className="list">
           <GuideItem name="يوم تدريب قبل الموسم">يقدّم كل موظف شكوى تجريبية ويتابعها حتى الإغلاق، ثم تُصفّر المنصة.</GuideItem>
-          <GuideItem name="أيقونة على الشاشة الرئيسية">تُضاف صفحة الإدارة إلى جوال كل موظف فتُفتح بضغطة.</GuideItem>
+          <GuideItem name="أيقونة على الشاشة الرئيسية">زر «📲 تثبيت» أعلى الصفحة يضيف المنصة إلى جوال كل موظف كتطبيق يُفتح بضغطة.</GuideItem>
           <GuideItem name="نسخة احتياطية أسبوعية">تصدير «كل الجداول» إلى Excel، وملف Word لكل شكوى تُغلق نهائياً.</GuideItem>
-          <GuideItem name="بعد انتهاء الموسم">إيقاف كلمات مرور الموظفين المؤقتين، وتغيير كلمة المدير، وبدء موسم 1449 من «الإعدادات».</GuideItem>
+          <GuideItem name="بعد انتهاء الموسم">إيقاف كلمات مرور الموظفين المؤقتين، وتغيير كلمة المسؤول، وبدء موسم 1449 من «الإعدادات».</GuideItem>
         </ul>
       </div>
     </div>
@@ -3199,8 +3357,9 @@ async function exportIndicatorsWord(scope, kpis, sections, total) {
   const para = (text, o = {}) => new Paragraph({ bidirectional: true, spacing: { before: o.before || 0, after: o.after == null ? 80 : o.after }, children: runs(text, o) });
   const cell = (text, head, w) => new TableCell({ width: { size: w, type: WidthType.PERCENTAGE }, margins: { top: 60, bottom: 60, left: 100, right: 100 },
     shading: head ? { type: ShadingType.CLEAR, fill: SAND, color: "auto" } : undefined, children: [para(text, { bold: head, color: head ? GREEN : INK, after: 0 })] });
-  const table = (rowsArr, widths) => new Table({ visuallyRightToLeft: true, width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: rowsArr.map((r, i) => new TableRow({ children: r.map((v, j) => cell(v, i === 0, widths[j])) })) });
+  // جدول عربي: الأعمدة بترتيب معكوس فيكون العمود الأول (الرئيسي) على اليمين في كل البرامج
+  const table = (rowsArr, widths) => new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: rowsArr.map((r, i) => new TableRow({ children: r.map((v, j) => cell(v, i === 0, widths[j])).reverse() })) });
 
   const body = [
     para("تقرير مؤشرات الشكاوى", { bold: true, size: 34, color: GREEN, after: 60 }),
@@ -3321,7 +3480,7 @@ function AdminLinks({ secret, isManager = true }) {
       {isManager && <div className="card">
         <h2>🏢 تواصلت معي الإدارة (رابط التقارير)</h2>
         {viewers === null ? <Loading /> : viewers.length === 0 ? (
-          <p className="muted">لا توجد كلمات مرور إدارة فعّالة. أضف الشخص أولاً من «كلمات مرور الإدارة» في الرئيسية.</p>
+          <p className="muted">لا توجد كلمات مرور إدارة فعّالة. أضف الشخص أولاً من «كلمات مرور الإدارة» في القائمة.</p>
         ) : (
           <>
             <Field label="الشخص">
@@ -3668,6 +3827,9 @@ function ReportsPage({ code, viewerName }) {
   const [error, setError] = useState("");
 
   // بطاقة الشكوى: هل سمح الأدمن بعرضها؟ ورقم الشكوى المفتوحة
+  // روابط المواسم السابقة (ملفات Google Sheets)
+  const [past, setPast] = useState([]);
+  useEffect(() => { sb.rpc("viewer_past_seasons", { p_code: code }).then(({ data }) => setPast(Array.isArray(data) ? data : [])); }, [code]);
   const [cardOn, setCardOn] = useState(false);
   const [openNum, setOpenNum] = useState(null);
   useEffect(() => {
@@ -3730,6 +3892,12 @@ function ReportsPage({ code, viewerName }) {
           <button className="btn secondary sm" onClick={() => preset("all")}>كل الفترات</button>
         </div>
       </div>
+      {past.length > 0 && (
+        <div className="past-strip">
+          <b>📚 المواسم السابقة:</b>
+          {[...past].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => <a key={x.season} className="btn secondary sm" href={x.url} target="_blank" rel="noopener">موسم {x.season} ↗</a>)}
+        </div>
+      )}
       {error && <Alert type="error">{error}</Alert>}
       {rows === null ? (!error && <Loading />) : (
         <>
@@ -3907,6 +4075,12 @@ function App() {
     viewerName = data;
     return null;
   }
+
+  // ملف التثبيت حسب الصفحة: صفحة الأدمن تُثبَّت لتفتح على ‎#/admin، وغيرها على صفحة تقديم الشكوى
+  useEffect(() => {
+    const link = document.getElementById("app-manifest");
+    if (link) link.href = hash === "#/admin" ? "manifest-admin.webmanifest" : "manifest.webmanifest";
+  }, [hash]);
 
   // اختيار الصفحة والشريط العلوي
   let page, label = "", logout = null;

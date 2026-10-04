@@ -67,6 +67,7 @@
 --    2026-09-30  القسم 29: إلغاء الأرشفة على Google Drive (حذف archive_export و set_archive_key من القسم 25 ومن القاعدة).
 --    2026-10-01  القسم 26: قيد الحالات يشمل «مغلقة بعد الاعتراض» أيضاً (كان يفشل إن نُفّذ القسم 28 قبله).
 --    2026-10-01  القسم 30: مكان الجلسة (sessions.location) وقائمة «جهات الإحالة» (referral_targets).
+--    2026-10-04  القسم 31: روابط المواسم السابقة كملفات Google Sheets (past_seasons).
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -184,6 +185,9 @@ drop table if exists public.decisions cascade;
 drop function if exists public.admin_list_decisions(text);
 drop function if exists public.admin_save_decision(text, uuid, text, date, text, text, text, text);
 drop function if exists public.admin_delete_decision(text, uuid);
+drop function if exists public.admin_get_past_seasons(text);
+drop function if exists public.admin_set_past_seasons(text, json);
+drop function if exists public.viewer_past_seasons(text);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -3112,7 +3116,65 @@ grant execute on function public.admin_update_session(text, uuid, timestamptz, t
 grant execute on function public.viewer_complaint_card(text, text)                                             to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 31) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 31) المواسم السابقة (1446، 1445…) كملفات Google Sheets على Drive
+--     كل موسم سابق = رابط ملف Google Sheet تعدّل عليه الإدارة وتضيف مباشرة؛ المنصة تحفظ الروابط فقط
+--     app_settings: past_seasons = [{"season":"1446","url":"https://docs.google.com/..."}, …]
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- القائمة الأولى فارغة (لا تُستبدل إن كانت موجودة)
+insert into public.app_settings (key, value) values ('past_seasons', '[]') on conflict (key) do nothing;
+
+-- قراءة روابط المواسم السابقة (للمسؤول والموظف)
+create or replace function public.admin_get_past_seasons(p_secret text)
+returns json
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return null;
+  end if;
+  return coalesce(public.setting('past_seasons'), '[]')::json;
+end $$;
+
+-- حفظ روابط المواسم السابقة (للمسؤول فقط): كل عنصر موسم من 4 أرقام ورابط يبدأ بـ https://
+-- تُرجع: 'OK' أو 'INVALID'
+create or replace function public.admin_set_past_seasons(p_secret text, p_items json)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_bad int;
+begin
+  if public.verify_password('مدير', p_secret) is null or json_typeof(coalesce(p_items, '[]'::json)) <> 'array'
+     or json_array_length(coalesce(p_items, '[]'::json)) > 50 then
+    return 'INVALID';
+  end if;
+  select count(*) into v_bad from json_array_elements(coalesce(p_items, '[]'::json)) e
+   where coalesce(e->>'season', '') !~ '^\d{4}$' or coalesce(e->>'url', '') !~* '^https://' or length(e->>'url') > 1000;
+  if v_bad > 0 then
+    return 'INVALID';
+  end if;
+  insert into public.app_settings (key, value) values ('past_seasons', coalesce(p_items, '[]'::json)::text)
+    on conflict (key) do update set value = excluded.value;
+  return 'OK';
+end $$;
+
+-- روابط المواسم السابقة لصفحة التقارير (بكلمة مرور الإدارة)
+create or replace function public.viewer_past_seasons(p_code text)
+returns json
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('إدارة', p_code) is null then
+    return null;
+  end if;
+  return coalesce(public.setting('past_seasons'), '[]')::json;
+end $$;
+
+-- السماح للموقع باستدعاء الدوال الجديدة
+grant execute on function public.admin_get_past_seasons(text)       to anon, authenticated;
+grant execute on function public.admin_set_past_seasons(text, json) to anon, authenticated;
+grant execute on function public.viewer_past_seasons(text)          to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 32) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

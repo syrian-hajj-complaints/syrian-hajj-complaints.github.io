@@ -14,6 +14,7 @@
 #    - يحتاج اتصالاً بالإنترنت (لتحميل Babel مرة واحدة أثناء التحويل فقط).
 #  سجل التعديلات:
 #    2026-09-30  الإصدار الأول.
+#    2026-10-04  تقديم Chrome على Edge (Edge يتوقف وضعه بلا واجهة أثناء تحديثه).
 # =======================================================================
 
 import hashlib, html, json, os, re, subprocess, sys, tempfile
@@ -26,10 +27,10 @@ PAGE = os.path.join(ROOT, "main.html")
 
 # أماكن المتصفح المحتملة على ويندوز (Edge أولاً ثم Chrome)
 BROWSERS = [
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
 
 # رأس الملاحظات الذي يُكتب أعلى app.js
