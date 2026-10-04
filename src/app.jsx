@@ -39,6 +39,7 @@
 //                صار «المسؤول»؛ نافذة الشكوى فوق كل شيء بزر إغلاق ثابت وEsc؛ جداول Word عربية (العمود الرئيسي يميناً)؛
 //                «📚 المواسم السابقة» كروابط ملفات Google Sheets مع قالب للتنزيل (وفي صفحة التقارير)؛
 //                حذف «خطوات متبقية قبل التشغيل الفعلي» من دليل المنصة؛ زر «📲 تثبيت» (المنصة كتطبيق على الجوال).
+//    2026-10-04  تسجيل عامل الخدمة sw.js (للتثبيت ولتحويل المنصة إلى APK).
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -52,6 +53,8 @@ const isConfigured = !!cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR_") &
 // التثبيت كتطبيق: المتصفح (أندرويد/حاسوب) يرسل حدث «جاهز للتثبيت» مرة واحدة عند التحميل؛ نحفظه لزر «📲 تثبيت»
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; window.dispatchEvent(new Event("install-ready")); });
+// تسجيل عامل الخدمة (sw.js): شرط للتثبيت كتطبيق ولتحويل المنصة إلى APK
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 const isStandalone = () => window.matchMedia && window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
 // قائمتا التصنيفات والصفات: تبدآن من config.js، ثم تُستبدل محتوياتهما بما حفظه الأدمن في «الإعدادات»
