@@ -44,6 +44,8 @@
 //                Google Sheets بصلاحية «عارض»، فحص الرابط ومطابقته للقاعدة، ثم حذف الموسم برمز التصفير)، «فتح للتعديل»
 //                (استعادة الموسم من ملفه)، وإدخال موسم سابق من ملف Excel بتواريخه؛ المواسم السابقة تُعرض داخل المنصة
 //                للاطلاع فقط (في اللوحة والتقارير)؛ أعمدة Excel موحّدة للتصدير والاستيراد (XL_SHEETS) مع «النتيجة قبل الاعتراض».
+//    2026-10-04  القرارات الإدارية حسب الموسم: ورقة «القرارات الإدارية» في ملف الموسم (تصدير واستيراد وفحص المطابقة)،
+//                وتصفية القرارات بالموسم إن وُجد أكثر من موسم.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -271,10 +273,11 @@ async function exportComplaintWord(secret, c) {
   downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead)), `ملف-الشكوى-${c.complaint_number}.docx`);
 }
 
-// أعمدة ملف الموسم في Excel: [الحقل في القاعدة، العنوان في الملف، تاريخ؟] — التصدير والاستيراد يستخدمانها معاً،
-// فأي ملف تصدّره المنصة يمكن إعادته إليها (أرشفة المواسم وفتحها للتعديل)
+// أعمدة ملف الموسم في Excel: [الحقل في القاعدة، العنوان في الملف، تاريخ؟ (true = تاريخ ووقت، "day" = يوم فقط)] —
+// التصدير والاستيراد يستخدمانها معاً، فأي ملف تصدّره المنصة يمكن إعادته إليها (أرشفة المواسم وفتحها للتعديل).
+// marker: عنوان عمود تُعرف به الورقة إن تغيّر اسمها
 const XL_SHEETS = [
-  { name: "الشكاوى", key: "complaints", cols: [
+  { name: "الشكاوى", key: "complaints", marker: "نص الشكوى", cols: [
     ["season", "الموسم"], ["complaint_number", "رقم الشكوى"], ["received_date", "تاريخ الشكوى", true], ["status", "الحالة"],
     ["title", "عنوان الاعتراض"], ["complainant_name", "المشتكي"], ["complainant_role", "صفة المشتكي"], ["phone_number", "رقم الهاتف"],
     ["contact_number", "واتس / تلغرام"], ["accused_name", "المشتكى عليه"], ["accused_role", "صفة المشتكى عليه"], ["subject", "نص الشكوى"],
@@ -283,34 +286,40 @@ const XL_SHEETS = [
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"],
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["updated_at", "آخر تعديل", true]] },
-  { name: "الجلسات", key: "sessions", cols: [
+  { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"]] },
-  { name: "الإحالات", key: "referrals", cols: [
+  { name: "الإحالات", key: "referrals", marker: "تاريخ الإحالة", cols: [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
+  { name: "القرارات الإدارية", key: "decisions", marker: "رقم القرار", cols: [
+    ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"]] },
 ];
 
-// جلب جلسات وإحالات مجموعة شكاوى (الموسم المختار) من القاعدة
-async function fetchSeasonParts(secret, complaints) {
-  const [s, r] = await Promise.all([
+// جلب جلسات وإحالات مجموعة شكاوى من القاعدة، وقرارات موسمها (season فارغ = كل القرارات)
+async function fetchSeasonParts(secret, complaints, season) {
+  const [s, r, d] = await Promise.all([
     sb.rpc("admin_list_sessions", { p_secret: secret, p_complaint_id: null }),
     sb.rpc("admin_list_referrals", { p_secret: secret }),
+    sb.rpc("admin_list_decisions", { p_secret: secret }),
   ]);
   if (s.error) throw new Error(NET_ERR);
   const nums = new Set(complaints.map(c => c.complaint_number));
   return { sessions: (s.data || []).filter(x => nums.has(x.complaint_number)),
-           referrals: (r.data || []).filter(x => nums.has(x.complaint_number)) };   // فارغة إن لم يُنفَّذ القسم 25
+           referrals: (r.data || []).filter(x => nums.has(x.complaint_number)),     // فارغة إن لم يُنفَّذ القسم 25
+           decisions: (d.data || []).filter(x => !season || x.season === season) };  // حسب الموسم بعد القسم 33
 }
 
-// تصدير كامل للأدمن: الشكاوى والجلسات والإحالات — في ملف واحد (opts.lock = false لقالب غير مقفول)
+// تصدير كامل للأدمن: الشكاوى والجلسات والإحالات والقرارات — في ملف واحد
+// opts.season: موسم القرارات (فارغ = الكل)، opts.empty: قالب فارغ، opts.lock = false: غير مقفول
 async function exportAllToExcel(secret, complaints, filename, opts = {}) {
-  const parts = complaints.length ? await fetchSeasonParts(secret, complaints) : { sessions: [], referrals: [] };
+  const parts = opts.empty ? { sessions: [], referrals: [], decisions: [] } : await fetchSeasonParts(secret, complaints, opts.season);
   const data = { complaints, ...parts };
   await saveWorkbook(XL_SHEETS.map(sh => ({
     name: sh.name, headers: sh.cols.map(c => c[1]),
-    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate ? xlDate(x[f]) : x[f])),
+    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f]) : x[f])),
   })), filename || `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`, opts);
-  return { complaints: complaints.length, sessions: parts.sessions.length };
+  return { complaints: complaints.length, sessions: parts.sessions.length, decisions: parts.decisions.length };
 }
 
 // قيمة خلية من ملف موسم بصيغة القاعدة: التاريخ ← ISO (أو null إن تعذّر)، والنص ← نص مقصوص (أو null إن كان فارغاً)
@@ -331,10 +340,9 @@ async function readSeasonBook(buf) {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const out = {};
   XL_SHEETS.forEach(sh => {
-    const marker = sh.cols[sh.key === "complaints" ? 11 : sh.key === "sessions" ? 2 : 1][1];   // عنوان يميّز الورقة
     const name = wb.SheetNames.find(n => n.trim() === sh.name) || wb.SheetNames.find(n => {
       const first = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, range: 0 })[0] || [];
-      return first.some(h => String(h).trim() === marker);
+      return first.some(h => String(h).trim() === sh.marker);
     });
     if (!name) { out[sh.key] = []; return; }
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
@@ -342,7 +350,10 @@ async function readSeasonBook(buf) {
     const idx = sh.cols.map(c => head.indexOf(c[1]));
     out[sh.key] = aoa.slice(1)
       .filter(r => r.some(v => String(v ?? "").trim() !== ""))
-      .map((r, i) => Object.fromEntries([["_row", i + 2], ...sh.cols.map(([f, , isDate], k) => [f, idx[k] < 0 ? null : cellToField(r[idx[k]], isDate)])]));
+      .map((r, i) => Object.fromEntries([["_row", i + 2], ...sh.cols.map(([f, , isDate], k) => {
+        const v = idx[k] < 0 ? null : cellToField(r[idx[k]], isDate);
+        return [f, isDate === "day" && v ? toDateInput(new Date(v)) : v];   // اليوم فقط ← yyyy-mm-dd
+      })]));
   });
   return out;
 }
@@ -370,8 +381,10 @@ function prepareSeason(book, season) {
     if (s.status && !STATUSES.includes(s.status)) errors.push(`${at}: الحالة «${s.status}» غير معروفة.`);
   });
   const referrals = book.referrals.filter(x => x.referred_to && seen.has(x.complaint_number));
+  const decisions = (book.decisions || []).filter(d => d.decision_number || d.title || d.subject);
+  decisions.forEach(d => { if (!d.decision_number || !d.title) errors.push(`القرارات، السطر ${d._row}: رقم القرار وعنوانه إلزاميان.`); });
   if (!complaints.length) errors.push("لا توجد شكاوى في الملف (ورقة «الشكاوى»).");
-  return { data: { complaints, sessions, referrals }, errors };
+  return { data: { complaints, sessions, referrals, decisions }, errors };
 }
 
 // رقم ملف Google Sheet من رابطه (…/spreadsheets/d/<الرقم>/…)
@@ -2011,26 +2024,27 @@ function SeasonArchiveCard({ secret, rows, reload }) {
 
   // 1) تنزيل ملف الموسم (Excel مقفول)
   const download = () => run("download", async () => {
-    const n = await exportAllToExcel(secret, seasonRows, `موسم-${season}.xlsx`);
-    setMsg({ type: "ok", text: `✅ نُزّل ملف موسم ${season}: ${n.complaints} شكوى و${n.sessions} جلسة. ارفعه الآن إلى Google Drive.` });
+    const n = await exportAllToExcel(secret, seasonRows, `موسم-${season}.xlsx`, { season });
+    setMsg({ type: "ok", text: `✅ نُزّل ملف موسم ${season}: ${n.complaints} شكوى و${n.sessions} جلسة و${n.decisions} قرار. ارفعه الآن إلى Google Drive.` });
   });
 
   // 4) فحص الرابط: المنصة تقرأ الملف من Google، وأعداده وأرقامه تطابق القاعدة
   const verify = () => run("check", async () => {
     setCheck(null);
     const book = await readSeasonBook(await fetchSheetFile(url.trim()));
-    const parts = await fetchSeasonParts(secret, seasonRows);
+    const parts = await fetchSeasonParts(secret, seasonRows, season);
     const fileNums = new Set(book.complaints.map(c => c.complaint_number));
     const same = book.complaints.length === seasonRows.length && seasonRows.every(c => fileNums.has(c.complaint_number))
-      && book.sessions.length === parts.sessions.length;
+      && book.sessions.length === parts.sessions.length && (book.decisions || []).length === parts.decisions.length;
+    const count = (c, s, d) => `${c} شكوى و${s} جلسة و${d} قرار`;
     setCheck(same
-      ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${seasonRows.length} شكوى و${parts.sessions.length} جلسة.` }
-      : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${book.complaints.length} شكوى و${book.sessions.length} جلسة، والقاعدة فيها ${seasonRows.length} شكوى و${parts.sessions.length} جلسة. نزّل الملف من جديد وارفعه.` });
+      ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}.` }
+      : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${count(book.complaints.length, book.sessions.length, (book.decisions || []).length)}، والقاعدة فيها ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}. نزّل الملف من جديد وارفعه.` });
   });
 
   // 5) حفظ الرابط ثم حذف الموسم من القاعدة (برمز التصفير)
   const archive = () => run("archive", async () => {
-    if (!window.confirm(`حفظ رابط موسم ${season} ثم حذف شكاواه (${seasonRows.length}) وجلساتها من القاعدة؟\nيبقى الموسم معروضاً من ملفه على Google.`)) return;
+    if (!window.confirm(`حفظ رابط موسم ${season} ثم حذف شكاواه (${seasonRows.length}) وجلساتها وقراراته من القاعدة؟\nيبقى الموسم معروضاً من ملفه على Google.`)) return;
     const next = [...(list || []).filter(x => x.season !== season), { season, url: url.trim() }];
     const saved = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: next });
     if (saved.error || saved.data !== "OK") throw new Error("تعذّر حفظ الرابط (نفّذ القسم 31 من schema.sql).");
@@ -2047,10 +2061,10 @@ function SeasonArchiveCard({ secret, rows, reload }) {
   async function restore(target, buf) {
     const { data: ready, errors } = prepareSeason(await readSeasonBook(buf), target);
     if (errors.length) throw new Error(`في الملف ${errors.length} خطأ؛ صحّحه ثم أعد المحاولة:\n• ${errors.slice(0, 8).join("\n• ")}${errors.length > 8 ? "\n…" : ""}`);
-    if (!window.confirm(`إدخال موسم ${target} في القاعدة: ${ready.complaints.length} شكوى و${ready.sessions.length} جلسة؟`)) return false;
+    if (!window.confirm(`إدخال موسم ${target} في القاعدة: ${ready.complaints.length} شكوى و${ready.sessions.length} جلسة و${ready.decisions.length} قرار؟`)) return false;
     const { data, error } = await sb.rpc("admin_restore_season", { p_secret: secret, p_season: target,
-      p_complaints: ready.complaints, p_sessions: ready.sessions, p_referrals: ready.referrals });
-    if (error) throw new Error(`تعذّر الإدخال (نفّذ القسم 32 من schema.sql). ${error.message || ""}`);
+      p_complaints: ready.complaints, p_sessions: ready.sessions, p_referrals: ready.referrals, p_decisions: ready.decisions });
+    if (error) throw new Error(`تعذّر الإدخال (نفّذ القسمين 32 و33 من schema.sql). ${error.message || ""}`);
     if (!String(data).startsWith("OK")) throw new Error(RESTORE_MSG[data] || data);
     await refreshAll();
     return true;
@@ -2153,10 +2167,10 @@ function SeasonArchiveCard({ secret, rows, reload }) {
       )}
 
       <h3 className="archive-sub">📤 إدخال موسم سابق من ملف Excel</h3>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>لإدخال موسم قديم بتواريخه الأصلية: املأ القالب (ورقة الشكاوى، والجلسات، والإحالات؛ الحالة الفارغة = «مغلقة»، والرقم الفارغ يُولَّد تلقائياً)،
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>لإدخال موسم قديم بتواريخه الأصلية: املأ القالب (أوراق الشكاوى، والجلسات، والإحالات، والقرارات الإدارية؛ الحالة الفارغة = «مغلقة»، والرقم الفارغ يُولَّد تلقائياً)،
         ثم اكتب الموسم واختر الملف. يدخل الموسم القاعدة لتراجعه، ثم تؤرشفه.</p>
       <div className="row">
-        <button type="button" className="btn secondary sm" disabled={!!busy} onClick={() => run("tpl", () => exportAllToExcel(secret, [], "قالب-موسم.xlsx", { lock: false }))}>⬇ القالب الفارغ</button>
+        <button type="button" className="btn secondary sm" disabled={!!busy} onClick={() => run("tpl", () => exportAllToExcel(secret, [], "قالب-موسم.xlsx", { lock: false, empty: true }))}>⬇ القالب الفارغ</button>
         <input type="text" inputMode="numeric" dir="ltr" maxLength={4} placeholder="1445" value={localSeason} onChange={e => setLocalSeason(e.target.value)} style={{ width: 110, flex: "0 0 110px" }} aria-label="الموسم" />
         <label className={`btn sm${busy ? " disabled" : ""}`}>
           {busy === "import" ? "جارٍ الإدخال…" : "📤 اختيار الملف"}
@@ -2180,7 +2194,7 @@ function ExportCard({ secret, rows }) {
   // التصدير: الشكاوى والجلسات والإحالات للموسم المختار (مقفولة للعرض فقط)
   async function exportAll() {
     setBusy(true); setMsg(null);
-    try { await exportAllToExcel(secret, (rows || []).filter(c => !season || c.season === season)); }
+    try { await exportAllToExcel(secret, (rows || []).filter(c => !season || c.season === season), null, { season }); }
     catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
     setBusy(false);
   }
@@ -2189,7 +2203,7 @@ function ExportCard({ secret, rows }) {
   return (
     <div className="card">
       <h2>💾 التصدير والنسخ المحفوظة</h2>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بثلاث أوراق: الشكاوى، الجلسات، الإحالات — مقفول للعرض فقط. احفظ نسخة أسبوعياً.</p>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بأربع أوراق: الشكاوى، الجلسات، الإحالات، القرارات الإدارية — مقفول للعرض فقط. احفظ نسخة أسبوعياً.</p>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <div className="row">
         <select value={season} onChange={e => setSeason(e.target.value)} style={{ width: "auto", minWidth: 150 }} aria-label="الموسم">
@@ -3133,6 +3147,7 @@ function AdminDecisions({ secret, isManager }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [season, setSeason] = useState("");                    // موسم القرارات ("" = الكل)
 
   // جلب القرارات
   const load = useCallback(async () => {
@@ -3146,7 +3161,10 @@ function AdminDecisions({ secret, isManager }) {
   const term = q.trim();
   const inField = d => field === "number" ? [d.decision_number] : field === "title" ? [d.title] : field === "subject" ? [d.subject]
     : [d.decision_number, d.title, d.subject, d.classification];
+  // المواسم الموجودة في القرارات (تظهر القائمة إن كان هناك أكثر من موسم، مثل موسم مفتوح للتعديل)
+  const seasons = [...new Set((list || []).map(d => d.season).filter(Boolean))].sort().reverse();
   const base = (list || []).filter(d =>
+    (!season || d.season === season) &&
     (!term || inField(d).some(v => (v || "").includes(term))) &&
     (!range.from || (d.decision_date || "") >= range.from) &&
     (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)));
@@ -3204,6 +3222,12 @@ function AdminDecisions({ secret, isManager }) {
         <button type="button" className="btn secondary" disabled={!visible.length} onClick={exportXl}>⬇ تصدير Excel</button>
       </div>
       <div className="row" style={{ flexWrap: "nowrap", marginBottom: 8 }}>
+        {seasons.length > 1 && (
+          <select value={season} onChange={e => setSeason(e.target.value)} style={{ width: "auto", flex: "0 0 auto" }} aria-label="الموسم">
+            <option value="">كل المواسم</option>
+            {seasons.map(x => <option key={x} value={x}>موسم {x}</option>)}
+          </select>
+        )}
         <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ابحث برقم القرار أو العنوان أو الموضوع" />
         <button type="button" className={`btn ${adv ? "" : "secondary"}`} onClick={() => setAdv(v => !v)}>⚙️ بحث متقدم</button>
       </div>
