@@ -49,6 +49,9 @@
 //    2026-10-04  «أرشفة المواسم»: يُعاد جلب الموسم الحالي بعد تغييره من بطاقة «🕋 الموسم»، ويُتحقق منه لحظة الأرشفة قبل
 //                حفظ الرابط (كان يظهر الموسم الحالي في قائمة الأرشفة إن تغيّر بعد فتح الصفحة)؛ الموسم الحالي يظهر في قائمة
 //                بطاقة «🕋 الموسم» حتى قبل أول شكوى فيه؛ رسالة أوضح لرمز التصفير الخاطئ.
+//    2026-10-04  الصلاحيتان: «المدير» (كانت «المسؤول») و«المسؤول» (كانت «الموظف»)، وقسم «👥 المسؤولون»؛ الروابط: حتى رابطين
+//                للشكوى (المشتكي في النموذج والإدارة في البطاقة) والاعتراض (المعترض والإدارة) والجلسة، تظهر في البطاقة
+//                وملف Word وملف الموسم؛ «المطلوب اليوم» وتنبيهاته للموسم الحالي فقط (لا لموسم سابق مفتوح للتعديل).
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -72,7 +75,8 @@ const ROLES = [...(cfg.ROLES || ["حاج", "مرافق", "رئيس مجموعة"
 const DECISION_CLASSES = ["تنظيمي", "إداري", "مالي", "تأديبي", "تعميم", "أخرى"];   // تصنيفات القرارات (تُستبدل من الإعدادات)
 const REFERRAL_TARGETS = [];   // جهات الإحالة (من الإعدادات)
 // سياق لوحة الإدارة لمكوّنات صغيرة لا تصلها الخصائص: كلمة السر، هل هو مدير، والجهات المستخدمة في الشكاوى
-const ADMIN_CTX = { secret: null, manager: false, used: [] };
+// والموسم الحالي (التنبيهات و«المطلوب اليوم» له وحده، لا لموسم سابق مفتوح للتعديل)
+const ADMIN_CTX = { secret: null, manager: false, used: [], season: "" };
 const replaceList = (list, items) => { if (Array.isArray(items) && items.length) list.splice(0, list.length, ...items); };
 
 // حالات الشكوى (تطابق القيد في schema.sql) واسم لاتيني لكل حالة لاستخدامه في الألوان
@@ -205,11 +209,17 @@ function buildComplaintDoc(D, c, sess, logo, letterhead) {
   const objAt = c.objection_at ? new Date(c.objection_at).getTime() : null;
   const before = sess.filter(s => objAt === null || new Date(s.session_at).getTime() < objAt);
   const after = objAt === null ? [] : sess.filter(s => new Date(s.session_at).getTime() >= objAt);
+  // الروابط: عنوان ثم رابط في كل سطر (من اليسار لليمين)
+  const linkParas = (label, links) => !cleanLinks(links).length ? [] : [
+    para(label, { bold: true, before: 80, after: 40 }),
+    ...cleanLinks(links).map(u => new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: u, font: FONT, size: 20, color: GREEN2 })] })),
+  ];
   const sessionsBlock = list => !list.length ? [para("لا توجد جلسات.", { color: MUTED })] : list.flatMap(s => [
     para(`الجلسة ${sess.indexOf(s) + 1}${s.title ? " — " + s.title : ""} (${xlDate(s.session_at)})`, { bold: true, size: 26, color: GREEN2, before: 160 }),
     ...(s.location ? [para(`المكان: ${s.location}`, { color: MUTED, after: 60 })] : []),
     para("موضوع الجلسة:", { bold: true, after: 40 }), ...box(s.topic),
     para("نتيجة الجلسة:", { bold: true, before: 80, after: 40 }), ...box(s.result),
+    ...linkParas("روابط الجلسة:", s.links),
   ]);
 
   // الترويسة: الصورة الرسمية (letterhead.jpg) في رأس كل صفحة، أو — إن تعذّر تحميلها — الشعار واسم الإدارة وخط ذهبي
@@ -233,13 +243,14 @@ function buildComplaintDoc(D, c, sess, logo, letterhead) {
       ["اسم المشتكى عليه", withRole(c.accused_name, c.accused_role)],
       ["عنوان الاعتراض", c.title],
     ]),
-    heading("نص الاعتراض"), ...box(c.subject),
+    heading("نص الاعتراض"), ...box(c.subject), ...linkParas("روابط الشكوى:", c.links),
     heading(objAt !== null ? "الجلسات قبل الاعتراض" : "الجلسات"), ...sessionsBlock(before),
     heading("نتيجة الشكوى عند إغلاقها"),
     ...(closedBefore ? box(objAt !== null ? c.result_before_objection : c.result) : [para("لم تُغلق الشكوى بعد.", { color: MUTED })]),
   ];
   if (objAt !== null) body.push(
     heading("⚖️ الاعتراض"), para(`تاريخ الاعتراض: ${xlDate(c.objection_at)}`, { color: MUTED }), ...box(c.objection_text),
+    ...linkParas("روابط الاعتراض:", c.objection_links),
     heading("الجلسات بعد الاعتراض"), ...sessionsBlock(after),
     heading("نتيجة الاعتراض"),
     ...(c.status === CLOSED_OBJ ? [para(`تاريخ الإغلاق النهائي: ${xlDate(c.closed_date)}`, { color: MUTED }), ...box(c.result)]
@@ -284,14 +295,14 @@ const XL_SHEETS = [
     ["season", "الموسم"], ["complaint_number", "رقم الشكوى"], ["received_date", "تاريخ الشكوى", true], ["status", "الحالة"],
     ["title", "عنوان الاعتراض"], ["complainant_name", "المشتكي"], ["complainant_role", "صفة المشتكي"], ["phone_number", "رقم الهاتف"],
     ["contact_number", "واتس / تلغرام"], ["accused_name", "المشتكى عليه"], ["accused_role", "صفة المشتكى عليه"], ["subject", "نص الشكوى"],
-    ["classification", "التصنيف"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الشكوى"], ["complainant_result", "النتيجة للمشتكي"],
+    ["links", "روابط الشكوى"], ["classification", "التصنيف"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الشكوى"], ["complainant_result", "النتيجة للمشتكي"],
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
-    ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"],
+    ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
-    ["location", "المكان"], ["topic", "موضوع الجلسة"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"]] },
+    ["location", "المكان"], ["topic", "موضوع الجلسة"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
   { name: "الإحالات", key: "referrals", marker: "تاريخ الإحالة", cols: [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
   { name: "القرارات الإدارية", key: "decisions", marker: "رقم القرار", cols: [
@@ -320,7 +331,8 @@ async function exportAllToExcel(secret, complaints, filename, opts = {}) {
   const data = { complaints, ...parts };
   await saveWorkbook(XL_SHEETS.map(sh => ({
     name: sh.name, headers: sh.cols.map(c => c[1]),
-    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f]) : x[f])),
+    // الروابط (قائمة) ← سطر لكل رابط في الخلية
+    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f]) : Array.isArray(x[f]) ? x[f].join("\n") : x[f])),
   })), filename || `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`, opts);
   return { complaints: complaints.length, sessions: parts.sessions.length, decisions: parts.decisions.length };
 }
@@ -611,7 +623,7 @@ const FORM_STEPS = ["بياناتك", "المشتكى عليه", "شكواك"];
 
 function ComplaintForm({ code, onDone, onRejected }) {
   // بيانات النموذج، الخطوة الحالية (0..2)، وحالة الإرسال
-  const [form, setForm] = useState({ name: "", crole: "", phone: "", contact: "", accused: "", arole: "", title: "", subject: "" });
+  const [form, setForm] = useState({ name: "", crole: "", phone: "", contact: "", accused: "", arole: "", title: "", subject: "", links: [] });
   const [step, setStep] = useState(0);
   // قائمة الصفات من الإعدادات (وإلا قائمة config.js)
   const [roles, setRoles] = useState([...ROLES]);
@@ -638,6 +650,7 @@ function ComplaintForm({ code, onDone, onRejected }) {
     if (i === 2) {
       if (!form.title.trim()) return "اكتب عنواناً قصيراً للاعتراض.";
       if (!form.subject.trim()) return "اكتب نص الاعتراض أو اضغط 🎤 وتحدّث.";
+      if (badLink(form.links)) return BAD_LINK;
     }
     return "";
   }
@@ -653,10 +666,14 @@ function ComplaintForm({ code, onDone, onRejected }) {
     setError("");
     for (let i = 0; i < FORM_STEPS.length; i++) { const err = checkStep(i); if (err) { setStep(i); return setError(err); } }
     setBusy(true);
-    let { data, error: rpcErr } = await sb.rpc("submit_complaint", {
+    const base = {
       p_code: code, p_complainant_name: form.name, p_complainant_role: form.crole, p_phone_number: form.phone, p_contact_number: form.contact,
       p_accused_name: form.accused, p_accused_role: form.arole, p_title: form.title, p_subject: form.subject,
-    });
+    };
+    const links = cleanLinks(form.links);
+    let { data, error: rpcErr } = await sb.rpc("submit_complaint", links.length ? { ...base, p_links: links } : base);
+    // قاعدة لم يُنفَّذ فيها القسم 34 بعد: التقديم بلا الروابط
+    if (links.length && rpcErr && /function|schema cache/i.test(rpcErr.message || "")) ({ data, error: rpcErr } = await sb.rpc("submit_complaint", base));
     // قاعدة لم يُنفَّذ فيها القسم 23 بعد: النسخة القديمة، والصفة بين قوسين بعد الاسم حتى لا تضيع
     if (rpcErr && /submit_complaint|function/i.test(rpcErr.message || "") && !rpcErr.message.includes("INVALID_CODE"))
       ({ data, error: rpcErr } = await sb.rpc("submit_complaint", {
@@ -716,6 +733,7 @@ function ComplaintForm({ code, onDone, onRejected }) {
                 <textarea value={form.subject} onChange={set("subject")} maxLength={5000} placeholder="اشرح تفاصيل الشكوى: ماذا حدث، ومتى، وأين… أو اضغط 🎤 وتحدّث" style={{ minHeight: 150 }} />
                 {interim && <div className="interim">🎙️ {interim}</div>}
               </div>
+              <LinksField value={form.links} onChange={l => setForm(f => ({ ...f, links: l }))} />
             </>
           )}
         </div>
@@ -727,6 +745,73 @@ function ComplaintForm({ code, onDone, onRejected }) {
         </div>
       </form>
       <ResultLink />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// الروابط المرفقة (حتى رابطين) للشكوى والاعتراض والجلسة: صور أو مستندات على Google Drive وغيره
+// ---------------------------------------------------------------------
+const MAX_LINKS = 2;
+// تنظيف القائمة (بلا فراغات ولا تكرار، بحد أقصى رابطين)، وأول رابط غير صالح (لا يبدأ بـ https://)
+const cleanLinks = arr => [...new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean))].slice(0, MAX_LINKS);
+const badLink = arr => cleanLinks(arr).find(x => !/^https?:\/\/\S+$/i.test(x));
+const BAD_LINK = "كل رابط يجب أن يبدأ بـ https:// (انسخه كاملاً من المتصفح أو من Google Drive).";
+
+// عرض الروابط كأزرار صغيرة تفتح في نافذة جديدة (لا شيء إن لم توجد)
+function LinksView({ links }) {
+  const list = cleanLinks(links);
+  if (!list.length) return null;
+  return <span className="links-view">{list.map((u, i) => <a key={i} className="link-chip" href={u} target="_blank" rel="noopener" title={u}>🔗 رابط {i + 1}</a>)}</span>;
+}
+
+// خانتا إدخال الرابطين
+function LinksField({ value, onChange, label = "🔗 روابط مرفقة", hint = "اختياري — حتى رابطين، مثل صورة أو مستند على Google Drive", full = true }) {
+  const v = [...(value || []), "", ""].slice(0, MAX_LINKS);
+  const put = (i, x) => onChange(v.map((y, k) => k === i ? x : y));
+  return (
+    <Field label={label} hint={hint} full={full}>
+      <div className="links-inputs">
+        {v.map((x, i) => <input key={i} type="url" dir="ltr" inputMode="url" value={x} onChange={e => put(i, e.target.value)} maxLength={1000} placeholder={`https://…  (رابط ${i + 1})`} />)}
+      </div>
+    </Field>
+  );
+}
+
+// روابط الشكوى أو الاعتراض في بطاقة الشكوى (للإدارة): عرضها، وإضافتها أو تعديلها عبر admin_set_links
+function LinksEditor({ secret, complaint, target, onSaved }) {
+  const current = target === "objection" ? complaint.objection_links : complaint.links;
+  const [edit, setEdit] = useState(null);   // null = عرض فقط
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // الحفظ (الخانة الفارغة تحذف رابطها)
+  async function save() {
+    if (badLink(edit)) return setErr(BAD_LINK);
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_links", { p_secret: secret, p_target: target, p_id: complaint.id, p_links: cleanLinks(edit) });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر حفظ الروابط (نفّذ القسم 34 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+
+  // العرض: خانتا التعديل مع الحفظ والإلغاء، أو الروابط مع زر التعديل/الإضافة
+  if (edit) return (
+    <div className="links-edit">
+      <LinksField value={edit} onChange={setEdit} label={target === "objection" ? "🔗 روابط الاعتراض" : "🔗 روابط الشكوى"} hint="حتى رابطين؛ امسح الخانة لحذف رابطها" />
+      {err && <Alert type="error">{err}</Alert>}
+      <div className="row" style={{ marginTop: 6 }}>
+        <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 حفظ الروابط"}</button>
+        <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+      </div>
+    </div>
+  );
+  return (
+    <div className="links-line">
+      <LinksView links={current} />
+      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(cleanLinks(current))}>
+        {cleanLinks(current).length ? "✏️ تعديل الروابط" : "➕ إضافة رابط"}
+      </button>
     </div>
   );
 }
@@ -907,6 +992,7 @@ function ObjectionPage() {
   const [code, setCode] = useState("");
   const [view, setView] = useState(null);
   const [text, setText] = useState("");
+  const [links, setLinks] = useState([]);       // روابط مرفقة بالاعتراض (حتى رابطين)
   const [interim, setInterim] = useState("");   // الكلام الجاري التقاطه قبل تثبيته
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -937,8 +1023,13 @@ function ObjectionPage() {
     e.preventDefault();
     setError("");
     if (!text.trim()) return setError("يرجى كتابة اعتراضك.");
+    if (badLink(links)) return setError(BAD_LINK);
     setBusy(true);
-    const { data, error: rpcErr } = await sb.rpc("submit_objection", { p_number: number.trim(), p_code: code.trim(), p_text: text });
+    const base = { p_number: number.trim(), p_code: code.trim(), p_text: text };
+    const list = cleanLinks(links);
+    let { data, error: rpcErr } = await sb.rpc("submit_objection", list.length ? { ...base, p_links: list } : base);
+    // قاعدة لم يُنفَّذ فيها القسم 34 بعد: الاعتراض بلا الروابط
+    if (list.length && rpcErr && /function|schema cache/i.test(rpcErr.message || "")) ({ data, error: rpcErr } = await sb.rpc("submit_objection", base));
     setBusy(false);
     if (rpcErr) return setError("تعذّر إرسال الاعتراض، يرجى المحاولة مرة أخرى.");
     if (data === "INVALID") return setError("رقم الشكوى أو رمز الاعتراض لم يعد صالحاً.");
@@ -1002,6 +1093,7 @@ function ObjectionPage() {
                 <textarea value={text} onChange={e => setText(e.target.value)} maxLength={5000} style={{ minHeight: 150 }} />
                 {interim && <div className="interim">🎙️ {interim}</div>}
               </Field>
+              <div style={{ marginTop: 10 }}><LinksField value={links} onChange={setLinks} /></div>
               <button className="btn block" style={{ marginTop: 14 }} disabled={busy}>{busy ? "جارٍ الإرسال…" : "إرسال الاعتراض"}</button>
             </form>
           )}
@@ -1050,6 +1142,8 @@ function ago(ms) {
 // تنبيهات شكوى واحدة كما تكون في وقت مرجعي ref (الآن افتراضياً، أو يوم يختاره الأدمن)
 // تُرجع قائمة {level: danger/warn/info/later, text}
 function smartAlerts(c, ref = new Date()) {
+  // شكوى من موسم سابق مفتوح للتعديل: لا تنبيهات (المطلوب اليوم للموسم الحالي فقط)
+  if (ADMIN_CTX.season && c.season && c.season !== ADMIN_CTX.season) return [];
   // اعتراض المشتكى عليه لم يُراجع بعد (لم تُحفظ الشكوى بعد وصوله) — يظهر حتى لو كانت مغلقة
   const objection = c.objection_at && new Date(c.updated_at || 0) - new Date(c.objection_at) < 5000
     ? [{ level: "warn", text: `⚖️ وصل اعتراض من المشتكى عليه (${fmtDateTime(c.objection_at)}) — افتح الشكوى لمراجعته` }] : [];
@@ -1109,7 +1203,7 @@ const SECTIONS = {
   guide:      { title: "📘 دليل المنصة" },
   access:     { title: "🔐 دخول المشتكين", manager: true },
   viewers:    { title: "📊 كلمات مرور الإدارة", manager: true },
-  staff:      { title: "👥 الموظفون", manager: true },
+  staff:      { title: "👥 المسؤولون", manager: true },
   settings:   { title: "⚙️ الإعدادات", manager: true },
 };
 
@@ -1168,11 +1262,15 @@ function AdminPage({ secret, onLogout }) {
     sb.rpc("admin_get_excel_lock", { p_secret: secret }).then(({ data }) => { excelLock.password = data || ""; });
   }, [secret]);
 
-  // جلب كل الشكاوى
+  // جلب كل الشكاوى، والموسم الحالي (للتنبيهات)
   const load = useCallback(async () => {
     setError("");
-    const { data, error } = await sb.rpc("admin_list_complaints", { p_secret: secret });
+    const [{ data, error }, season] = await Promise.all([
+      sb.rpc("admin_list_complaints", { p_secret: secret }),
+      sb.rpc("admin_get_season", { p_secret: secret }),
+    ]);
     if (error) return setError(NET_ERR);
+    ADMIN_CTX.season = (season.data && season.data.current) || "";
     setRows(data || []);
   }, [secret]);
   useEffect(() => { load(); }, [load]);
@@ -1256,7 +1354,7 @@ function AdminPage({ secret, onLogout }) {
 const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
                   ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"], ["archive", "📚", "المواسم السابقة"]];
 const NAV_MANAGER = [["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
-                     ["staff", "👥", "الموظفون"], ["settings", "⚙️", "الإعدادات"]];
+                     ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
 
 // زر «📲 تثبيت»: على أندرويد والحاسوب يفتح نافذة التثبيت مباشرة، وعلى آيفون يشرح «مشاركة ← إضافة إلى الشاشة الرئيسية»؛
 // يختفي إن كانت المنصة مفتوحة كتطبيق مثبّت
@@ -1314,13 +1412,13 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose }) {
       <nav className="side-nav">{NAV_MAIN.map(item)}</nav>
       {isManager && (
         <>
-          <div className="side-group">للمسؤول</div>
+          <div className="side-group">للمدير</div>
           <nav className="side-nav">{NAV_MANAGER.map(item)}</nav>
         </>
       )}
       <div className="side-user">
         <span className="side-avatar">👤</span>
-        <div className="side-who"><b>{me.name || (isManager ? "المسؤول" : "الموظف")}</b><small>{isManager ? "مسؤول" : "موظف"} · قسم الشكاوى</small></div>
+        <div className="side-who"><b>{me.name || (isManager ? "المدير" : "المسؤول")}</b><small>{isManager ? "مدير" : "مسؤول"} · قسم الشكاوى</small></div>
       </div>
     </aside>
   );
@@ -1433,7 +1531,7 @@ function AdminStaff({ secret }) {
   // إضافة موظف وتوليد كلمة مروره
   async function create(e) {
     e.preventDefault();
-    if (!name.trim()) return setMsg({ type: "error", text: "يرجى كتابة اسم الموظف." });
+    if (!name.trim()) return setMsg({ type: "error", text: "يرجى كتابة اسم المسؤول." });
     setBusy(true); setMsg(null);
     const { data, error } = await sb.rpc("admin_create_staff", { p_secret: secret, p_name: name });
     setBusy(false);
@@ -1454,10 +1552,10 @@ function AdminStaff({ secret }) {
   return (
     <div>
       <form className="card" onSubmit={create}>
-        <h2>إضافة موظف</h2>
-        <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>الموظف يرى: المطلوب، الشكاوى، الجلسات، وإرسال رابط للمشتكي. لا يرى الإعدادات ولا كلمات المرور.</p>
+        <h2>إضافة مسؤول</h2>
+        <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>المسؤول يرى: المطلوب، الشكاوى، الجلسات، القرارات، والمواسم السابقة. لا يرى الإعدادات ولا كلمات المرور.</p>
         {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-        <Field label="اسم الموظف"><input type="text" value={name} onChange={e => setName(e.target.value)} maxLength={200} /></Field>
+        <Field label="اسم المسؤول"><input type="text" value={name} onChange={e => setName(e.target.value)} maxLength={200} /></Field>
         <button className="btn gold block" style={{ marginTop: 14 }} disabled={busy}>{busy ? "جارٍ الإضافة…" : "👥 إضافة وتوليد كلمة مرور"}</button>
         {created && (
           <div style={{ marginTop: 16 }}>
@@ -1468,8 +1566,8 @@ function AdminStaff({ secret }) {
         )}
       </form>
       <div className="card">
-        <h2>الموظفون</h2>
-        {list === null ? <Loading /> : list.length === 0 ? <p className="muted">لم تُضف أي موظف بعد.</p> : (
+        <h2>المسؤولون</h2>
+        {list === null ? <Loading /> : list.length === 0 ? <p className="muted">لم تُضف أي مسؤول بعد.</p> : (
           <ul className="list">
             {list.map(r => (
               <li key={r.id}>
@@ -1954,7 +2052,7 @@ function AdminPastSeasons({ secret, isManager, rows }) {
     <div>
       {error && <Alert type="error">{error}</Alert>}
       <p className="muted" style={{ marginTop: 0 }}>كل موسم سابق محفوظ في ملف على Google Drive، ويُعرض هنا للاطلاع فقط.
-        {isManager ? " لتعديل موسم: «الإعدادات ← 📚 أرشفة المواسم ← فتح للتعديل»." : ""}</p>
+        {isManager ? " لتعديل موسم: «الإعدادات ← 📚 أرشفة المواسم ← فتح للتعديل»." : " تعديل موسم سابق للمدير فقط."}</p>
       {list.length === 0 ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>لا توجد مواسم مؤرشفة بعد.</p></div>
       ) : (
@@ -1978,7 +2076,7 @@ const RESTORE_MSG = {
   CURRENT: "هذا هو الموسم الحالي؛ لا يُستعاد فوق نفسه.",
   EXISTS: "لهذا الموسم شكاوى في القاعدة الآن (مفتوح للتعديل أصلاً).",
   DUPLICATE: "بعض أرقام الشكاوى في الملف موجودة في موسم آخر في القاعدة.",
-  INVALID: "تعذّرت الاستعادة: للمسؤول فقط، والملف يجب أن يحتوي شكاوى.",
+  INVALID: "تعذّرت الاستعادة: للمدير فقط، والملف يجب أن يحتوي شكاوى.",
 };
 const DELETE_MSG = {
   WRONG_CODE: "رمز التصفير غير صحيح (وهو غير كلمة مرور الأدمن، ويُفرّق بين الأحرف الكبيرة والصغيرة). إن نسيته فعيّن رمزاً جديداً من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمز-جديد');",
@@ -2640,6 +2738,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       </dl>
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
+      <LinksEditor secret={secret} complaint={c} target="complaint" onSaved={onSaved} />
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       {fromDue && !isClosed(c.status) && (
         <div className="due-prompt">
@@ -2847,6 +2946,7 @@ function ObjectionSection({ secret, complaint: c, onSaved }) {
         <>
           <div className="muted" style={{ fontSize: 13.5 }}>قُدّم في {fmtDateTime(c.objection_at)}</div>
           <div className="subject" style={{ marginTop: 6 }}>{c.objection_text}</div>
+          <LinksEditor secret={secret} complaint={c} target="objection" onSaved={onSaved} />
         </>
       ) : c.objection_code && !mode ? (
         <>
@@ -2917,7 +3017,7 @@ const sessionStatus = (complaint, s, at) => sessionStatuses(complaint, at)[isClo
 
 function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0 }) {
   // سجل الجلسات، النموذج (جلسة جديدة أو تعديل جلسة: editId)، والرسائل
-  const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "",
+  const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", links: [],
                          status: sessionStatus(complaint, complaint.status),
                          cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
   const [list, setList] = useState(null);
@@ -2939,6 +3039,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   function startEdit(s) {
     setEditId(s.id);
     setForm({ at: toDateTimeInput(s.session_at), title: s.title || "", location: s.location || "", topic: s.topic || "", referred_to: s.referred_to || "", result: s.result || "",
+              links: cleanLinks(s.links),
               status: sessionStatus(complaint, s.status, s.session_at),
               cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
     setMsg(null);
@@ -2965,13 +3066,19 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     const closing = isClosed(form.status);
     if (closing && !form.cresult.trim()) return setMsg({ type: "error", text: "اكتب النص الذي يظهر للمشتكي في صفحة «نتيجة الشكوى» قبل الإغلاق." });
     if (closing && complaint.objection_at && !form.aresult.trim()) return setMsg({ type: "error", text: "اكتب الرد الذي يظهر للمعترض في صفحة الاعتراض قبل الإغلاق." });
+    if (badLink(form.links)) return setMsg({ type: "error", text: BAD_LINK });
     setBusy(true); setMsg(null);
     const args = { p_secret: secret, p_session_at: dateTimeInputToIso(form.at), p_title: form.title, p_location: form.location, p_topic: form.topic,
-                   p_referred_to: form.referred_to, p_result: form.result, p_status: form.status };
+                   p_referred_to: form.referred_to, p_result: form.result, p_status: form.status, p_links: cleanLinks(form.links) };
     const send = a => editId ? sb.rpc("admin_update_session", { ...a, p_id: editId }) : sb.rpc("admin_add_session", { ...a, p_complaint_id: complaint.id });
+    const missing = err => err && /function|schema cache/i.test(err.message || "");
     let { data, error } = await send(args);
-    // قاعدة لم يُنفَّذ فيها القسم 30 بعد: النسخة القديمة بلا «المكان»
-    if (error && /function|schema cache/i.test(error.message || "")) { const { p_location, ...old } = args; ({ data, error } = await send(old)); }
+    // قاعدة لم يُنفَّذ فيها القسم 34 ثم 30 بعد: النسخة بلا الروابط، ثم بلا «المكان»
+    if (missing(error)) {
+      const { p_links, ...noLinks } = args;
+      ({ data, error } = await send(noLinks));
+      if (missing(error)) { const { p_location, ...old } = noLinks; ({ data, error } = await send(old)); }
+    }
     setBusy(false);
     if (error && /مغلقة/.test(error.message || "")) return setMsg({ type: "error", text: "الشكوى مغلقة: يمكن تعديل جلساتها فقط." });
     if (error || !data || !data.length) return setMsg({ type: "error", text: editId ? "تعذّر تعديل الجلسة، يرجى المحاولة مرة أخرى." : "تعذّر إضافة الجلسة، يرجى المحاولة مرة أخرى." });
@@ -2999,7 +3106,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       {list === null ? <Loading /> : list.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>لا توجد جلسات لهذه الشكوى بعد.</p> : (
         <div className="table-wrap" style={{ maxHeight: 280, marginBottom: 12, border: "1px solid var(--line)" }}>
           <table className="sheet">
-            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th></th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
             <tbody>
               {list.map(s => (
                 <tr key={s.id} className={`status-row ${stClass(s.status)} ${editId === s.id ? "selected" : ""}`} style={{ cursor: "default" }}>
@@ -3010,6 +3117,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
                   <td>{s.referred_to || <span className="muted">—</span>}</td>
                   <td className="wrap">{s.result || <span className="muted">—</span>}</td>
                   <td><StatusBadge value={s.status} /></td>
+                  <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : <span className="muted">—</span>}</td>
                   <td><button className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => startEdit(s)}>✏️ تعديل</button></td>
                 </tr>
               ))}
@@ -3032,6 +3140,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           </Field>
           <Field label="موضوع الجلسة" full><textarea style={{ minHeight: 60 }} value={form.topic} onChange={set("topic")} maxLength={2000} placeholder="ما الذي نوقش في الجلسة" /></Field>
           <Field label="نتيجة الجلسة" full><textarea style={{ minHeight: 70 }} value={form.result} onChange={set("result")} maxLength={2000} /></Field>
+          <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
           {isClosed(form.status) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
               <textarea style={{ minHeight: 70 }} value={form.cresult} onChange={set("cresult")} maxLength={2000} />
@@ -3384,7 +3493,7 @@ function AdminGuide({ isManager }) {
         <h2>نبذة</h2>
         <p style={{ marginTop: 0 }}>منصة الشكاوى تستقبل شكاوى الحجاج من الجوال، ويتابعها قسم الشكاوى بالجلسات حتى الإغلاق، مع اعتراض واحد للمشتكى عليه.</p>
         <ul className="list">
-          <GuideItem name="لمن">الحجاج ومرافقوهم، والمشتكى عليه، وموظفو القسم ومسؤوله، والإدارة العليا للتقارير.</GuideItem>
+          <GuideItem name="لمن">الحجاج ومرافقوهم، والمشتكى عليه، ومدير القسم ومسؤولوه، والإدارة العليا للتقارير.</GuideItem>
           <GuideItem name="الهدف">تسجيل كل شكوى برقم واضح، ومتابعتها حتى نتيجة موثّقة، دون أوراق ضائعة أو شكاوى منسية.</GuideItem>
           <GuideItem name="الترقيم">كل موسم يبدأ ترقيم شكاواه من 1، مثل 1448-00001.</GuideItem>
           <GuideItem name="المواسم السابقة">قاعدة البيانات تحفظ الموسم الحالي فقط؛ كل موسم ينتهي يُؤرشف في ملف Google Sheets للعرض فقط، ويُعرض في المنصة للجميع، ويُفتح للتعديل من «الإعدادات» عند الحاجة.</GuideItem>
@@ -3393,7 +3502,7 @@ function AdminGuide({ isManager }) {
 
       <div className="card">
         <h2>تسلسل الشكوى</h2>
-        <p style={{ marginTop: 0 }}>للشكوى سبع حالات في مرحلتين، وكل انتقال يحدث تلقائياً دون أن يكتب الموظف الحالة بيده.</p>
+        <p style={{ marginTop: 0 }}>للشكوى سبع حالات في مرحلتين، وكل انتقال يحدث تلقائياً دون أن يكتب أحد الحالة بيده.</p>
         <div className="flow">
           <StatusBadge value="جديد" /><FlowStep label="فتح البطاقة" /><StatusBadge value="قيد المراجعة" />
           <FlowStep label="أول جلسة" /><StatusBadge value="جاري المتابعة" /><FlowStep label="جلسة إغلاق" /><StatusBadge value="مغلقة" />
@@ -3416,7 +3525,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="📝 تقديم شكوى — للحاج">كلمة مرور عامة أو خاصة (4 أرقام لمرة واحدة)، أو التقديم المباشر إن فُعّل. النموذج ثلاث خطوات: بياناته وصفته، المشتكى عليه وصفته، الشكوى كتابةً أو بالصوت.</GuideItem>
           <GuideItem name="🔎 نتيجة الشكوى — للمشتكي">برقم الشكوى ورمز المتابعة: الحالة والنص الموجّه له وتاريخ الإغلاق فقط.</GuideItem>
           <GuideItem name="⚖️ الاعتراض — للمشتكى عليه">برقم الشكوى ورمز الاعتراض: يرى عنوان الشكوى فقط، ويعترض مرة واحدة ضمن المهلة (3 أيام افتراضياً).</GuideItem>
-          <GuideItem name="🛠️ لوحة الإدارة — للمسؤول والموظفين">متابعة الشكاوى والجلسات والقرارات.</GuideItem>
+          <GuideItem name="🛠️ لوحة الإدارة — للمدير والمسؤولين">متابعة الشكاوى والجلسات والقرارات.</GuideItem>
           <GuideItem name="📊 التقارير — للإدارة العليا">أعداد الشكاوى حسب الموسم والفترة، وجدول للاطلاع فقط.</GuideItem>
         </ul>
       </div>
@@ -3429,17 +3538,17 @@ function AdminGuide({ isManager }) {
           <GuideItem name="🗓️ الجلسات">جلسات اليوم والقادمة والسابقة؛ لكل جلسة عنوان وموضوع وإحالة ونتيجة.</GuideItem>
           <GuideItem name="🔗 إرسال رابط">رسالة جاهزة للنسخ: رابط التقديم مع كلمة مرور تُولّد بضغطة.</GuideItem>
           <GuideItem name="📑 القرارات الإدارية">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز.</GuideItem>
-          <GuideItem name="للمسؤول فقط">دخول المشتكين، كلمات مرور الإدارة، الموظفون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
+          <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، المسؤولون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
         </ul>
       </div>
 
       <div className="card">
         <h2>الصلاحيات والحماية</h2>
         <ul className="list">
-          <GuideItem name="صلاحيتان">المسؤول يرى كل شيء؛ الموظف يرى الأقسام الأساسية دون الإعدادات وكلمات المرور.</GuideItem>
+          <GuideItem name="صلاحيتان">المدير يرى كل شيء؛ المسؤول يرى الأقسام الأساسية دون الإعدادات وكلمات المرور.</GuideItem>
           <GuideItem name="ثلاث نتائج منفصلة">نتيجة داخلية للقسم والإدارة، ونص للمشتكي، ونص للمعترض.</GuideItem>
           <GuideItem name="خصوصية المشتكي">المعترض لا يرى اسم المشتكي ولا رقمه.</GuideItem>
-          <GuideItem name="التصفير">يحتاج كلمة المسؤول ورمز تصفير خاصاً وكتابة كلمة «تصفير».</GuideItem>
+          <GuideItem name="التصفير">يحتاج كلمة المدير ورمز تصفير خاصاً وكتابة كلمة «تصفير».</GuideItem>
         </ul>
       </div>
 
@@ -3465,10 +3574,10 @@ function AdminGuide({ isManager }) {
       <div className="card">
         <h2>توصيات</h2>
         <ul className="list">
-          <GuideItem name="يوم تدريب قبل الموسم">يقدّم كل موظف شكوى تجريبية ويتابعها حتى الإغلاق، ثم تُصفّر المنصة.</GuideItem>
-          <GuideItem name="أيقونة على الشاشة الرئيسية">زر «📲 تثبيت» أعلى الصفحة يضيف المنصة إلى جوال كل موظف كتطبيق يُفتح بضغطة.</GuideItem>
+          <GuideItem name="يوم تدريب قبل الموسم">يقدّم كل مسؤول شكوى تجريبية ويتابعها حتى الإغلاق، ثم تُصفّر المنصة.</GuideItem>
+          <GuideItem name="أيقونة على الشاشة الرئيسية">زر «📲 تثبيت» أعلى الصفحة يضيف المنصة إلى جوال كل مسؤول كتطبيق يُفتح بضغطة.</GuideItem>
           <GuideItem name="نسخة احتياطية أسبوعية">تصدير «كل الجداول» إلى Excel، وملف Word لكل شكوى تُغلق نهائياً.</GuideItem>
-          <GuideItem name="بعد انتهاء الموسم">بدء الموسم الجديد من «الإعدادات ← 🕋 الموسم»، ثم أرشفة الموسم المنتهي من «📚 أرشفة المواسم»، وإيقاف كلمات مرور الموظفين المؤقتين، وتغيير كلمة المسؤول.</GuideItem>
+          <GuideItem name="بعد انتهاء الموسم">بدء الموسم الجديد من «الإعدادات ← 🕋 الموسم»، ثم أرشفة الموسم المنتهي من «📚 أرشفة المواسم»، وإيقاف كلمات مرور المسؤولين المؤقتين، وتغيير كلمة المدير.</GuideItem>
         </ul>
       </div>
     </div>

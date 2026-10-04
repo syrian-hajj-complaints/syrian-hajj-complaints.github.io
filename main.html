@@ -82,6 +82,7 @@
     2026-10-04  القائمة ثابتة (fixed) على اليمين بشريط تمرير؛ منع تمدد الصفحة على الجوال (minmax(0,1fr) و overflow-x: clip)؛
                 زر إغلاق النافذة ثابت أعلاها؛ تنسيقات المواسم السابقة (.past-*).
     2026-10-04  أرشفة المواسم: بطاقة الموسم كزر (button.past-card) وعناوين أقسام البطاقة (.archive-sub).
+    2026-10-04  الروابط المرفقة (.links-inputs / .links-view / .link-chip / .links-line / .links-edit).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -407,6 +408,13 @@
   .past-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
   /* بطاقة الموسم كزر (تفتح الملف داخل المنصة)، وعناوين أقسام بطاقة «أرشفة المواسم» */
   button.past-card { font: inherit; text-align: start; cursor: pointer; width: 100%; }
+  /* الروابط المرفقة: خانتا الإدخال (عمودان، وعمود واحد على الجوال) وأزرار «🔗 رابط» */
+  .links-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 8px; }
+  .links-view { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .link-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #e6f2ef; color: var(--brand-dark); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .link-chip:hover { background: #d3e9e4; }
+  .links-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+  .links-edit { margin: 8px 0; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; }
   .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
@@ -683,6 +691,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=68d2c9e0f2"></script>
+<script src="app.js?v=a1fedcd869"></script>
 </body>
 </html>
