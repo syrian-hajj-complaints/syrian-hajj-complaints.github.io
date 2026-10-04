@@ -81,6 +81,7 @@
     2026-10-04  التثبيت على الجوال كتطبيق: manifest + أيقونات (icon-192/512، apple-touch-icon) ولون الشريط.
     2026-10-04  القائمة ثابتة (fixed) على اليمين بشريط تمرير؛ منع تمدد الصفحة على الجوال (minmax(0,1fr) و overflow-x: clip)؛
                 زر إغلاق النافذة ثابت أعلاها؛ تنسيقات المواسم السابقة (.past-*).
+    2026-10-04  أرشفة المواسم: بطاقة الموسم كزر (button.past-card) وعناوين أقسام البطاقة (.archive-sub).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -404,6 +405,9 @@
   .past-icon { font-size: 28px; }
   .past-steps { margin: 0 0 12px; padding-inline-start: 20px; line-height: 2; font-size: 14px; }
   .past-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+  /* بطاقة الموسم كزر (تفتح الملف داخل المنصة)، وعناوين أقسام بطاقة «أرشفة المواسم» */
+  button.past-card { font: inherit; text-align: start; cursor: pointer; width: 100%; }
+  .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
   .ind-tools { margin-bottom: 14px; }
@@ -679,6 +683,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=9a457f72a3"></script>
+<script src="app.js?v=aab0711b50"></script>
 </body>
 </html>

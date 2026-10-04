@@ -40,6 +40,10 @@
 //                «📚 المواسم السابقة» كروابط ملفات Google Sheets مع قالب للتنزيل (وفي صفحة التقارير)؛
 //                حذف «خطوات متبقية قبل التشغيل الفعلي» من دليل المنصة؛ زر «📲 تثبيت» (المنصة كتطبيق على الجوال).
 //    2026-10-04  تسجيل عامل الخدمة sw.js (للتثبيت ولتحويل المنصة إلى APK).
+//    2026-10-04  أرشفة المواسم: Supabase يحفظ الموسم الحالي فقط؛ «📚 أرشفة المواسم» في الإعدادات (تنزيل ملف الموسم، رفعه إلى
+//                Google Sheets بصلاحية «عارض»، فحص الرابط ومطابقته للقاعدة، ثم حذف الموسم برمز التصفير)، «فتح للتعديل»
+//                (استعادة الموسم من ملفه)، وإدخال موسم سابق من ملف Excel بتواريخه؛ المواسم السابقة تُعرض داخل المنصة
+//                للاطلاع فقط (في اللوحة والتقارير)؛ أعمدة Excel موحّدة للتصدير والاستيراد (XL_SHEETS) مع «النتيجة قبل الاعتراض».
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -267,34 +271,121 @@ async function exportComplaintWord(secret, c) {
   downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead)), `ملف-الشكوى-${c.complaint_number}.docx`);
 }
 
-// تصدير كامل للأدمن: الشكاوى والجلسات والإحالات — في ملف واحد
-async function exportAllToExcel(secret, complaints) {
+// أعمدة ملف الموسم في Excel: [الحقل في القاعدة، العنوان في الملف، تاريخ؟] — التصدير والاستيراد يستخدمانها معاً،
+// فأي ملف تصدّره المنصة يمكن إعادته إليها (أرشفة المواسم وفتحها للتعديل)
+const XL_SHEETS = [
+  { name: "الشكاوى", key: "complaints", cols: [
+    ["season", "الموسم"], ["complaint_number", "رقم الشكوى"], ["received_date", "تاريخ الشكوى", true], ["status", "الحالة"],
+    ["title", "عنوان الاعتراض"], ["complainant_name", "المشتكي"], ["complainant_role", "صفة المشتكي"], ["phone_number", "رقم الهاتف"],
+    ["contact_number", "واتس / تلغرام"], ["accused_name", "المشتكى عليه"], ["accused_role", "صفة المشتكى عليه"], ["subject", "نص الشكوى"],
+    ["classification", "التصنيف"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الشكوى"], ["complainant_result", "النتيجة للمشتكي"],
+    ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
+    ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
+    ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"],
+    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["updated_at", "آخر تعديل", true]] },
+  { name: "الجلسات", key: "sessions", cols: [
+    ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
+    ["location", "المكان"], ["topic", "موضوع الجلسة"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"]] },
+  { name: "الإحالات", key: "referrals", cols: [
+    ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
+];
+
+// جلب جلسات وإحالات مجموعة شكاوى (الموسم المختار) من القاعدة
+async function fetchSeasonParts(secret, complaints) {
   const [s, r] = await Promise.all([
     sb.rpc("admin_list_sessions", { p_secret: secret, p_complaint_id: null }),
     sb.rpc("admin_list_referrals", { p_secret: secret }),
   ]);
   if (s.error) throw new Error(NET_ERR);
-  // الجلسات: فقط ما يخص الشكاوى المصدَّرة (الموسم المختار)
   const nums = new Set(complaints.map(c => c.complaint_number));
-  const sess = (s.data || []).filter(x => nums.has(x.complaint_number));
-  const refs = (r.data || []).filter(x => nums.has(x.complaint_number));   // فارغة إن لم يُنفَّذ القسم 25
-  await saveWorkbook([
-    { name: "الشكاوى",
-      headers: ["الموسم", "رقم الشكوى", "تاريخ الشكوى", "الحالة", "عنوان الاعتراض", "المشتكي", "صفة المشتكي", "رقم الهاتف", "واتس / تلغرام", "المشتكى عليه", "صفة المشتكى عليه",
-                "نص الشكوى", "التصنيف", "مُحالة إلى", "نتيجة الشكوى", "النتيجة للمشتكي", "النتيجة للمعترض", "تاريخ الإغلاق", "رمز المتابعة", "تنبيه المتابعة", "المطلوب عند التنبيه",
-                "ملخص للمشتكى عليه", "آخر موعد للاعتراض", "سبب التمديد الاستثنائي", "نص الاعتراض", "تاريخ الاعتراض", "آخر تعديل"],
-      rows: complaints.map(c => [c.season, c.complaint_number, xlDate(c.received_date), c.status, c.title, c.complainant_name, c.complainant_role, c.phone_number,
-                c.contact_number, c.accused_name, c.accused_role, c.subject, c.classification, c.referred_to, c.result, c.complainant_result, c.accused_result,
-                xlDate(c.closed_date), c.tracking_code,
-                xlDate(c.reminder_at), c.reminder_note, c.objection_summary, xlDate(c.objection_deadline), c.objection_extension_reason, c.objection_text,
-                xlDate(c.objection_at), xlDate(c.updated_at)]) },
-    { name: "الجلسات",
-      headers: ["رقم الشكوى", "المشتكي", "تاريخ ووقت الجلسة", "عنوان الجلسة", "المكان", "موضوع الجلسة", "مُحالة إلى", "نتيجة الجلسة", "حالة الشكوى"],
-      rows: sess.map(x => [x.complaint_number, x.complainant_name, xlDate(x.session_at), x.title, x.location, x.topic, x.referred_to, x.result, x.status]) },
-    { name: "الإحالات",
-      headers: ["رقم الشكوى", "تاريخ الإحالة", "مُحالة إلى"],
-      rows: refs.map(x => [x.complaint_number, xlDate(x.referred_at), x.referred_to]) },
-  ], `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`);
+  return { sessions: (s.data || []).filter(x => nums.has(x.complaint_number)),
+           referrals: (r.data || []).filter(x => nums.has(x.complaint_number)) };   // فارغة إن لم يُنفَّذ القسم 25
+}
+
+// تصدير كامل للأدمن: الشكاوى والجلسات والإحالات — في ملف واحد (opts.lock = false لقالب غير مقفول)
+async function exportAllToExcel(secret, complaints, filename, opts = {}) {
+  const parts = complaints.length ? await fetchSeasonParts(secret, complaints) : { sessions: [], referrals: [] };
+  const data = { complaints, ...parts };
+  await saveWorkbook(XL_SHEETS.map(sh => ({
+    name: sh.name, headers: sh.cols.map(c => c[1]),
+    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate ? xlDate(x[f]) : x[f])),
+  })), filename || `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`, opts);
+  return { complaints: complaints.length, sessions: parts.sessions.length };
+}
+
+// قيمة خلية من ملف موسم بصيغة القاعدة: التاريخ ← ISO (أو null إن تعذّر)، والنص ← نص مقصوص (أو null إن كان فارغاً)
+function cellToField(v, isDate) {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  if (!isDate) return String(v).trim();
+  if (v instanceof Date) return isNaN(v) ? null : v.toISOString();
+  const m = String(v).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 12, m[5] ? +m[5] : 0);   // اليوم وحده ← منتصف النهار
+  return isNaN(d) ? null : d.toISOString();
+}
+
+// قراءة ملف موسم (Excel أو Google Sheet مصدَّر) إلى {complaints, sessions, referrals} بأسماء حقول القاعدة.
+// الورقة تُعرف باسمها، أو بعناوينها إن تغيّر الاسم؛ الأعمدة تُعرف بعناوينها (ترتيبها لا يهم، والناقص يبقى فارغاً)
+async function readSeasonBook(buf) {
+  const XLSX = await loadXLSX();
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const out = {};
+  XL_SHEETS.forEach(sh => {
+    const marker = sh.cols[sh.key === "complaints" ? 11 : sh.key === "sessions" ? 2 : 1][1];   // عنوان يميّز الورقة
+    const name = wb.SheetNames.find(n => n.trim() === sh.name) || wb.SheetNames.find(n => {
+      const first = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, range: 0 })[0] || [];
+      return first.some(h => String(h).trim() === marker);
+    });
+    if (!name) { out[sh.key] = []; return; }
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
+    const head = (aoa[0] || []).map(h => String(h).trim());
+    const idx = sh.cols.map(c => head.indexOf(c[1]));
+    out[sh.key] = aoa.slice(1)
+      .filter(r => r.some(v => String(v ?? "").trim() !== ""))
+      .map((r, i) => Object.fromEntries([["_row", i + 2], ...sh.cols.map(([f, , isDate], k) => [f, idx[k] < 0 ? null : cellToField(r[idx[k]], isDate)])]));
+  });
+  return out;
+}
+
+// تجهيز ملف موسم للإدخال في القاعدة: الموسم المحدد لكل شكوى، رقم تلقائي للناقص، الحالة الفارغة = «مغلقة»،
+// ومراجعة الأخطاء (رقم مكرر، حقل إلزامي فارغ، حالة غير معروفة، جلسة لشكوى غير موجودة) — تُرجع {data, errors}
+function prepareSeason(book, season) {
+  const errors = [];
+  const complaints = book.complaints.map(c => ({ ...c, season, status: c.status || CLOSED }));
+  // الأرقام الناقصة: بعد أكبر رقم في الملف (الموسم-00001 …)
+  let next = Math.max(0, ...complaints.map(c => Number(((c.complaint_number || "").match(/-(\d+)$/) || [])[1]) || 0));
+  complaints.forEach(c => { if (!c.complaint_number) c.complaint_number = `${season}-${String(++next).padStart(5, "0")}`; });
+  const seen = new Set();
+  complaints.forEach(c => {
+    const at = `الشكاوى، السطر ${c._row}`;
+    if (seen.has(c.complaint_number)) errors.push(`${at}: الرقم ${c.complaint_number} مكرر.`);
+    seen.add(c.complaint_number);
+    if (!c.complainant_name || !c.accused_name || !c.subject) errors.push(`${at}: اسم المشتكي واسم المشتكى عليه ونص الشكوى إلزامية.`);
+    if (!STATUSES.includes(c.status)) errors.push(`${at}: الحالة «${c.status}» غير معروفة.`);
+  });
+  const sessions = book.sessions.filter(s => s.complaint_number || s.topic || s.result);
+  sessions.forEach(s => {
+    const at = `الجلسات، السطر ${s._row}`;
+    if (!seen.has(s.complaint_number)) errors.push(`${at}: لا توجد شكوى برقم «${s.complaint_number || ""}».`);
+    if (s.status && !STATUSES.includes(s.status)) errors.push(`${at}: الحالة «${s.status}» غير معروفة.`);
+  });
+  const referrals = book.referrals.filter(x => x.referred_to && seen.has(x.complaint_number));
+  if (!complaints.length) errors.push("لا توجد شكاوى في الملف (ورقة «الشكاوى»).");
+  return { data: { complaints, sessions, referrals }, errors };
+}
+
+// رقم ملف Google Sheet من رابطه (…/spreadsheets/d/<الرقم>/…)
+const sheetIdOf = url => (String(url || "").match(/\/spreadsheets\/d\/([\w-]{20,})/) || [])[1] || null;
+const SHARE_ERR = "تعذّر فتح الملف من Google. تأكد أنه محفوظ كملف Google Sheets، ومشارَك «أي شخص لديه الرابط — عارض».";
+
+// جلب ملف موسم من Google Sheets كملف Excel (يعمل للملف المشارَك «أي شخص لديه الرابط»، بلا مفتاح)
+async function fetchSheetFile(url) {
+  const id = sheetIdOf(url);
+  if (!id) throw new Error("هذا ليس رابط ملف Google Sheets (يجب أن يحتوي ‎/spreadsheets/d/‎).");
+  let r;
+  try { r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`); } catch { throw new Error(SHARE_ERR); }
+  if (!r.ok || /text\/html/i.test(r.headers.get("content-type") || "")) throw new Error(SHARE_ERR);
+  return r.arrayBuffer();
 }
 
 // متابعة الجزء بعد # في الرابط (لاختيار الصفحة)
@@ -1124,7 +1215,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "decisions" && <AdminDecisions secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
-        {current === "archive" && <AdminPastSeasons secret={secret} isManager={isManager} />}
+        {current === "archive" && <AdminPastSeasons secret={secret} isManager={isManager} rows={rows} />}
         {current === "complaints" && <AdminComplaints key={start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
                                    initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} />}
         {current === "sessions" && <AdminSessions secret={secret} version={sessVer} onOpen={c => openComplaint(c)} />}
@@ -1668,7 +1759,7 @@ function AdminSettings({ secret, rows, reload }) {
   return (
     <div>
     <ExportCard secret={secret} rows={rows} />
-    <PastSeasonsCard secret={secret} />
+    <SeasonArchiveCard secret={secret} rows={rows} reload={reload} />
     <SeasonCard secret={secret} reload={reload} />
     <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
       hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
@@ -1818,115 +1909,261 @@ function ExcelLockCard({ secret }) {
 }
 
 // ---------------------------------------------------------------------
-// المواسم السابقة (1446، 1445…): كل موسم ملف Google Sheet على Drive تعدّل عليه الإدارة وتضيف مباشرة؛
-// المنصة تحفظ الروابط فقط (past_seasons) وتعرضها في قسم «📚 المواسم السابقة» وفي صفحة التقارير
+// المواسم السابقة (1446، 1445…): Supabase يحفظ الموسم الحالي فقط؛ كل موسم ينتهي يُؤرشف في ملف Google Sheets
+// للعرض فقط (رابطه في past_seasons) ويُحذف من القاعدة. يُعرض داخل المنصة للجميع (اللوحة والتقارير) دون تعديل،
+// والمسؤول وحده يفتحه للتعديل: يعيده من ملفه إلى القاعدة مؤقتاً، ثم يؤرشفه من جديد
 // ---------------------------------------------------------------------
-// أعمدة قالب الموسم السابق (نفس ترتيب تصدير المنصة تقريباً)
-const PAST_HEADERS = ["الموسم", "رقم الشكوى", "تاريخ الشكوى", "الحالة", "عنوان الشكوى", "المشتكي", "صفة المشتكي", "رقم الهاتف",
-  "المشتكى عليه", "صفة المشتكى عليه", "نص الشكوى", "التصنيف", "مُحالة إلى", "الجلسات (التاريخ — الموضوع — النتيجة)",
-  "نتيجة الشكوى", "الاعتراض", "نتيجة الاعتراض", "تاريخ الإغلاق", "ملاحظات"];
+// ترتيب المواسم من الأحدث
+const bySeasonDesc = list => [...list].sort((a, b) => String(b.season).localeCompare(String(a.season)));
 
-// تنزيل قالب Excel فارغ (غير مقفول) لموسم سابق: ورقة الشكاوى بسطر مثال، وورقة القوائم المعتمدة
-function downloadPastTemplate(season) {
-  const example = [season, `${season}-00001`, "", "مغلقة", "", "", "حاج", "", "", "", "", "", "", "", "", "", "", "", "سطر مثال — احذفه"];
-  const lists = [["الحالات", "التصنيفات", "الصفات"],
-    ...Array.from({ length: Math.max(STATUSES.length, CLASSIFICATIONS.length, ROLES.length) }, (_, i) => [STATUSES.at(i) || "", CLASSIFICATIONS.at(i) || "", ROLES.at(i) || ""])];
-  return saveWorkbook([
-    { name: `شكاوى موسم ${season}`, headers: PAST_HEADERS, rows: [example] },
-    { name: "القوائم", headers: lists[0], rows: lists.slice(1) },
-  ], `قالب-موسم-${season}.xlsx`, { lock: false });
+// جلب روابط المواسم السابقة (للأدمن): [القائمة أو null أثناء الجلب، رسالة الخطأ، إعادة الجلب]
+function usePastSeasons(secret) {
+  const [list, setList] = useState(null);
+  const [error, setError] = useState("");
+  const load = useCallback(() => sb.rpc("admin_get_past_seasons", { p_secret: secret }).then(({ data, error }) => {
+    if (error) { setList([]); setError("تعذّر جلب المواسم السابقة (نفّذ القسم 31 من schema.sql في Supabase)."); }
+    else setList(Array.isArray(data) ? data : []);
+  }), [secret]);
+  useEffect(() => { load(); }, [load]);
+  return [list, error, load];
 }
 
-// قسم «📚 المواسم السابقة» (للجميع في اللوحة): بطاقة لكل موسم بزر فتحه في Google Sheets
-function AdminPastSeasons({ secret, isManager }) {
-  const [list, setList] = useState(null);
-  const [msg, setMsg] = useState(null);
-  useEffect(() => {
-    sb.rpc("admin_get_past_seasons", { p_secret: secret }).then(({ data, error }) => {
-      if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 31 من schema.sql في Supabase)." }); }
-      setList(Array.isArray(data) ? data : []);
-    });
-  }, [secret]);
+// قسم «📚 المواسم السابقة» (للجميع في اللوحة): بطاقة لكل موسم تفتح ملفه داخل المنصة للاطلاع فقط
+function AdminPastSeasons({ secret, isManager, rows }) {
+  const [list, error] = usePastSeasons(secret);
+  const [viewing, setViewing] = useState(null);
+  const inDb = new Set((rows || []).map(c => c.season));
   if (list === null) return <Loading />;
   return (
     <div>
-      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-      <p className="muted" style={{ marginTop: 0 }}>شكاوى المواسم السابقة محفوظة في ملفات Google Sheets على Drive؛ التعديل والإضافة تتمّان في الملف مباشرة.</p>
+      {error && <Alert type="error">{error}</Alert>}
+      <p className="muted" style={{ marginTop: 0 }}>كل موسم سابق محفوظ في ملف على Google Drive، ويُعرض هنا للاطلاع فقط.
+        {isManager ? " لتعديل موسم: «الإعدادات ← 📚 أرشفة المواسم ← فتح للتعديل»." : ""}</p>
       {list.length === 0 ? (
-        <div className="card"><p className="muted" style={{ margin: 0 }}>لم تُضف مواسم سابقة بعد.{isManager ? " أضفها من «الإعدادات ← 📚 المواسم السابقة»." : ""}</p></div>
+        <div className="card"><p className="muted" style={{ margin: 0 }}>لا توجد مواسم مؤرشفة بعد.</p></div>
       ) : (
         <div className="past-grid">
-          {[...list].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => (
-            <a key={x.season} className="past-card" href={x.url} target="_blank" rel="noopener">
+          {bySeasonDesc(list).map(x => (
+            <button type="button" key={x.season} className="past-card" onClick={() => setViewing(x)}>
               <span className="past-icon">📊</span>
               <b>موسم {x.season}</b>
-              <small>فتح في Google Sheets ↗</small>
-            </a>
+              <small>{inDb.has(x.season) ? "🔓 مفتوح للتعديل الآن في «الشكاوى»" : "عرض داخل المنصة"}</small>
+            </button>
           ))}
         </div>
       )}
+      {viewing && <ExcelViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
     </div>
   );
 }
 
-// بطاقة الإعدادات «📚 المواسم السابقة»: إضافة موسم برابطه، حذفه، وتنزيل قالب فارغ مع خطوات الرفع إلى Drive
-function PastSeasonsCard({ secret }) {
-  const [list, setList] = useState(null);
-  const [form, setForm] = useState({ season: "", url: "" });
-  const [busy, setBusy] = useState(false);
+// رسائل نتائج الاستعادة والحذف من القاعدة
+const RESTORE_MSG = {
+  CURRENT: "هذا هو الموسم الحالي؛ لا يُستعاد فوق نفسه.",
+  EXISTS: "لهذا الموسم شكاوى في القاعدة الآن (مفتوح للتعديل أصلاً).",
+  DUPLICATE: "بعض أرقام الشكاوى في الملف موجودة في موسم آخر في القاعدة.",
+  INVALID: "تعذّرت الاستعادة: للمسؤول فقط، والملف يجب أن يحتوي شكاوى.",
+};
+const DELETE_MSG = {
+  WRONG_CODE: "رمز التصفير غير صحيح.",
+  NO_CODE: "لم يُعيَّن رمز التصفير بعد. عيّنه من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمزك');",
+  CURRENT: "لا يُؤرشف الموسم الحالي. ابدأ الموسم الجديد أولاً من بطاقة «🕋 الموسم».",
+  NO_ARCHIVE: "لم يُحفظ رابط ملف الموسم بعد.",
+  INVALID: "موسم غير صالح.",
+};
+
+// بطاقة الإعدادات «📚 أرشفة المواسم» (للمسؤول): أرشفة موسم منتهٍ، والمواسم المؤرشفة (عرض، فتح للتعديل، حذف الرابط)،
+// وإدخال موسم سابق من ملف Excel
+function SeasonArchiveCard({ secret, rows, reload }) {
+  const [list, listError, reloadList] = usePastSeasons(secret);
+  const [info, setInfo] = useState(null);              // الموسم الحالي والمواسم في القاعدة
+  const [season, setSeason] = useState("");            // الموسم المختار للأرشفة
+  const [url, setUrl] = useState("");
+  const [check, setCheck] = useState(null);            // نتيجة فحص الرابط {ok, text}
+  const [code, setCode] = useState("");
+  const [localSeason, setLocalSeason] = useState("");  // موسم الملف المستورد من الجهاز
+  const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
-  useEffect(() => {
-    sb.rpc("admin_get_past_seasons", { p_secret: secret }).then(({ data, error }) => {
-      if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 31 من schema.sql في Supabase)." }); }
-      setList(Array.isArray(data) ? data : []);
-    });
+  const [viewing, setViewing] = useState(null);
+
+  // المواسم في القاعدة (مع أعدادها) والموسم الحالي
+  const loadInfo = useCallback(async () => {
+    const { data } = await sb.rpc("admin_get_season", { p_secret: secret });
+    setInfo(data || { current: "", seasons: [] });
   }, [secret]);
+  useEffect(() => { loadInfo(); }, [loadInfo]);
 
-  // حفظ القائمة كاملة
-  async function persist(next, okText) {
-    setBusy(true); setMsg(null);
-    const { data, error } = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: next });
-    setBusy(false);
-    if (error || data !== "OK") return setMsg({ type: "error", text: "تعذّر الحفظ. تأكد أن الموسم 4 أرقام والرابط يبدأ بـ https://" });
-    setList(next); setMsg({ type: "ok", text: okText });
+  const archived = Object.fromEntries((list || []).map(x => [x.season, x.url]));
+  const inDb = new Set(((info && info.seasons) || []).map(x => x.season));
+  const candidates = ((info && info.seasons) || []).filter(x => x.season !== info.current);
+  const seasonRows = (rows || []).filter(c => c.season === season);
+
+  // اختيار موسم للأرشفة: رابطه السابق (إن وُجد) ومسح الفحص
+  function pick(v) { setSeason(v); setUrl(archived[v] || ""); setCheck(null); setMsg(null); }
+
+  // تشغيل خطوة مع حالة الانشغال والرسائل
+  async function run(label, fn) {
+    setBusy(label); setMsg(null);
+    try { await fn(); } catch (e) { setMsg({ type: "error", text: (e && e.message) || NET_ERR }); }
+    setBusy("");
+  }
+  const refreshAll = async () => { await Promise.all([reloadList(), loadInfo()]); reload(); };
+
+  // 1) تنزيل ملف الموسم (Excel مقفول)
+  const download = () => run("download", async () => {
+    const n = await exportAllToExcel(secret, seasonRows, `موسم-${season}.xlsx`);
+    setMsg({ type: "ok", text: `✅ نُزّل ملف موسم ${season}: ${n.complaints} شكوى و${n.sessions} جلسة. ارفعه الآن إلى Google Drive.` });
+  });
+
+  // 4) فحص الرابط: المنصة تقرأ الملف من Google، وأعداده وأرقامه تطابق القاعدة
+  const verify = () => run("check", async () => {
+    setCheck(null);
+    const book = await readSeasonBook(await fetchSheetFile(url.trim()));
+    const parts = await fetchSeasonParts(secret, seasonRows);
+    const fileNums = new Set(book.complaints.map(c => c.complaint_number));
+    const same = book.complaints.length === seasonRows.length && seasonRows.every(c => fileNums.has(c.complaint_number))
+      && book.sessions.length === parts.sessions.length;
+    setCheck(same
+      ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${seasonRows.length} شكوى و${parts.sessions.length} جلسة.` }
+      : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${book.complaints.length} شكوى و${book.sessions.length} جلسة، والقاعدة فيها ${seasonRows.length} شكوى و${parts.sessions.length} جلسة. نزّل الملف من جديد وارفعه.` });
+  });
+
+  // 5) حفظ الرابط ثم حذف الموسم من القاعدة (برمز التصفير)
+  const archive = () => run("archive", async () => {
+    if (!window.confirm(`حفظ رابط موسم ${season} ثم حذف شكاواه (${seasonRows.length}) وجلساتها من القاعدة؟\nيبقى الموسم معروضاً من ملفه على Google.`)) return;
+    const next = [...(list || []).filter(x => x.season !== season), { season, url: url.trim() }];
+    const saved = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: next });
+    if (saved.error || saved.data !== "OK") throw new Error("تعذّر حفظ الرابط (نفّذ القسم 31 من schema.sql).");
+    const { data, error } = await sb.rpc("admin_delete_season", { p_secret: secret, p_reset_code: code, p_season: season });
+    await reloadList();
+    if (error) throw new Error("حُفظ الرابط، وتعذّر الحذف من القاعدة (نفّذ القسم 32 من schema.sql).");
+    if (!String(data).startsWith("OK")) throw new Error(`حُفظ الرابط، ولم يُحذف الموسم: ${DELETE_MSG[data] || data}`);
+    setCode(""); setCheck(null); setSeason(""); setUrl("");
+    await refreshAll();
+    setMsg({ type: "ok", text: `✅ أُرشف موسم ${season}: حُذفت ${String(data).slice(3)} شكوى من القاعدة، والموسم معروض من ملفه في «📚 المواسم السابقة».` });
+  });
+
+  // إدخال ملف موسم في القاعدة (فتح موسم مؤرشف للتعديل، أو موسم سابق من ملف على الجهاز)
+  async function restore(target, buf) {
+    const { data: ready, errors } = prepareSeason(await readSeasonBook(buf), target);
+    if (errors.length) throw new Error(`في الملف ${errors.length} خطأ؛ صحّحه ثم أعد المحاولة:\n• ${errors.slice(0, 8).join("\n• ")}${errors.length > 8 ? "\n…" : ""}`);
+    if (!window.confirm(`إدخال موسم ${target} في القاعدة: ${ready.complaints.length} شكوى و${ready.sessions.length} جلسة؟`)) return false;
+    const { data, error } = await sb.rpc("admin_restore_season", { p_secret: secret, p_season: target,
+      p_complaints: ready.complaints, p_sessions: ready.sessions, p_referrals: ready.referrals });
+    if (error) throw new Error(`تعذّر الإدخال (نفّذ القسم 32 من schema.sql). ${error.message || ""}`);
+    if (!String(data).startsWith("OK")) throw new Error(RESTORE_MSG[data] || data);
+    await refreshAll();
+    return true;
   }
 
-  // إضافة موسم (أو تحديث رابطه إن كان موجوداً)
-  function add(e) {
-    e.preventDefault();
-    const season = form.season.trim(), url = form.url.trim();
-    if (!/^\d{4}$/.test(season)) return setMsg({ type: "error", text: "اكتب الموسم بأربعة أرقام، مثل 1446." });
-    if (!/^https:\/\//i.test(url)) return setMsg({ type: "error", text: "الصق رابط ملف Google Sheet (يبدأ بـ https://)." });
-    setForm({ season: "", url: "" });
-    persist([...(list || []).filter(x => x.season !== season), { season, url }], `✅ حُفظ موسم ${season}.`);
-  }
-  const remove = season => { if (window.confirm(`حذف رابط موسم ${season}؟ (الملف على Drive لا يُحذف)`)) persist(list.filter(x => x.season !== season), `حُذف رابط موسم ${season}.`); };
+  // فتح موسم مؤرشف للتعديل: من ملفه على Google إلى القاعدة
+  const reopen = x => run(`open-${x.season}`, async () => {
+    if (await restore(x.season, await fetchSheetFile(x.url)))
+      setMsg({ type: "ok", text: `🔓 موسم ${x.season} مفتوح للتعديل في «الشكاوى» (اختر الموسم ${x.season} في التصفية). بعد الانتهاء أعد أرشفته من «أرشفة موسم» أعلاه.` });
+  });
 
+  // إدخال موسم سابق من ملف Excel على الجهاز (القالب أو ملف مصدَّر)
+  const importFile = file => file && run("import", async () => {
+    const target = localSeason.trim();
+    if (!/^\d{4}$/.test(target)) throw new Error("اكتب الموسم بأربعة أرقام أولاً، مثل 1445.");
+    if (archived[target]) throw new Error(`لموسم ${target} ملف مؤرشف؛ افتحه للتعديل من قائمة المواسم المؤرشفة.`);
+    if (await restore(target, await file.arrayBuffer())) {
+      setLocalSeason("");
+      setMsg({ type: "ok", text: `✅ أُدخل موسم ${target} في القاعدة. راجعه في «الشكاوى»، ثم أرشفه من «أرشفة موسم» أعلاه.` });
+    }
+  });
+
+  // حذف رابط موسم من القائمة (الملف على Drive لا يُحذف)
+  const removeLink = x => run(`del-${x.season}`, async () => {
+    const warn = inDb.has(x.season) ? "" : "\nالموسم غير موجود في القاعدة، فسيختفي من المنصة (ويبقى ملفه على Drive).";
+    if (!window.confirm(`حذف رابط موسم ${x.season}؟${warn}`)) return;
+    const { data, error } = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: list.filter(y => y.season !== x.season) });
+    if (error || data !== "OK") throw new Error("تعذّر الحذف.");
+    await reloadList();
+  });
+
+  // العرض: أرشفة موسم (خطوات) ← المواسم المؤرشفة ← إدخال موسم سابق من ملف
+  if (list === null || info === null) return <div className="card"><Loading /></div>;
   return (
     <div className="card">
-      <h2>📚 المواسم السابقة (Google Sheets)</h2>
-      <ol className="past-steps">
-        <li>نزّل القالب: <button type="button" className="btn secondary sm" onClick={() => downloadPastTemplate("1446")}>⬇ قالب 1446</button> <button type="button" className="btn secondary sm" onClick={() => downloadPastTemplate("1445")}>⬇ قالب 1445</button></li>
-        <li>ارفعه إلى Google Drive، ثم افتحه بـ «Google Sheets» واحفظه كملف Google Sheets (ملف ← حفظ كجدول بيانات Google).</li>
-        <li>شارِكه مع موظفي الإدارة بصلاحية «محرّر» ليعدّلوا ويضيفوا.</li>
-        <li>انسخ رابط الملف والصقه هنا مع رقم الموسم.</li>
-      </ol>
-      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-      <form className="row" onSubmit={add}>
-        <input type="text" inputMode="numeric" dir="ltr" maxLength={4} placeholder="1446" value={form.season} onChange={e => setForm(f => ({ ...f, season: e.target.value }))} style={{ width: 110, flex: "0 0 110px" }} />
-        <input type="url" dir="ltr" placeholder="https://docs.google.com/spreadsheets/..." value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} />
-        <button className="btn" disabled={busy}>➕ حفظ</button>
-      </form>
-      {list && list.length > 0 && (
+      <h2>📚 أرشفة المواسم (Google Drive)</h2>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>Supabase يحفظ الموسم الحالي فقط. كل موسم ينتهي يُحفظ في ملف Google Sheets للعرض فقط،
+        ويُحذف من القاعدة، ويبقى معروضاً للجميع في «📚 المواسم السابقة» وفي صفحة التقارير. التعديل من المنصة فقط.</p>
+      {listError && <Alert type="error">{listError}</Alert>}
+      {msg && <Alert type={msg.type}><span style={{ whiteSpace: "pre-line" }}>{msg.text}</span></Alert>}
+
+      <h3 className="archive-sub">🗄️ أرشفة موسم</h3>
+      {candidates.length === 0 ? (
+        <p className="muted" style={{ fontSize: 14 }}>لا يوجد في القاعدة موسم غير الحالي ({info.current || "—"}). عند انتهاء الموسم: ابدأ الموسم الجديد من بطاقة «🕋 الموسم»، ثم أرشف القديم هنا.</p>
+      ) : (
+        <>
+          <select value={season} onChange={e => pick(e.target.value)} style={{ width: "auto", minWidth: 200 }} aria-label="الموسم">
+            <option value="">— اختر الموسم —</option>
+            {candidates.map(x => <option key={x.season} value={x.season}>موسم {x.season} ({x.total} شكوى){archived[x.season] ? " · مفتوح للتعديل" : ""}</option>)}
+          </select>
+          {season && (
+            <ol className="past-steps" style={{ marginTop: 12 }}>
+              <li>نزّل ملف الموسم: <button type="button" className="btn secondary sm" disabled={!!busy} onClick={download}>{busy === "download" ? "جارٍ التنزيل…" : `⬇ موسم-${season}.xlsx`}</button></li>
+              {archived[season] ? (
+                <li>افتح ملف الموسم الحالي على Google ← <b>ملف ← استيراد ← رفع</b> ← اختر الملف ← <b>استبدال جدول البيانات</b> (يبقى الرابط نفسه).</li>
+              ) : (
+                <li>ارفعه إلى Google Drive، وافتحه بـ Google Sheets، ثم <b>ملف ← حفظ كجدول بيانات Google</b>.</li>
+              )}
+              <li><b>مشاركة ← الوصول العام: «أي شخص لديه الرابط» بدور «عارض»</b>. لا تعطِ أحداً دور «محرّر»، فيبقى الملف للعرض فقط.</li>
+              <li>
+                الصق رابط ملف Google Sheets ثم افحصه:
+                <div className="row" style={{ flexWrap: "nowrap", marginTop: 4 }}>
+                  <input type="url" dir="ltr" className="grow" placeholder="https://docs.google.com/spreadsheets/d/…" value={url}
+                    onChange={e => { setUrl(e.target.value); setCheck(null); }} />
+                  <button type="button" className="btn secondary" disabled={!!busy || !url.trim()} onClick={verify}>{busy === "check" ? "جارٍ الفحص…" : "🔍 فحص"}</button>
+                </div>
+                {check && <Alert type={check.ok ? "ok" : "error"}>{check.text}</Alert>}
+              </li>
+              <li>
+                حذف الموسم من القاعدة (برمز التصفير الخاص):
+                <div className="row" style={{ flexWrap: "nowrap", marginTop: 4 }}>
+                  <input className="secret-input grow" type="password" placeholder="رمز التصفير" value={code} onChange={e => setCode(e.target.value)}
+                    autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" />
+                  <button type="button" className="btn danger" disabled={!!busy || !(check && check.ok) || !code} onClick={archive}>
+                    {busy === "archive" ? "جارٍ التنفيذ…" : "🗄️ حفظ الرابط وحذف الموسم"}
+                  </button>
+                </div>
+              </li>
+            </ol>
+          )}
+        </>
+      )}
+
+      <h3 className="archive-sub">📚 المواسم المؤرشفة</h3>
+      {list.length === 0 ? <p className="muted" style={{ fontSize: 14 }}>لا توجد مواسم مؤرشفة بعد.</p> : (
         <ul className="list-items">
-          {[...list].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => (
+          {bySeasonDesc(list).map(x => (
             <li key={x.season}>
-              <span><b>موسم {x.season}</b> · <a href={x.url} target="_blank" rel="noopener">فتح ↗</a></span>
-              <button type="button" className="btn danger-text" disabled={busy} onClick={() => remove(x.season)}>حذف</button>
+              <span><b>موسم {x.season}</b>{inDb.has(x.season) && <span className="readonly-tag" style={{ marginInlineStart: 6 }}>🔓 مفتوح للتعديل</span>}</span>
+              <span className="row" style={{ gap: 6 }}>
+                <button type="button" className="btn secondary sm" onClick={() => setViewing(x)}>👁️ عرض</button>
+                {!inDb.has(x.season) && (
+                  <button type="button" className="btn secondary sm" disabled={!!busy} onClick={() => reopen(x)}>{busy === `open-${x.season}` ? "جارٍ الفتح…" : "🔓 فتح للتعديل"}</button>
+                )}
+                <button type="button" className="btn danger-text" disabled={!!busy} onClick={() => removeLink(x)}>حذف الرابط</button>
+              </span>
             </li>
           ))}
         </ul>
       )}
+
+      <h3 className="archive-sub">📤 إدخال موسم سابق من ملف Excel</h3>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>لإدخال موسم قديم بتواريخه الأصلية: املأ القالب (ورقة الشكاوى، والجلسات، والإحالات؛ الحالة الفارغة = «مغلقة»، والرقم الفارغ يُولَّد تلقائياً)،
+        ثم اكتب الموسم واختر الملف. يدخل الموسم القاعدة لتراجعه، ثم تؤرشفه.</p>
+      <div className="row">
+        <button type="button" className="btn secondary sm" disabled={!!busy} onClick={() => run("tpl", () => exportAllToExcel(secret, [], "قالب-موسم.xlsx", { lock: false }))}>⬇ القالب الفارغ</button>
+        <input type="text" inputMode="numeric" dir="ltr" maxLength={4} placeholder="1445" value={localSeason} onChange={e => setLocalSeason(e.target.value)} style={{ width: 110, flex: "0 0 110px" }} aria-label="الموسم" />
+        <label className={`btn sm${busy ? " disabled" : ""}`}>
+          {busy === "import" ? "جارٍ الإدخال…" : "📤 اختيار الملف"}
+          <input type="file" accept=".xlsx,.xls" hidden disabled={!!busy} onChange={e => { importFile(e.target.files[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+      {viewing && <ExcelViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -2025,10 +2262,10 @@ function SeasonCard({ secret, reload }) {
   );
 }
 
-// استعراض نسخة Excel محفوظة على الجهاز (للاطلاع فقط): يُقرأ الملف داخل المتصفح ولا يُرفع إلى أي مكان
-// ولا يغيّر شيئاً في المنصة. لكل ورقة: بحث، تصفية بعمود وقيمة، فرز بالضغط على العنوان، اختيار الأعمدة
-// الظاهرة، عدد الأسطر مع صفحات، والضغط على أي صف يفتح «بطاقته» بكل الحقول
-function ExcelViewer({ onClose }) {
+// استعراض نسخة Excel محفوظة على الجهاز، أو ملف موسم سابق من رابطه على Google (source = {title, url}) — للاطلاع فقط:
+// يُقرأ الملف داخل المتصفح ولا يُرفع إلى أي مكان ولا يغيّر شيئاً في المنصة. لكل ورقة: بحث، تصفية بعمود وقيمة،
+// فرز بالضغط على العنوان، اختيار الأعمدة الظاهرة، عدد الأسطر مع صفحات، والضغط على أي صف يفتح «بطاقته» بكل الحقول
+function ExcelViewer({ onClose, source }) {
   // الملف المقروء {name, sheets:[{name, rows}]}، الورقة المعروضة، وحالة القراءة
   const [book, setBook] = useState(null);
   const [active, setActive] = useState(0);
@@ -2050,19 +2287,23 @@ function ExcelViewer({ onClose }) {
     setHidden([]); setShowCols(false); setPage(0); setCardAt(null);
   }
 
-  // قراءة الملف المختار: كل ورقة ← مصفوفة صفوف (الصف الأول = العناوين)
-  async function open(file) {
-    if (!file) return;
+  // قراءة ملف (من الجهاز أو من Google): كل ورقة ← مصفوفة صفوف (الصف الأول = العناوين)
+  async function load(name, getBuf, badFile) {
     setBusy(true); setError(""); setBook(null);
     try {
+      const buf = await getBuf();
       const XLSX = await loadXLSX();
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const sheets = wb.SheetNames.map(n => ({ name: n,
         rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "", raw: false, dateNF: "yyyy-mm-dd hh:mm" }) }));
-      setBook({ name: file.name, sheets }); setActive(0); resetView();
-    } catch (e) { setError("تعذّر قراءة الملف. تأكد أنه ملف Excel ‎(.xlsx)."); }
+      setBook({ name, sheets }); setActive(0); resetView();
+    } catch (e) { setError(e && e.message && !badFile ? e.message : "تعذّر قراءة الملف. تأكد أنه ملف Excel ‎(.xlsx)."); }
     setBusy(false);
   }
+  const open = file => file && load(file.name, () => file.arrayBuffer(), true);
+
+  // ملف موسم سابق: يُجلب من Google عند فتح النافذة
+  useEffect(() => { if (source) load(source.title, () => fetchSheetFile(source.url), false); }, [source && source.url]);
 
   // الورقة الحالية: العناوين، والأعمدة الظاهرة (بأرقامها)
   const sheet = book && book.sheets[active];
@@ -2108,12 +2349,22 @@ function ExcelViewer({ onClose }) {
     <div className="modal-back" onClick={onClose}>
       <div className="modal xl-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
-        <h2 style={{ marginTop: 0 }}>📂 استعراض نسخة محفوظة <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
-        <label className="btn secondary block">
-          {busy ? "جارٍ القراءة…" : book ? `📄 ${book.name} — اختيار ملف آخر` : "اختر ملف Excel من جهازك"}
-          <input type="file" accept=".xlsx,.xls" hidden onChange={e => { open(e.target.files[0]); e.target.value = ""; }} />
-        </label>
-        <p className="muted" style={{ fontSize: 13 }}>الملف يُقرأ على هذا الجهاز فقط، ولا يُرفع ولا يغيّر بيانات المنصة.</p>
+        <h2 style={{ marginTop: 0 }}>{source ? `📚 ${source.title}` : "📂 استعراض نسخة محفوظة"} <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
+        {source ? (
+          <p className="muted" style={{ fontSize: 13 }}>
+            {busy ? "جارٍ جلب الملف من Google…" : "نسخة الأرشيف على Google Drive؛ التعديل لا يتم هنا."}{" "}
+            <a href={source.url} target="_blank" rel="noopener">فتح في Google Sheets ↗</a>
+          </p>
+        ) : (
+          <>
+            <label className="btn secondary block">
+              {busy ? "جارٍ القراءة…" : book ? `📄 ${book.name} — اختيار ملف آخر` : "اختر ملف Excel من جهازك"}
+              <input type="file" accept=".xlsx,.xls" hidden onChange={e => { open(e.target.files[0]); e.target.value = ""; }} />
+            </label>
+            <p className="muted" style={{ fontSize: 13 }}>الملف يُقرأ على هذا الجهاز فقط، ولا يُرفع ولا يغيّر بيانات المنصة.</p>
+          </>
+        )}
+        {busy && source && <Loading />}
         {error && <Alert type="error">{error}</Alert>}
         {book && (
           <>
@@ -3102,6 +3353,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="لمن">الحجاج ومرافقوهم، والمشتكى عليه، وموظفو القسم ومسؤوله، والإدارة العليا للتقارير.</GuideItem>
           <GuideItem name="الهدف">تسجيل كل شكوى برقم واضح، ومتابعتها حتى نتيجة موثّقة، دون أوراق ضائعة أو شكاوى منسية.</GuideItem>
           <GuideItem name="الترقيم">كل موسم يبدأ ترقيم شكاواه من 1، مثل 1448-00001.</GuideItem>
+          <GuideItem name="المواسم السابقة">قاعدة البيانات تحفظ الموسم الحالي فقط؛ كل موسم ينتهي يُؤرشف في ملف Google Sheets للعرض فقط، ويُعرض في المنصة للجميع، ويُفتح للتعديل من «الإعدادات» عند الحاجة.</GuideItem>
         </ul>
       </div>
 
@@ -3182,7 +3434,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="يوم تدريب قبل الموسم">يقدّم كل موظف شكوى تجريبية ويتابعها حتى الإغلاق، ثم تُصفّر المنصة.</GuideItem>
           <GuideItem name="أيقونة على الشاشة الرئيسية">زر «📲 تثبيت» أعلى الصفحة يضيف المنصة إلى جوال كل موظف كتطبيق يُفتح بضغطة.</GuideItem>
           <GuideItem name="نسخة احتياطية أسبوعية">تصدير «كل الجداول» إلى Excel، وملف Word لكل شكوى تُغلق نهائياً.</GuideItem>
-          <GuideItem name="بعد انتهاء الموسم">إيقاف كلمات مرور الموظفين المؤقتين، وتغيير كلمة المسؤول، وبدء موسم 1449 من «الإعدادات».</GuideItem>
+          <GuideItem name="بعد انتهاء الموسم">بدء الموسم الجديد من «الإعدادات ← 🕋 الموسم»، ثم أرشفة الموسم المنتهي من «📚 أرشفة المواسم»، وإيقاف كلمات مرور الموظفين المؤقتين، وتغيير كلمة المسؤول.</GuideItem>
         </ul>
       </div>
     </div>
@@ -3830,8 +4082,9 @@ function ReportsPage({ code, viewerName }) {
   const [error, setError] = useState("");
 
   // بطاقة الشكوى: هل سمح الأدمن بعرضها؟ ورقم الشكوى المفتوحة
-  // روابط المواسم السابقة (ملفات Google Sheets)
+  // المواسم السابقة (روابط ملفاتها على Google) والموسم المعروض منها داخل المنصة
   const [past, setPast] = useState([]);
+  const [pastView, setPastView] = useState(null);
   useEffect(() => { sb.rpc("viewer_past_seasons", { p_code: code }).then(({ data }) => setPast(Array.isArray(data) ? data : [])); }, [code]);
   const [cardOn, setCardOn] = useState(false);
   const [openNum, setOpenNum] = useState(null);
@@ -3898,9 +4151,10 @@ function ReportsPage({ code, viewerName }) {
       {past.length > 0 && (
         <div className="past-strip">
           <b>📚 المواسم السابقة:</b>
-          {[...past].sort((a, b) => String(b.season).localeCompare(String(a.season))).map(x => <a key={x.season} className="btn secondary sm" href={x.url} target="_blank" rel="noopener">موسم {x.season} ↗</a>)}
+          {bySeasonDesc(past).map(x => <button type="button" key={x.season} className="btn secondary sm" onClick={() => setPastView(x)}>موسم {x.season}</button>)}
         </div>
       )}
+      {pastView && <ExcelViewer source={{ title: `موسم ${pastView.season}`, url: pastView.url }} onClose={() => setPastView(null)} />}
       {error && <Alert type="error">{error}</Alert>}
       {rows === null ? (!error && <Loading />) : (
         <>

@@ -68,6 +68,8 @@
 --    2026-10-01  القسم 26: قيد الحالات يشمل «مغلقة بعد الاعتراض» أيضاً (كان يفشل إن نُفّذ القسم 28 قبله).
 --    2026-10-01  القسم 30: مكان الجلسة (sessions.location) وقائمة «جهات الإحالة» (referral_targets).
 --    2026-10-04  القسم 31: روابط المواسم السابقة كملفات Google Sheets (past_seasons).
+--    2026-10-04  القسم 32: أرشفة المواسم — حذف موسم واحد بعد حفظ رابط ملفه (admin_delete_season)، واستعادته من
+--                ملفه للتعديل أو لإدخال موسم سابق (admin_restore_season)؛ كلمة مرور الأدمن الأولى صارت القسم 33.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -188,6 +190,8 @@ drop function if exists public.admin_delete_decision(text, uuid);
 drop function if exists public.admin_get_past_seasons(text);
 drop function if exists public.admin_set_past_seasons(text, json);
 drop function if exists public.viewer_past_seasons(text);
+drop function if exists public.admin_delete_season(text, text, text);
+drop function if exists public.admin_restore_season(text, text, json, json, json);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -3117,7 +3121,7 @@ grant execute on function public.viewer_complaint_card(text, text)              
 
 -- ---------------------------------------------------------------------
 -- 31) المواسم السابقة (1446، 1445…) كملفات Google Sheets على Drive
---     كل موسم سابق = رابط ملف Google Sheet تعدّل عليه الإدارة وتضيف مباشرة؛ المنصة تحفظ الروابط فقط
+--     كل موسم سابق = رابط ملف Google Sheet للعرض فقط (التعديل من المنصة — انظر القسم 32)؛ المنصة تحفظ الروابط فقط
 --     app_settings: past_seasons = [{"season":"1446","url":"https://docs.google.com/..."}, …]
 --     يُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
 -- ---------------------------------------------------------------------
@@ -3174,7 +3178,130 @@ grant execute on function public.admin_set_past_seasons(text, json) to anon, aut
 grant execute on function public.viewer_past_seasons(text)          to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 32) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 32) أرشفة المواسم: Supabase يحفظ الموسم الحالي فقط، والمواسم السابقة ملفات Google Sheets للعرض فقط
+--     - المسؤول ينزّل ملف الموسم (Excel)، يرفعه إلى Drive كملف Google Sheets بصلاحية «عارض»، ويحفظ رابطه
+--       في «المواسم السابقة» (past_seasons — القسم 31)، ثم يحذف الموسم من القاعدة (admin_delete_season)
+--     - التعديل لاحقاً: يُعاد الموسم من ملفه إلى القاعدة مؤقتاً (admin_restore_season)، ثم يُؤرشف من جديد
+--     - الاستعادة نفسها تُدخل موسماً سابقاً كاملاً من ملف Excel (بتواريخه الأصلية)
+--     يحتاج الأقسام 21 و24 و25 و28 و31 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- حذف موسم واحد من القاعدة (للمسؤول فقط، برمز التصفير). شروطه: ليس الموسم الحالي، وله رابط محفوظ في «المواسم السابقة»
+-- تُرجع: 'OK:عدد الشكاوى المحذوفة' أو 'WRONG_CODE' أو 'NO_CODE' أو 'CURRENT' أو 'NO_ARCHIVE' أو 'INVALID'
+create or replace function public.admin_delete_season(p_secret text, p_reset_code text, p_season text)
+returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_hash text;
+  v_n    int;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return 'WRONG_CODE';
+  end if;
+  if coalesce(p_season, '') !~ '^\d{4}$' then
+    return 'INVALID';
+  end if;
+  if p_season = public.setting('season') then
+    return 'CURRENT';
+  end if;
+  -- لا حذف قبل حفظ رابط ملف الموسم
+  if not exists (select 1 from json_array_elements(coalesce(public.setting('past_seasons'), '[]')::json) e
+                  where e->>'season' = p_season and coalesce(e->>'url', '') <> '') then
+    return 'NO_ARCHIVE';
+  end if;
+  -- رمز التصفير الخاص
+  select value into v_hash from public.app_settings where key = 'reset_hash';
+  if v_hash is null then
+    return 'NO_CODE';
+  end if;
+  if crypt(coalesce(p_reset_code, ''), v_hash) <> v_hash then
+    return 'WRONG_CODE';
+  end if;
+  -- الحذف (الجلسات والإحالات تُحذف مع شكاواها)
+  delete from public.complaints where season = p_season;
+  get diagnostics v_n = row_count;
+  return 'OK:' || v_n;
+end $$;
+
+-- استعادة موسم من ملفه إلى القاعدة (للمسؤول فقط): الشكاوى والجلسات والإحالات بقيمها كما هي في الملف
+-- (أرقامها وتواريخها وحالاتها ونتائجها)، دون تشغيل المشغّلات التي تغيّر الرقم والتاريخ والحالة.
+-- المدخلات مصفوفات JSON بأسماء أعمدة القاعدة؛ الجلسات والإحالات مربوطة برقم الشكوى (complaint_number)
+-- تُرجع: 'OK:عدد الشكاوى' أو 'CURRENT' أو 'EXISTS' (للموسم شكاوى في القاعدة) أو 'DUPLICATE' أو 'INVALID'
+create or replace function public.admin_restore_season(p_secret text, p_season text, p_complaints json, p_sessions json, p_referrals json)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_n int;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(p_season, '') !~ '^\d{4}$'
+     or json_typeof(coalesce(p_complaints, 'null'::json)) <> 'array' or json_array_length(p_complaints) = 0 then
+    return 'INVALID';
+  end if;
+  if p_season = public.setting('season') then
+    return 'CURRENT';
+  end if;
+  if exists (select 1 from public.complaints where season = p_season) then
+    return 'EXISTS';
+  end if;
+  -- رقم شكوى موجود في موسم آخر
+  if exists (select 1 from json_array_elements(p_complaints) e
+               join public.complaints c on c.complaint_number = btrim(e->>'complaint_number')) then
+    return 'DUPLICATE';
+  end if;
+
+  -- إيقاف المشغّلات أثناء الإدخال (تعود عند نهاية الدالة؛ وأي خطأ يلغي كل شيء ويعيدها كما كانت)
+  alter table public.complaints disable trigger user;
+  alter table public.sessions   disable trigger user;
+  alter table public.referrals  disable trigger user;
+
+  -- الشكاوى
+  insert into public.complaints (season, complaint_number, tracking_code, received_date, status, title,
+         complainant_name, complainant_role, phone_number, contact_number, accused_name, accused_role, subject,
+         classification, referred_to, result, complainant_result, accused_result, closed_date, reminder_at, reminder_note,
+         objection_summary, objection_deadline, objection_extension_reason, objection_text, objection_at,
+         result_before_objection, updated_at)
+  select p_season, btrim(r.complaint_number), coalesce(nullif(btrim(r.tracking_code), ''), public.random_password(6, true)),
+         coalesce(r.received_date, now()), coalesce(nullif(btrim(r.status), ''), 'مغلقة'), r.title,
+         coalesce(nullif(btrim(r.complainant_name), ''), '—'), r.complainant_role, r.phone_number, r.contact_number,
+         coalesce(nullif(btrim(r.accused_name), ''), '—'), r.accused_role, coalesce(nullif(btrim(r.subject), ''), '—'),
+         r.classification, r.referred_to, r.result, r.complainant_result, r.accused_result, r.closed_date, r.reminder_at, r.reminder_note,
+         r.objection_summary, r.objection_deadline, r.objection_extension_reason, r.objection_text, r.objection_at,
+         r.result_before_objection, coalesce(r.updated_at, r.closed_date, r.received_date, now())
+  from json_to_recordset(p_complaints) as r(
+         complaint_number text, tracking_code text, received_date timestamptz, status text, title text,
+         complainant_name text, complainant_role text, phone_number text, contact_number text, accused_name text, accused_role text,
+         subject text, classification text, referred_to text, result text, complainant_result text, accused_result text,
+         closed_date timestamptz, reminder_at timestamptz, reminder_note text, objection_summary text, objection_deadline timestamptz,
+         objection_extension_reason text, objection_text text, objection_at timestamptz, result_before_objection text, updated_at timestamptz);
+  get diagnostics v_n = row_count;
+
+  -- الجلسات (حالة الجلسة الفارغة = حالة شكواها)
+  insert into public.sessions (complaint_id, session_at, title, location, topic, referred_to, result, status)
+  select c.id, coalesce(s.session_at, c.received_date), s.title, s.location, s.topic, s.referred_to, s.result,
+         coalesce(nullif(btrim(s.status), ''), c.status)
+  from json_to_recordset(coalesce(p_sessions, '[]'::json)) as s(
+         complaint_number text, session_at timestamptz, title text, location text, topic text, referred_to text, result text, status text)
+  join public.complaints c on c.complaint_number = btrim(s.complaint_number) and c.season = p_season;
+
+  -- الإحالات
+  insert into public.referrals (complaint_id, referred_to, referred_at)
+  select c.id, btrim(x.referred_to), coalesce(x.referred_at, c.received_date)
+  from json_to_recordset(coalesce(p_referrals, '[]'::json)) as x(complaint_number text, referred_to text, referred_at timestamptz)
+  join public.complaints c on c.complaint_number = btrim(x.complaint_number) and c.season = p_season
+  where coalesce(btrim(x.referred_to), '') <> '';
+
+  -- إعادة المشغّلات
+  alter table public.complaints enable trigger user;
+  alter table public.sessions   enable trigger user;
+  alter table public.referrals  enable trigger user;
+  return 'OK:' || v_n;
+end $$;
+
+-- السماح للموقع باستدعاء الدالتين
+grant execute on function public.admin_delete_season(text, text, text)               to anon, authenticated;
+grant execute on function public.admin_restore_season(text, text, json, json, json)  to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 33) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
