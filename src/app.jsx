@@ -46,6 +46,9 @@
 //                للاطلاع فقط (في اللوحة والتقارير)؛ أعمدة Excel موحّدة للتصدير والاستيراد (XL_SHEETS) مع «النتيجة قبل الاعتراض».
 //    2026-10-04  القرارات الإدارية حسب الموسم: ورقة «القرارات الإدارية» في ملف الموسم (تصدير واستيراد وفحص المطابقة)،
 //                وتصفية القرارات بالموسم إن وُجد أكثر من موسم.
+//    2026-10-04  «أرشفة المواسم»: يُعاد جلب الموسم الحالي بعد تغييره من بطاقة «🕋 الموسم»، ويُتحقق منه لحظة الأرشفة قبل
+//                حفظ الرابط (كان يظهر الموسم الحالي في قائمة الأرشفة إن تغيّر بعد فتح الصفحة)؛ الموسم الحالي يظهر في قائمة
+//                بطاقة «🕋 الموسم» حتى قبل أول شكوى فيه؛ رسالة أوضح لرمز التصفير الخاطئ.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -1978,7 +1981,7 @@ const RESTORE_MSG = {
   INVALID: "تعذّرت الاستعادة: للمسؤول فقط، والملف يجب أن يحتوي شكاوى.",
 };
 const DELETE_MSG = {
-  WRONG_CODE: "رمز التصفير غير صحيح.",
+  WRONG_CODE: "رمز التصفير غير صحيح (وهو غير كلمة مرور الأدمن، ويُفرّق بين الأحرف الكبيرة والصغيرة). إن نسيته فعيّن رمزاً جديداً من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمز-جديد');",
   NO_CODE: "لم يُعيَّن رمز التصفير بعد. عيّنه من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمزك');",
   CURRENT: "لا يُؤرشف الموسم الحالي. ابدأ الموسم الجديد أولاً من بطاقة «🕋 الموسم».",
   NO_ARCHIVE: "لم يُحفظ رابط ملف الموسم بعد.",
@@ -2003,8 +2006,10 @@ function SeasonArchiveCard({ secret, rows, reload }) {
   const loadInfo = useCallback(async () => {
     const { data } = await sb.rpc("admin_get_season", { p_secret: secret });
     setInfo(data || { current: "", seasons: [] });
+    return data;
   }, [secret]);
-  useEffect(() => { loadInfo(); }, [loadInfo]);
+  // يُعاد الجلب كلما أُعيد جلب الشكاوى (مثل تغيير الموسم الحالي من بطاقة «🕋 الموسم» في الصفحة نفسها)
+  useEffect(() => { loadInfo(); }, [loadInfo, rows]);
 
   const archived = Object.fromEntries((list || []).map(x => [x.season, x.url]));
   const inDb = new Set(((info && info.seasons) || []).map(x => x.season));
@@ -2044,6 +2049,9 @@ function SeasonArchiveCard({ secret, rows, reload }) {
 
   // 5) حفظ الرابط ثم حذف الموسم من القاعدة (برمز التصفير)
   const archive = () => run("archive", async () => {
+    // الموسم الحالي من القاعدة لحظة التنفيذ (لا يُحفظ رابط ولا يُحذف شيء إن كان هو الحالي)
+    const fresh = await loadInfo();
+    if (fresh && fresh.current === season) { setSeason(""); throw new Error(`موسم ${season} هو الموسم الحالي. ${DELETE_MSG.CURRENT}`); }
     if (!window.confirm(`حفظ رابط موسم ${season} ثم حذف شكاواه (${seasonRows.length}) وجلساتها وقراراته من القاعدة؟\nيبقى الموسم معروضاً من ملفه على Google.`)) return;
     const next = [...(list || []).filter(x => x.season !== season), { season, url: url.trim() }];
     const saved = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: next });
@@ -2265,7 +2273,9 @@ function SeasonCard({ secret, reload }) {
           </Field>
           {info.seasons.length > 0 && (
             <ul className="list" style={{ marginTop: 10 }}>
-              {info.seasons.map(x => (
+              {/* الموسم الحالي يظهر دائماً، حتى قبل أول شكوى فيه */}
+              {(info.seasons.some(x => x.season === info.current) || !info.current ? info.seasons
+                : [{ season: info.current, total: 0 }, ...info.seasons]).map(x => (
                 <li key={x.season}><b>موسم {x.season}{x.season === info.current && <span className="muted"> · الحالي</span>}</b><span className="muted">{x.total} شكوى</span></li>
               ))}
             </ul>
