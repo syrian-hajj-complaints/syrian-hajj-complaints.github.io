@@ -1,0 +1,28 @@
+<!doctype html>
+<!--
+=======================================================================
+  الملف: admin.html
+  الوصف: مدخل تطبيق الإدارة: يعلن ملف تعريف الإدارة (manifest-admin.webmanifest) لأدوات التثبيت
+         وتحويل APK (PWABuilder)، ثم ينقل مباشرة إلى لوحة الأدمن main.html#/admin.
+  سجل التعديلات:
+    2026-10-04  الإصدار الأول.
+=======================================================================
+-->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>قسم الشكاوى — إدارة الحج والعمرة</title>
+<!-- ملف تعريف تطبيق الإدارة، والأيقونات، ولون الشريط -->
+<link rel="manifest" href="manifest-admin.webmanifest">
+<link rel="icon" href="logo.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#00594f">
+<!-- الانتقال إلى لوحة الأدمن (مع تسجيل عامل الخدمة قبله) -->
+<script>
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+  location.replace("main.html#/admin");
+</script>
+</head>
+<body style="background:#00594f"></body>
+</html>
