@@ -60,6 +60,8 @@
 //                دخل منه الأدمن من قبل.
 //    2026-10-05  زر «📝 إدخال شكوى» في لوحة الإدارة (يفتح النموذج مباشرة)؛ رابط المشتكي يحمل كلمة المرور (‎#/?code=…)
 //                فيفتح النموذج دون كتابتها، و‎#/?direct=1 للتقديم المباشر.
+//    2026-10-05  التصفير: خياران للبدء من جديد كلياً — حذف المواسم السابقة (روابط الأرشيف) والقرارات الإدارية أيضاً.
+//    2026-10-05  قسم «🗒️ الملاحظات»: ملاحظات دائمة (إضافة، تعديل، تثبيت، بحث، ومن أضاف ومن عدّل)؛ الحذف للمدير.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -1227,6 +1229,7 @@ const SECTIONS = {
   decisions:  { title: "📑 القرارات الإدارية" },
   archive:    { title: "📚 المواسم السابقة" },
   indicators: { title: "📈 المؤشرات" },
+  notes:      { title: "🗒️ الملاحظات" },
   guide:      { title: "📘 دليل المنصة" },
   access:     { title: "🔐 دخول المشتكين", manager: true },
   viewers:    { title: "📊 كلمات مرور الإدارة", manager: true },
@@ -1355,6 +1358,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "today" && <AdminDue secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c, true)} />}
         {current === "links" && <AdminLinks secret={secret} isManager={isManager} />}
         {current === "decisions" && <AdminDecisions secret={secret} isManager={isManager} />}
+        {current === "notes" && <AdminNotes secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
         {current === "archive" && <AdminPastSeasons secret={secret} isManager={isManager} rows={rows} />}
@@ -1402,7 +1406,7 @@ function EnterComplaintButton({ secret }) {
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
 const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
-                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"], ["archive", "📚", "المواسم السابقة"]];
+                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"], ["archive", "📚", "المواسم السابقة"], ["notes", "🗒️", "الملاحظات"]];
 const NAV_MANAGER = [["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
 
@@ -1896,6 +1900,9 @@ function AdminSettings({ secret, rows, reload }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  // البدء من جديد كلياً: حذف المواسم السابقة (روابط الأرشيف) والقرارات الإدارية مع التصفير (اختياري)
+  const [wipePast, setWipePast] = useState(false);
+  const [wipeDecisions, setWipeDecisions] = useState(false);
 
   // نسخة احتياطية قبل التصفير: نفس التصدير الكامل إلى Excel
   async function backup() {
@@ -1907,15 +1914,32 @@ function AdminSettings({ secret, rows, reload }) {
 
   // التنفيذ: سؤال أخير، ثم الدالة admin_reset_platform
   async function reset() {
-    if (!window.confirm("سيتم حذف جميع الشكاوى نهائياً ولا يمكن التراجع. متابعة؟")) return;
+    const extra = [wipePast && "روابط المواسم السابقة", wipeDecisions && "القرارات الإدارية"].filter(Boolean);
+    if (!window.confirm(`سيتم حذف جميع الشكاوى${extra.length ? " و" + extra.join(" و") : ""} نهائياً ولا يمكن التراجع. متابعة؟`)) return;
     setBusy(true); setMsg(null);
     const { data, error } = await sb.rpc("admin_reset_platform", { p_secret: secret, p_reset_code: code });
-    setBusy(false);
+    if (data !== "OK") setBusy(false);
     if (error) return setMsg({ type: "error", text: NET_ERR });
     if (data === "NO_CODE") return setMsg({ type: "error", text: "لم يُعيَّن رمز التصفير بعد. عيّنه من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمزك');" });
     if (data !== "OK") return setMsg({ type: "error", text: "رمز التصفير غير صحيح." });
-    setCode(""); setConfirm("");
-    setMsg({ type: "ok", text: "✅ تم تصفير المنصة. الشكوى القادمة تبدأ من الرقم 00001 في الموسم الحالي." });
+    // بعد نجاح التصفير: حذف روابط المواسم السابقة، ثم القرارات واحداً واحداً (للمدير)
+    const failed = [];
+    if (wipePast) {
+      const r = await sb.rpc("admin_set_past_seasons", { p_secret: secret, p_items: [] });
+      if (r.error || r.data !== "OK") failed.push("روابط المواسم السابقة");
+    }
+    if (wipeDecisions) {
+      const { data: list } = await sb.rpc("admin_list_decisions", { p_secret: secret });
+      for (const d of list || []) {
+        const r = await sb.rpc("admin_delete_decision", { p_secret: secret, p_id: d.id });
+        if (r.error || !r.data) { failed.push("بعض القرارات"); break; }
+      }
+    }
+    setBusy(false);
+    setCode(""); setConfirm(""); setWipePast(false); setWipeDecisions(false);
+    setMsg(failed.length
+      ? { type: "error", text: `تم تصفير الشكاوى، وتعذّر حذف: ${failed.join("، ")}. أعد المحاولة.` }
+      : { type: "ok", text: "✅ تم تصفير المنصة. الشكوى القادمة تبدأ من الرقم 00001 في الموسم الحالي." });
     reload();
   }
 
@@ -1938,9 +1962,13 @@ function AdminSettings({ secret, rows, reload }) {
       <h2>⚠️ تصفير المنصة</h2>
       <ul>
         <li>يُحذف: جميع الشكاوى، وجلساتها، وسجلها، وكلمات مرور المشتكين الخاصة.</li>
-        <li>يبقى: كلمات مرور الأدمن والإدارة، وإعدادات الدخول.</li>
+        <li>يبقى: كلمات مرور الأدمن والإدارة، وإعدادات الدخول، والقوائم — والمواسم السابقة والقرارات إلا إن اخترت حذفها أدناه.</li>
         <li>يعود ترقيم الشكاوى إلى 00001.</li>
       </ul>
+      <div className="grid" style={{ gridTemplateColumns: "1fr", gap: 4, margin: "6px 0" }}>
+        <label><input type="checkbox" checked={wipePast} onChange={e => setWipePast(e.target.checked)} /> حذف <b>المواسم السابقة</b> أيضاً (روابطها في المنصة؛ ملفاتها على Drive تبقى)</label>
+        <label><input type="checkbox" checked={wipeDecisions} onChange={e => setWipeDecisions(e.target.checked)} /> حذف <b>القرارات الإدارية</b> أيضاً</label>
+      </div>
       <p className="muted">ننصح بتصدير نسخة احتياطية أولاً ({(rows || []).length} شكوى حالياً).</p>
       <button type="button" className="btn secondary" disabled={busy} onClick={backup}>📥 نسخة احتياطية (Excel)</button>
       <div className="grid" style={{ marginTop: 14 }}>
@@ -2157,7 +2185,7 @@ function SeasonArchiveCard({ secret, rows, reload }) {
     return data;
   }, [secret]);
   // يُعاد الجلب كلما أُعيد جلب الشكاوى (مثل تغيير الموسم الحالي من بطاقة «🕋 الموسم» في الصفحة نفسها)
-  useEffect(() => { loadInfo(); }, [loadInfo, rows]);
+  useEffect(() => { loadInfo(); reloadList(); }, [loadInfo, rows]);
 
   const archived = Object.fromEntries((list || []).map(x => [x.season, x.url]));
   const inDb = new Set(((info && info.seasons) || []).map(x => x.season));
@@ -3541,6 +3569,104 @@ function AdminDecisions({ secret, isManager }) {
 }
 
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// الملاحظات (للمدير والمسؤول): ملاحظات دائمة تُضاف وتُعدّل في أي وقت (لا يحذفها التصفير ولا أرشفة المواسم)؛
+// بحث، تثبيت ملاحظة أعلى القائمة، ومن أضاف ومن عدّل آخر مرة؛ الحذف للمدير فقط
+// ---------------------------------------------------------------------
+function AdminNotes({ secret, isManager }) {
+  // الملاحظات، البحث، النموذج المفتوح (جديدة أو تعديل)، والرسائل
+  const [list, setList] = useState(null);
+  const [q, setQ] = useState("");
+  const [form, setForm] = useState(null);   // { id, title, body, pinned }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  // جلب الملاحظات
+  const load = useCallback(async () => {
+    const { data, error } = await sb.rpc("admin_list_notes", { p_secret: secret });
+    if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر جلب الملاحظات (نفّذ القسم 35 من schema.sql في Supabase)." }); }
+    setList(data || []);
+  }, [secret]);
+  useEffect(() => { load(); }, [load]);
+
+  // الحفظ (إضافة أو تعديل)
+  async function save(e) {
+    e.preventDefault();
+    if (!form.title.trim()) return setMsg({ type: "error", text: "اكتب عنواناً للملاحظة." });
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_save_note", { p_secret: secret, p_id: form.id, p_title: form.title, p_body: form.body, p_pinned: form.pinned });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الحفظ، يرجى المحاولة مرة أخرى." });
+    setMsg({ type: "ok", text: form.id ? "✅ تم تعديل الملاحظة." : "✅ أُضيفت الملاحظة." });
+    setForm(null); load();
+  }
+
+  // تثبيت ملاحظة أو إلغاء تثبيتها مباشرة
+  async function togglePin(n) {
+    await sb.rpc("admin_save_note", { p_secret: secret, p_id: n.id, p_title: n.title, p_body: n.body || "", p_pinned: !n.pinned });
+    load();
+  }
+
+  // الحذف بعد التأكيد (للمدير)
+  async function remove(n) {
+    if (!window.confirm(`حذف الملاحظة «${n.title}»؟`)) return;
+    const { data } = await sb.rpc("admin_delete_note", { p_secret: secret, p_id: n.id });
+    if (!data) return setMsg({ type: "error", text: "تعذّر الحذف." });
+    setMsg({ type: "ok", text: "حُذفت الملاحظة." }); load();
+  }
+
+  // البحث في العنوان والنص
+  const term = q.trim();
+  const shown = (list || []).filter(n => !term || [n.title, n.body].some(v => (v || "").includes(term)));
+
+  // النموذج (فوق القائمة عند فتحه)
+  const editor = form && (
+    <form className="card" onSubmit={save}>
+      <h2 style={{ marginTop: 0 }}>{form.id ? "✏️ تعديل الملاحظة" : "➕ ملاحظة جديدة"}</h2>
+      <div className="grid" style={{ gridTemplateColumns: "1fr" }}>
+        <Field label="العنوان" required><input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} maxLength={200} autoFocus /></Field>
+        <Field label="النص"><textarea style={{ minHeight: 160 }} value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} maxLength={20000} /></Field>
+        <label><input type="checkbox" checked={form.pinned} onChange={e => setForm(f => ({ ...f, pinned: e.target.checked }))} /> 📌 تثبيت أعلى القائمة</label>
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+        <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : "💾 حفظ"}</button>
+        <button type="button" className="btn secondary" onClick={() => setForm(null)}>إلغاء</button>
+      </div>
+    </form>
+  );
+
+  // العرض: زر الإضافة والبحث، النموذج، ثم بطاقة لكل ملاحظة
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <div className="row" style={{ flexWrap: "nowrap", marginBottom: 10 }}>
+        <button type="button" className="btn" onClick={() => { setForm({ id: null, title: "", body: "", pinned: false }); setMsg(null); }}>➕ ملاحظة جديدة</button>
+        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 بحث في الملاحظات" />
+      </div>
+      {editor}
+      {list === null ? <Loading /> : shown.length === 0 ? (
+        <div className="card"><p className="muted" style={{ margin: 0 }}>{term ? "لا توجد ملاحظات مطابقة." : "لا توجد ملاحظات بعد."}</p></div>
+      ) : shown.map(n => (
+        <div key={n.id} className={`card note-card${n.pinned ? " pinned" : ""}`}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+            <h3 style={{ margin: 0 }}>{n.pinned && "📌 "}{n.title}</h3>
+            <span className="row" style={{ gap: 6 }}>
+              <button type="button" className="btn secondary sm" onClick={() => togglePin(n)} title={n.pinned ? "إلغاء التثبيت" : "تثبيت أعلى القائمة"}>{n.pinned ? "📌 إلغاء" : "📌"}</button>
+              <button type="button" className="btn secondary sm" onClick={() => { setForm({ id: n.id, title: n.title, body: n.body || "", pinned: n.pinned }); setMsg(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✏️ تعديل</button>
+              {isManager && <button type="button" className="btn danger-text" onClick={() => remove(n)}>حذف</button>}
+            </span>
+          </div>
+          {n.body && <div className="note-body">{n.body}</div>}
+          <small className="muted">
+            أُضيفت {fmtDateTime(n.created_at)}{n.created_by ? ` — ${n.created_by}` : ""}
+            {n.updated_at !== n.created_at && <> · آخر تعديل {fmtDateTime(n.updated_at)}{n.updated_by ? ` — ${n.updated_by}` : ""}</>}
+          </small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // دليل المنصة (للمدير والموظف): نبذة، الصفحات، تسلسل الشكوى بألوان الحالات، أقسام اللوحة، الصلاحيات،
 // التصدير، التقنية، ثم التوصيات
 // ---------------------------------------------------------------------

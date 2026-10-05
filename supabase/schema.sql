@@ -74,6 +74,7 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 34.
 --    2026-10-04  القسم 34: الروابط — حتى رابطين للشكوى (المشتكي والإدارة) والاعتراض (المعترض والإدارة) والجلسة؛
 --                تدخل في ملف الموسم وتُستعاد معه؛ كلمة مرور الأدمن الأولى صارت القسم 35.
+--    2026-10-05  القسم 35: الملاحظات (جدول notes ودوال العرض والحفظ والحذف)؛ كلمة مرور الأدمن الأولى صارت القسم 36.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -203,6 +204,10 @@ drop function if exists public.admin_set_links(text, text, uuid, text[]);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text, text[]);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text, text[]);
 drop function if exists public.clean_links(text[]);
+drop table if exists public.notes cascade;
+drop function if exists public.admin_list_notes(text);
+drop function if exists public.admin_save_note(text, uuid, text, text, boolean);
+drop function if exists public.admin_delete_note(text, uuid);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -3661,7 +3666,80 @@ grant execute on function public.admin_list_sessions(text, uuid)                
 grant execute on function public.admin_restore_season(text, text, json, json, json, json)                                 to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 35) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 35) الملاحظات: صفحة ملاحظات دائمة في لوحة الإدارة (لا يحذفها التصفير ولا أرشفة المواسم)
+--     - المدير والمسؤول يضيفان ويعدّلان (يُحفظ من أضاف ومن عدّل آخر مرة ومتى)، والمدير وحده يحذف
+--     - ملاحظة مثبّتة تظهر أولاً
+--     يحتاج القسم 24 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- جدول الملاحظات
+create table if not exists public.notes (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,                          -- عنوان الملاحظة
+  body        text,                                   -- نص الملاحظة
+  pinned      boolean not null default false,         -- مثبّتة أعلى القائمة
+  created_by  text,                                   -- من أضافها
+  updated_by  text,                                   -- من عدّلها آخر مرة
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.notes enable row level security;
+revoke all on public.notes from anon, authenticated;
+
+-- قائمة الملاحظات (المثبّتة أولاً، ثم الأحدث تعديلاً)
+create or replace function public.admin_list_notes(p_secret text)
+returns setof public.notes
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return;
+  end if;
+  return query select * from public.notes order by pinned desc, updated_at desc;
+end $$;
+
+-- إضافة ملاحظة (p_id فارغ) أو تعديلها؛ العنوان إلزامي؛ تُرجع الملاحظة بعد الحفظ
+create or replace function public.admin_save_note(p_secret text, p_id uuid, p_title text, p_body text, p_pinned boolean)
+returns setof public.notes
+language plpgsql security definer set search_path = public as $$
+declare
+  v_who text;
+  v_id  uuid;
+begin
+  if public.verify_password('أدمن', p_secret) is null or coalesce(btrim(p_title), '') = '' then
+    return;
+  end if;
+  v_who := nullif(current_setting('app.actor', true), '');
+  if p_id is null then
+    insert into public.notes (title, body, pinned, created_by, updated_by)
+    values (btrim(left(p_title, 200)), nullif(btrim(left(p_body, 20000)), ''), coalesce(p_pinned, false), v_who, v_who)
+    returning id into v_id;
+  else
+    update public.notes set title = btrim(left(p_title, 200)), body = nullif(btrim(left(p_body, 20000)), ''),
+           pinned = coalesce(p_pinned, false), updated_by = v_who, updated_at = now()
+     where id = p_id
+    returning id into v_id;
+  end if;
+  return query select * from public.notes where id = v_id;
+end $$;
+
+-- حذف ملاحظة (للمدير فقط)؛ تُرجع true عند الحذف
+create or replace function public.admin_delete_note(p_secret text, p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return false;
+  end if;
+  delete from public.notes where id = p_id;
+  return found;
+end $$;
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_list_notes(text)                          to anon, authenticated;
+grant execute on function public.admin_save_note(text, uuid, text, text, boolean) to anon, authenticated;
+grant execute on function public.admin_delete_note(text, uuid)                   to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 36) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

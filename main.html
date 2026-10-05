@@ -84,6 +84,7 @@
     2026-10-04  أرشفة المواسم: بطاقة الموسم كزر (button.past-card) وعناوين أقسام البطاقة (.archive-sub).
     2026-10-04  الروابط المرفقة (.links-inputs / .links-view / .link-chip / .links-line / .links-edit).
     2026-10-05  مربع «إعداد لمرة واحدة» في أرشفة المواسم (.setup-box).
+    2026-10-05  بطاقات الملاحظات (.note-card / .note-body).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -419,6 +420,10 @@
   /* «إعداد لمرة واحدة» في أرشفة المواسم: مربع قابل للفتح */
   .setup-box { margin: 0 0 12px; padding: 8px 12px; border: 1px dashed var(--brand-light); border-radius: 10px; background: #f4faf8; font-size: 14px; }
   .setup-box summary { cursor: pointer; font-weight: 700; color: var(--brand-dark); }
+  /* الملاحظات: بطاقة لكل ملاحظة (المثبّتة بشريط ذهبي) ونصها بأسطره */
+  .note-card { border-inline-start: 4px solid var(--brand-light); }
+  .note-card.pinned { border-inline-start-color: var(--gold, #ad9e6e); background: #fffdf7; }
+  .note-body { white-space: pre-wrap; margin: 10px 0 8px; line-height: 1.8; }
   .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
@@ -695,6 +700,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=b72744541f"></script>
+<script src="app.js?v=1f5bd5699d"></script>
 </body>
 </html>
