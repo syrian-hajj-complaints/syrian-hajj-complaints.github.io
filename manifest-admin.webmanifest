@@ -22,5 +22,31 @@
       "purpose": "any maskable"
     }
   ],
-  "id": "admin.html"
+  "id": "admin.html",
+  "shortcuts": [
+    {
+      "name": "التقارير",
+      "short_name": "التقارير",
+      "url": "main.html#/reports",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "تقديم شكوى",
+      "short_name": "تقديم شكوى",
+      "url": "main.html",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
 }

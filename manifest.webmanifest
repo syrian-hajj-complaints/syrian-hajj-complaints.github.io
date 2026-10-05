@@ -22,5 +22,31 @@
       "purpose": "any maskable"
     }
   ],
-  "id": "main.html"
+  "id": "main.html",
+  "shortcuts": [
+    {
+      "name": "لوحة الإدارة — قسم الشكاوى",
+      "short_name": "لوحة الإدارة",
+      "url": "admin.html",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "نتيجة شكوى",
+      "short_name": "نتيجة شكوى",
+      "url": "main.html#/result",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
 }

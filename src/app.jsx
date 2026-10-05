@@ -52,6 +52,12 @@
 //    2026-10-04  الصلاحيتان: «المدير» (كانت «المسؤول») و«المسؤول» (كانت «الموظف»)، وقسم «👥 المسؤولون»؛ الروابط: حتى رابطين
 //                للشكوى (المشتكي في النموذج والإدارة في البطاقة) والاعتراض (المعترض والإدارة) والجلسة، تظهر في البطاقة
 //                وملف Word وملف الموسم؛ «المطلوب اليوم» وتنبيهاته للموسم الحالي فقط (لا لموسم سابق مفتوح للتعديل).
+//    2026-10-05  عرض للاطلاع بشكل لوحة الإدارة: بطاقة الشكوى (ComplaintView) في التقارير والمواسم السابقة، وجدول بالأعمدة
+//                المهمة (الرقم، العنوان، الحالة، النتيجة)؛ عارض المواسم السابقة (SeasonViewer) بالشكاوى والقرارات؛ لا تصدير
+//                Excel من صفحة التقارير (من لوحة الإدارة فقط)؛ أرشفة أبسط: إعداد لمرة واحدة (مجلد مشارَك وتحويل تلقائي)،
+//                وفحص الرابط تلقائياً بعد لصقه مع تنبيه للروابط غير الصالحة.
+//    2026-10-05  زر «🛠️ لوحة الإدارة» في الشريط العلوي للصفحات العامة: في التطبيق المثبّت (بلا شريط عنوان)، وعلى أي جهاز
+//                دخل منه الأدمن من قبل.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -67,6 +73,8 @@ let installEvt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; window.dispatchEvent(new Event("install-ready")); });
 // تسجيل عامل الخدمة (sw.js): شرط للتثبيت كتطبيق ولتحويل المنصة إلى APK
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+// جهاز دخل منه الأدمن من قبل: يظهر عليه زر «🛠️ لوحة الإدارة» في الشريط العلوي للصفحات العامة
+const ADMIN_DEVICE = "hajj_admin_device";
 const isStandalone = () => window.matchMedia && window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
 // قائمتا التصنيفات والصفات: تبدآن من config.js، ثم تُستبدل محتوياتهما بما حفظه الأدمن في «الإعدادات»
@@ -458,7 +466,8 @@ function Logo({ size }) {
 }
 
 // الشريط العلوي: الشعار، اسم الجهة والقسم، اسم الصفحة، وزر خروج اختياري
-function Header({ label, onLogout }) {
+// adminLink: زر «🛠️ لوحة الإدارة» (في التطبيق المثبّت لا يوجد شريط عنوان للوصول إلى ‎#/admin)
+function Header({ label, onLogout, adminLink }) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -466,6 +475,7 @@ function Header({ label, onLogout }) {
           <Logo size={36} />
           <span className="brand-text"><b>إدارة الحج والعمرة</b><small>قسم الشكاوى{label && ` · ${label}`}</small></span>
         </a>
+        {adminLink && <a className="btn ghost" href="#/admin">🛠️ لوحة الإدارة</a>}
         {onLogout && <button className="btn ghost" onClick={onLogout}>خروج</button>}
       </div>
     </header>
@@ -754,7 +764,8 @@ function ComplaintForm({ code, onDone, onRejected }) {
 // ---------------------------------------------------------------------
 const MAX_LINKS = 2;
 // تنظيف القائمة (بلا فراغات ولا تكرار، بحد أقصى رابطين)، وأول رابط غير صالح (لا يبدأ بـ https://)
-const cleanLinks = arr => [...new Set((arr || []).map(x => String(x || "").trim()).filter(Boolean))].slice(0, MAX_LINKS);
+// (القائمة قد تكون نصاً من ملف الموسم: سطر لكل رابط)
+const cleanLinks = arr => [...new Set((Array.isArray(arr) ? arr : String(arr || "").split("\n")).map(x => String(x || "").trim()).filter(Boolean))].slice(0, MAX_LINKS);
 const badLink = arr => cleanLinks(arr).find(x => !/^https?:\/\/\S+$/i.test(x));
 const BAD_LINK = "كل رابط يجب أن يبدأ بـ https:// (انسخه كاملاً من المتصفح أو من Google Drive).";
 
@@ -2066,7 +2077,7 @@ function AdminPastSeasons({ secret, isManager, rows }) {
           ))}
         </div>
       )}
-      {viewing && <ExcelViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
+      {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -2115,7 +2126,7 @@ function SeasonArchiveCard({ secret, rows, reload }) {
   const seasonRows = (rows || []).filter(c => c.season === season);
 
   // اختيار موسم للأرشفة: رابطه السابق (إن وُجد) ومسح الفحص
-  function pick(v) { setSeason(v); setUrl(archived[v] || ""); setCheck(null); setMsg(null); }
+  function pick(v) { setSeason(v); setUrl(""); setCheck(null); setMsg(null); }
 
   // تشغيل خطوة مع حالة الانشغال والرسائل
   async function run(label, fn) {
@@ -2144,6 +2155,19 @@ function SeasonArchiveCard({ secret, rows, reload }) {
       ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}.` }
       : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${count(book.complaints.length, book.sessions.length, (book.decisions || []).length)}، والقاعدة فيها ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}. نزّل الملف من جديد وارفعه.` });
   });
+
+  // تنبيه فوري لرابط ليس ملف Google Sheets (ملف Excel لم يُحوَّل، أو رابط من نوع آخر)
+  const u = url.trim();
+  const linkHint = !u ? "" : /rtpof=true/i.test(u) || /drive\.google\.com\/file\//i.test(u)
+    ? "هذا رابط ملف Excel لم يُحوَّل إلى Google Sheets. افتحه ثم: ملف ← حفظ كجدول بيانات Google، وانسخ رابط الملف الجديد (أو فعّل التحويل التلقائي من الإعداد لمرة واحدة)."
+    : !sheetIdOf(u) ? "الرابط يجب أن يكون رابط ملف Google Sheets (يبدأ بـ https://docs.google.com/spreadsheets/d/…)." : "";
+
+  // الفحص تلقائياً بعد لصق رابط صالح (بعد لحظة من آخر تغيير)
+  useEffect(() => {
+    if (!season || !u || linkHint) return;
+    const t = setTimeout(verify, 700);
+    return () => clearTimeout(t);
+  }, [u, season]);
 
   // 5) حفظ الرابط ثم حذف الموسم من القاعدة (برمز التصفير)
   const archive = () => run("archive", async () => {
@@ -2213,6 +2237,14 @@ function SeasonArchiveCard({ secret, rows, reload }) {
       {msg && <Alert type={msg.type}><span style={{ whiteSpace: "pre-line" }}>{msg.text}</span></Alert>}
 
       <h3 className="archive-sub">🗄️ أرشفة موسم</h3>
+      <details className="setup-box">
+        <summary>⚙️ إعداد لمرة واحدة في Google Drive (اضغط للعرض)</summary>
+        <ol className="past-steps" style={{ marginTop: 8 }}>
+          <li>أنشئ مجلداً باسم <b>«أرشيف المواسم»</b>.</li>
+          <li>شارك المجلد: <b>«أي شخص لديه الرابط» بدور «عارض»</b>. كل ملف تضعه فيه يُشارك هكذا تلقائياً. لا تعطِ أحداً دور «محرّر».</li>
+          <li>إعدادات Drive ⚙️ ← <b>«تحويل الملفات المرفوعة إلى تنسيق محرّر مستندات Google»</b> ← تفعيل؛ فيصبح كل ملف Excel ترفعه ملف Google Sheets تلقائياً.</li>
+        </ol>
+      </details>
       {candidates.length === 0 ? (
         <p className="muted" style={{ fontSize: 14 }}>لا يوجد في القاعدة موسم غير الحالي ({info.current || "—"}). عند انتهاء الموسم: ابدأ الموسم الجديد من بطاقة «🕋 الموسم»، ثم أرشف القديم هنا.</p>
       ) : (
@@ -2224,30 +2256,27 @@ function SeasonArchiveCard({ secret, rows, reload }) {
           {season && (
             <ol className="past-steps" style={{ marginTop: 12 }}>
               <li>نزّل ملف الموسم: <button type="button" className="btn secondary sm" disabled={!!busy} onClick={download}>{busy === "download" ? "جارٍ التنزيل…" : `⬇ موسم-${season}.xlsx`}</button></li>
-              {archived[season] ? (
-                <li>افتح ملف الموسم الحالي على Google ← <b>ملف ← استيراد ← رفع</b> ← اختر الملف ← <b>استبدال جدول البيانات</b> (يبقى الرابط نفسه).</li>
-              ) : (
-                <li>ارفعه إلى Google Drive، وافتحه بـ Google Sheets، ثم <b>ملف ← حفظ كجدول بيانات Google</b>.</li>
-              )}
-              <li><b>مشاركة ← الوصول العام: «أي شخص لديه الرابط» بدور «عارض»</b>. لا تعطِ أحداً دور «محرّر»، فيبقى الملف للعرض فقط.</li>
+              <li>ارفعه إلى مجلد <b>«أرشيف المواسم»</b> في Google Drive، وافتحه، ثم انسخ رابطه من شريط العنوان.
+                {archived[season] && <span className="muted"> (للموسم ملف سابق: ارفع الجديد بالطريقة نفسها، واحذف القديم من المجلد بعد الأرشفة.)</span>}</li>
               <li>
-                الصق رابط ملف Google Sheets ثم افحصه:
-                <div className="row" style={{ flexWrap: "nowrap", marginTop: 4 }}>
-                  <input type="url" dir="ltr" className="grow" placeholder="https://docs.google.com/spreadsheets/d/…" value={url}
-                    onChange={e => { setUrl(e.target.value); setCheck(null); }} />
-                  <button type="button" className="btn secondary" disabled={!!busy || !url.trim()} onClick={verify}>{busy === "check" ? "جارٍ الفحص…" : "🔍 فحص"}</button>
-                </div>
+                الصق الرابط هنا، ويُفحص تلقائياً:
+                <input type="url" dir="ltr" style={{ marginTop: 4 }} placeholder="https://docs.google.com/spreadsheets/d/…" value={url}
+                  onChange={e => { setUrl(e.target.value); setCheck(null); }} />
+                {busy === "check" && <div className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>🔍 جارٍ فحص الملف…</div>}
+                {linkHint && <Alert type="error">{linkHint}</Alert>}
                 {check && <Alert type={check.ok ? "ok" : "error"}>{check.text}</Alert>}
+                {check && !check.ok && <button type="button" className="btn secondary sm" disabled={!!busy} onClick={verify}>🔄 إعادة الفحص</button>}
               </li>
               <li>
-                حذف الموسم من القاعدة (برمز التصفير الخاص):
+                أدخل رمز التصفير الخاص، ثم أرشف:
                 <div className="row" style={{ flexWrap: "nowrap", marginTop: 4 }}>
                   <input className="secret-input grow" type="password" placeholder="رمز التصفير" value={code} onChange={e => setCode(e.target.value)}
                     autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" />
                   <button type="button" className="btn danger" disabled={!!busy || !(check && check.ok) || !code} onClick={archive}>
-                    {busy === "archive" ? "جارٍ التنفيذ…" : "🗄️ حفظ الرابط وحذف الموسم"}
+                    {busy === "archive" ? "جارٍ التنفيذ…" : "🗄️ أرشفة الموسم"}
                   </button>
                 </div>
+                <small className="hint">يُحفظ الرابط، ويُحذف الموسم من القاعدة، ويبقى معروضاً من ملفه للجميع.</small>
               </li>
             </ol>
           )}
@@ -2283,7 +2312,7 @@ function SeasonArchiveCard({ secret, rows, reload }) {
           <input type="file" accept=".xlsx,.xls" hidden disabled={!!busy} onChange={e => { importFile(e.target.files[0]); e.target.value = ""; }} />
         </label>
       </div>
-      {viewing && <ExcelViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
+      {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -4297,7 +4326,7 @@ function ReportsPage({ code, viewerName }) {
           {bySeasonDesc(past).map(x => <button type="button" key={x.season} className="btn secondary sm" onClick={() => setPastView(x)}>موسم {x.season}</button>)}
         </div>
       )}
-      {pastView && <ExcelViewer source={{ title: `موسم ${pastView.season}`, url: pastView.url }} onClose={() => setPastView(null)} />}
+      {pastView && <SeasonViewer source={{ title: `موسم ${pastView.season}`, url: pastView.url }} onClose={() => setPastView(null)} />}
       {error && <Alert type="error">{error}</Alert>}
       {rows === null ? (!error && <Loading />) : (
         <>
@@ -4308,40 +4337,10 @@ function ReportsPage({ code, viewerName }) {
           </div>
           <div className="card" style={{ padding: 0 }}>
             {rows.length === 0 ? <div className="empty">لا توجد شكاوى في هذه الفترة</div> : (
-              <div className="table-wrap" style={{ maxHeight: "none" }}>
-                <table className="stack">
-                  <thead>
-                    <tr><th>الحالة</th><th>رقم الشكوى</th><th>العنوان</th><th>التصنيف</th><th>اسم المشتكي</th><th>المشتكى عليه</th><th>الموضوع</th><th>النتيجة</th><th>تاريخ الإغلاق</th></tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(r => (
-                      <tr key={r.complaint_number} className={`status-row ${stClass(r.status)} ${cardOn ? "clickable" : ""}`}
-                        onClick={cardOn ? () => setOpenNum(r.complaint_number) : undefined} title={cardOn ? "اضغط لعرض بطاقة الشكوى" : undefined}>
-                        <td data-label="الحالة"><StatusBadge value={r.status} /></td>
-                        <td data-label="رقم الشكوى"><b dir="ltr">{r.complaint_number}</b></td>
-                        <td data-label="العنوان"><b>{r.title || "—"}</b></td>
-                        <td data-label="التصنيف">{r.classification || "—"}</td>
-                        <td data-label="اسم المشتكي"><NameRole name={r.complainant_name} role={r.complainant_role} /></td>
-                        <td data-label="المشتكى عليه">{r.accused_name ? <NameRole name={r.accused_name} role={r.accused_role} /> : "—"}</td>
-                        <td data-label="الموضوع" className="subj">{r.subject}</td>
-                        <td data-label="النتيجة" className="subj">{r.result || "—"}</td>
-                        <td data-label="تاريخ الإغلاق">{fmtDate(r.closed_date)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ComplaintsBrief rows={rows} onOpen={cardOn ? r => setOpenNum(r.complaint_number) : null} />
             )}
           </div>
           {cardOn && rows.length > 0 && <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي شكوى لعرض بطاقتها (للاطلاع فقط)</p>}
-          {rows.length > 0 && (
-            <div className="center" style={{ marginTop: 12 }}>
-              <button className="btn secondary" onClick={() => saveWorkbook([{ name: "تقرير الشكاوى",
-                headers: ["الموسم", "الحالة", "رقم الشكوى", "تاريخ الشكوى", "العنوان", "التصنيف", "اسم المشتكي", "صفة المشتكي", "المشتكى عليه", "صفة المشتكى عليه", "الموضوع", "النتيجة", "تاريخ الإغلاق"],
-                rows: rows.map(r => [r.season, r.status, r.complaint_number, xlDate(r.received_date), r.title, r.classification, r.complainant_name, r.complainant_role, r.accused_name, r.accused_role, r.subject, r.result, xlDate(r.closed_date)]) }],
-                `تقرير-الشكاوى-${season ? "موسم-" + season + "-" : ""}${range.from || "الكل"}-${range.to || ""}.xlsx`).catch(e => setError(e.message || NET_ERR))}>⬇ تصدير التقرير (Excel)</button>
-            </div>
-          )}
         </>
       )}
       {openNum && <ReportCard code={code} number={openNum} onClose={() => setOpenNum(null)} />}
@@ -4349,7 +4348,217 @@ function ReportsPage({ code, viewerName }) {
   );
 }
 
-// بطاقة شكوى في التقارير (للاطلاع فقط): التفاصيل، الاعتراض، والجلسات — بلا أي تعديل
+// ---------------------------------------------------------------------
+// عرض للاطلاع فقط بشكل لوحة الإدارة نفسه (صفحة التقارير والمواسم السابقة)
+// ---------------------------------------------------------------------
+// بطاقة شكوى للاطلاع فقط، بشكل بطاقة لوحة الإدارة: الرأس، المعلومات الأساسية، العنوان والنص والروابط،
+// ثم تبويبات الجلسات والنتائج والاعتراض والمتابعة — بلا أي تعديل
+function ComplaintView({ c, sessions }) {
+  const [tab, setTab] = useState("sessions");
+  const sess = [...(sessions || [])].sort((a, b) => new Date(b.session_at) - new Date(a.session_at));
+  const TABS = [["sessions", `🗓️ الجلسات (${sess.length})`], ["results", "📋 النتائج"], ["objection", "⚖️ الاعتراض"], ["follow", "⚙️ المتابعة"]];
+  const none = <span className="muted">—</span>;
+
+  return (
+    <div className={`card status-card ${stClass(c.status)}`}>
+      <div className="c-head">
+        <div>
+          <div className="c-no">{c.complaint_number}</div>
+          <div className="meta"><span>📅 {fmtDateTime(c.received_date)}</span><span className="readonly-tag">👁️ للاطلاع فقط</span></div>
+        </div>
+        <div className="c-head-actions"><StatusBadge value={c.status} /></div>
+      </div>
+      <dl className="detail-grid info-grid">
+        <div><dt>👤 المشتكي</dt><dd>{c.complainant_name}{c.complainant_role && <span className="muted"> ({c.complainant_role})</span>}</dd></div>
+        <div><dt>📞 الهاتف</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.phone_number || "—"}</dd></div>
+        {c.contact_number && <div><dt>💬 واتس / تلغرام</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.contact_number}</dd></div>}
+        <div><dt>⚠️ المشتكى عليه</dt><dd>{c.accused_name || "—"}{c.accused_role && <span className="muted"> ({c.accused_role})</span>}</dd></div>
+      </dl>
+      {c.title && <div className="c-title">📝 {c.title}</div>}
+      <div className="subject">{c.subject}</div>
+      {cleanLinks(c.links).length > 0 && <div className="links-line"><LinksView links={c.links} /></div>}
+
+      <div className="tabs card-tabs">
+        {TABS.map(([k, t]) => <button key={k} type="button" className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{t}</button>)}
+      </div>
+
+      {tab === "sessions" && (
+        <div className="sessions">
+          {sess.length === 0 ? <p className="muted" style={{ margin: 0 }}>لا توجد جلسات.</p> : (
+            <div className="table-wrap" style={{ maxHeight: 320, border: "1px solid var(--line)" }}>
+              <table className="sheet">
+                <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th></tr></thead>
+                <tbody>
+                  {sess.map((s, i) => (
+                    <tr key={i} className={`status-row ${stClass(s.status)}`} style={{ cursor: "default" }}>
+                      <td>{fmtDateTime(s.session_at)}</td>
+                      <td><b>{s.title || none}</b></td>
+                      <td>{s.location || none}</td>
+                      <td className="wrap">{s.topic || none}</td>
+                      <td>{s.referred_to || none}</td>
+                      <td className="wrap">{s.result || none}</td>
+                      <td><StatusBadge value={s.status} /></td>
+                      <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : none}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "results" && (
+        <div className="card-pane">
+          <ResultBox c={c} />
+          <div className="field-label" style={{ marginTop: 12 }}>👤 النتيجة التي يراها المشتكي</div>
+          <div className="subject">{c.complainant_result || none}</div>
+          <div className="field-label">⚖️ النتيجة التي يراها المعترض</div>
+          <div className="subject">{c.accused_result || none}</div>
+        </div>
+      )}
+
+      {tab === "objection" && (
+        <div className="sessions">
+          {c.objection_at ? (
+            <>
+              <div className="muted" style={{ fontSize: 13.5 }}>قُدّم في {fmtDateTime(c.objection_at)}</div>
+              <div className="subject" style={{ marginTop: 6 }}>{c.objection_text}</div>
+              {cleanLinks(c.objection_links).length > 0 && <div className="links-line"><LinksView links={c.objection_links} /></div>}
+            </>
+          ) : <p className="muted" style={{ margin: 0 }}>لم يُقدَّم اعتراض على هذه الشكوى.</p>}
+        </div>
+      )}
+
+      {tab === "follow" && (
+        <div className="card-pane">
+          <dl className="detail-grid">
+            <div><dt>التصنيف</dt><dd>{c.classification || none}</dd></div>
+            <div><dt>ترحيل / مُحالة إلى</dt><dd>{c.referred_to || none}</dd></div>
+            <div><dt>تاريخ الإغلاق</dt><dd>{c.closed_date ? fmtDate(c.closed_date) : none}</dd></div>
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// جدول شكاوى للاطلاع بالأعمدة المهمة فقط (رقم الشكوى، العنوان، الحالة، النتيجة)؛ الضغط على صف يفتح بطاقته
+function ComplaintsBrief({ rows, onOpen }) {
+  return (
+    <div className="table-wrap" style={{ maxHeight: "none" }}>
+      <table className="stack">
+        <thead><tr><th>رقم الشكوى</th><th>عنوان الشكوى</th><th>الحالة</th><th>النتيجة</th></tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.complaint_number} className={`status-row ${stClass(r.status)} ${onOpen ? "clickable" : ""}`}
+              onClick={onOpen ? () => onOpen(r) : undefined} title={onOpen ? "اضغط لعرض بطاقة الشكوى" : undefined}>
+              <td data-label="رقم الشكوى"><b dir="ltr">{r.complaint_number}</b></td>
+              <td data-label="عنوان الشكوى"><b>{r.title || "—"}</b></td>
+              <td data-label="الحالة"><StatusBadge value={r.status} /></td>
+              <td data-label="النتيجة" className="subj">{r.result || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// عارض موسم سابق من ملفه على Google (للاطلاع فقط) بشكل لوحة الإدارة: الشكاوى بالأعمدة المهمة مع بحث وتصفية
+// بالحالة، والضغط على شكوى يفتح بطاقتها بجلساتها؛ وتبويب للقرارات الإدارية
+function SeasonViewer({ source, onClose }) {
+  const [book, setBook] = useState(null);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState("complaints");
+  const [q, setQ] = useState("");
+  const [st, setSt] = useState("");
+  const [open, setOpen] = useState(null);
+
+  // جلب الملف من Google وقراءته
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const b = await readSeasonBook(await fetchSheetFile(source.url)); if (alive) setBook(b); }
+      catch (e) { if (alive) setError((e && e.message) || NET_ERR); }
+    })();
+    return () => { alive = false; };
+  }, [source.url]);
+
+  // البحث والتصفية، والأحدث رقماً أولاً
+  const term = q.trim();
+  const rows = !book ? [] : book.complaints
+    .filter(c => (!st || c.status === st) &&
+      (!term || [c.complaint_number, c.title, c.complainant_name, c.accused_name, c.subject, c.result].some(v => (v || "").includes(term))))
+    .sort((a, b) => String(b.complaint_number).localeCompare(String(a.complaint_number), "ar", { numeric: true }));
+  const decisions = book ? book.decisions || [] : [];
+
+  // العرض: نافذة فيها العنوان ورابط Google، ثم تبويبا الشكاوى والقرارات، ثم بطاقة الشكوى المفتوحة
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal xl-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
+        <h2 style={{ marginTop: 0 }}>📚 {source.title} <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
+        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>نسخة الأرشيف على Google Drive · <a href={source.url} target="_blank" rel="noopener">فتح في Google Sheets ↗</a></p>
+        {error ? <Alert type="error">{error}</Alert> : !book ? <Loading /> : (
+          <>
+            <div className="tabs">
+              <button className={tab === "complaints" ? "active" : ""} onClick={() => setTab("complaints")}>📋 الشكاوى ({book.complaints.length})</button>
+              <button className={tab === "decisions" ? "active" : ""} onClick={() => setTab("decisions")}>📑 القرارات الإدارية ({decisions.length})</button>
+            </div>
+            {tab === "complaints" ? (
+              <>
+                <div className="row" style={{ flexWrap: "nowrap", margin: "10px 0" }}>
+                  <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 بحث بالرقم أو العنوان أو الاسم…" />
+                  <select value={st} onChange={e => setSt(e.target.value)} style={{ width: "auto", flex: "0 0 auto" }} aria-label="الحالة">
+                    <option value="">كل الحالات</option>
+                    {STATUSES.map(x => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                </div>
+                {rows.length === 0 ? <p className="muted center">لا توجد شكاوى{term || st ? " مطابقة" : ""}.</p> : (
+                  <>
+                    <div className="card" style={{ padding: 0 }}><ComplaintsBrief rows={rows} onOpen={setOpen} /></div>
+                    <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي شكوى لعرض بطاقتها</p>
+                  </>
+                )}
+              </>
+            ) : decisions.length === 0 ? <p className="muted center">لا توجد قرارات في هذا الموسم.</p> : (
+              <div className="card" style={{ padding: 0 }}>
+                <div className="table-wrap" style={{ maxHeight: "none" }}>
+                  <table className="stack">
+                    <thead><tr><th>رقم القرار</th><th>التاريخ</th><th>العنوان</th><th>التصنيف</th><th>الرابط</th></tr></thead>
+                    <tbody>
+                      {decisions.map((d, i) => (
+                        <tr key={i} style={{ cursor: "default" }}>
+                          <td data-label="رقم القرار"><b dir="ltr">{d.decision_number}</b></td>
+                          <td data-label="التاريخ">{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
+                          <td data-label="العنوان"><b>{d.title}</b>{d.subject && <div className="muted" style={{ fontSize: 13 }}>{d.subject}</div>}</td>
+                          <td data-label="التصنيف">{d.classification || "—"}</td>
+                          <td data-label="الرابط">{d.url ? <a href={d.url} target="_blank" rel="noopener">فتح ↗</a> : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {open && (
+          <div className="modal-back" onClick={() => setOpen(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-close"><button className="btn sm" onClick={() => setOpen(null)}>✕ إغلاق</button></div>
+              <ComplaintView c={open} sessions={book.sessions.filter(s => s.complaint_number === open.complaint_number)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// بطاقة شكوى في التقارير (للاطلاع فقط): بشكل بطاقة لوحة الإدارة (ComplaintView) — بلا أي تعديل
 function ReportCard({ code, number, onClose }) {
   // بيانات البطاقة ورسالة الخطأ
   const [card, setCard] = useState(null);
@@ -4364,76 +4573,13 @@ function ReportCard({ code, number, onClose }) {
     });
   }, [code, number]);
 
-  // سطر بيانات: عنوان وقيمة
-  const Row = ({ label, children }) => <div><dt>{label}</dt><dd>{children || <span className="muted">—</span>}</dd></div>;
-  const c = card && card.complaint;
-
   // العرض: نافذة فوق الصفحة فيها البطاقة للقراءة فقط
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
-        {error ? <Alert type="error">{error}</Alert> : !card ? <div className="card"><Loading /></div> : (
-          <div className={`card status-card ${stClass(c.status)}`}>
-            <div className="c-head">
-              <div>
-                <div className="c-no">{c.complaint_number}</div>
-                <div className="meta"><span>📅 {fmtDateTime(c.received_date)}</span><span className="readonly-tag">👁️ للاطلاع فقط</span></div>
-              </div>
-              <StatusBadge value={c.status} />
-            </div>
-            <dl className="detail-grid">
-              <Row label="اسم المشتكي">{c.complainant_name}</Row>
-              <Row label="صفة المشتكي">{c.complainant_role}</Row>
-              <Row label="رقم الهاتف"><span dir="ltr">{c.phone_number}</span></Row>
-              <Row label="واتس / تلغرام"><span dir="ltr">{c.contact_number}</span></Row>
-              <Row label="المشتكى عليه">{c.accused_name}</Row>
-              <Row label="صفة المشتكى عليه">{c.accused_role}</Row>
-              <Row label="التصنيف">{c.classification}</Row>
-              <Row label="ترحيل / مُحالة إلى">{c.referred_to}</Row>
-              <Row label="تاريخ الإغلاق">{c.closed_date && fmtDate(c.closed_date)}</Row>
-            </dl>
-            {c.title && <div className="c-title" style={{ marginTop: 0, marginBottom: 8 }}>📝 {c.title}</div>}
-            <div className="field-label">نص الشكوى</div>
-            <div className="subject">{c.subject}</div>
-            <div className="field-label">📋 نتيجة الشكوى</div>
-            <div className="subject">{c.result || <span className="muted">لم تصدر بعد</span>}</div>
-            <div className="field-label">👤 النتيجة التي يراها المشتكي</div>
-            <div className="subject">{c.complainant_result || <span className="muted">—</span>}</div>
-            <div className="field-label">⚖️ النتيجة التي يراها المعترض</div>
-            <div className="subject">{c.accused_result || <span className="muted">—</span>}</div>
-            {c.objection_at && (
-              <div className="sessions">
-                <h3>⚖️ اعتراض المشتكى عليه</h3>
-                <div className="muted" style={{ fontSize: 13.5 }}>قُدّم في {fmtDateTime(c.objection_at)}</div>
-                <div className="subject" style={{ marginTop: 6 }}>{c.objection_text}</div>
-              </div>
-            )}
-            <div className="sessions">
-              <h3>🗓️ الجلسات ({card.sessions.length})</h3>
-              {card.sessions.length === 0 ? <p className="muted" style={{ margin: 0 }}>لا توجد جلسات.</p> : (
-                <div className="table-wrap" style={{ maxHeight: 280, border: "1px solid var(--line)" }}>
-                  <table className="sheet">
-                    <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>الحالة</th></tr></thead>
-                    <tbody>
-                      {card.sessions.map((s, i) => (
-                        <tr key={i} className={`status-row ${stClass(s.status)}`} style={{ cursor: "default" }}>
-                          <td>{fmtDateTime(s.session_at)}</td>
-                          <td><b>{s.title || <span className="muted">—</span>}</b></td>
-                          <td>{s.location || <span className="muted">—</span>}</td>
-                          <td className="wrap">{s.topic || <span className="muted">—</span>}</td>
-                          <td>{s.referred_to || <span className="muted">—</span>}</td>
-                          <td className="wrap">{s.result || <span className="muted">—</span>}</td>
-                          <td><StatusBadge value={s.status} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {error ? <Alert type="error">{error}</Alert> : !card ? <div className="card"><Loading /></div>
+          : <ComplaintView c={card.complaint} sessions={card.sessions} />}
       </div>
     </div>
   );
@@ -4456,7 +4602,7 @@ function App() {
     storeSet(sessionStorage, key, value); storeSet(localStorage, key, null);
     if (value != null && remember) storeSet(localStorage, key, value);
   };
-  const setAdmin = (s, remember) => { keepValue("hajj_admin", s, remember); setAdminSecret(s); };
+  const setAdmin = (s, remember) => { keepValue("hajj_admin", s, remember); setAdminSecret(s); if (s) storeSet(localStorage, ADMIN_DEVICE, "1"); };
   const setView = (v, remember) => { keepValue("hajj_viewer", v ? JSON.stringify(v) : null, remember); setViewer(v); };
 
   // التحقق من كلمة مرور الأدمن عبر admin_login
@@ -4502,7 +4648,8 @@ function App() {
   // العرض: الشريط العلوي ثم الصفحة المختارة
   return (
     <>
-      {!(hash === "#/admin" && adminSecret) && <Header label={label} onLogout={logout} />}
+      {!(hash === "#/admin" && adminSecret) && <Header label={label} onLogout={logout}
+        adminLink={hash !== "#/admin" && (isStandalone() || !!adminSecret || storeGet(localStorage, ADMIN_DEVICE) === "1")} />}
       <main className={`container${hash === "#/admin" && adminSecret ? " admin-wide" : ""}`}>{page}</main>
     </>
   );
