@@ -58,6 +58,8 @@
 //                وفحص الرابط تلقائياً بعد لصقه مع تنبيه للروابط غير الصالحة.
 //    2026-10-05  زر «🛠️ لوحة الإدارة» في الشريط العلوي للصفحات العامة: في التطبيق المثبّت (بلا شريط عنوان)، وعلى أي جهاز
 //                دخل منه الأدمن من قبل.
+//    2026-10-05  زر «📝 إدخال شكوى» في لوحة الإدارة (يفتح النموذج مباشرة)؛ رابط المشتكي يحمل كلمة المرور (‎#/?code=…)
+//                فيفتح النموذج دون كتابتها، و‎#/?direct=1 للتقديم المباشر.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -124,6 +126,10 @@ const dateTimeInputToIso = s => s ? new Date(s).toISOString() : null;
 
 // رابط المنصة بدون جزء #
 const siteUrl = () => location.href.split("#")[0];
+// رابط تقديم الشكوى وفيه كلمة المرور: يفتح النموذج مباشرة دون كتابتها
+const complaintLink = code => `${siteUrl()}#/?code=${encodeURIComponent(code)}`;
+// قيمة من جزء الرابط بعد ? في ‎#/?code=…
+const hashParam = key => { const m = location.hash.match(new RegExp(`[?&]${key}=([^&]*)`)); return m ? decodeURIComponent(m[1]) : null; };
 
 // نسخ نص إلى الحافظة؛ تُرجع true عند النجاح
 async function copyText(text) { try { await navigator.clipboard.writeText(text); return true; } catch { return false; } }
@@ -590,6 +596,16 @@ function ComplainantPage() {
       if (error || !data || !data.length) setLoadError(NET_ERR); else setConfig(data[0]);
     });
   }, []);
+
+  // الرابط فيه كلمة المرور (‎#/?code=…) أو طلب التقديم المباشر (‎#/?direct=1): فتح النموذج مباشرة
+  useEffect(() => {
+    if (!config) return;
+    const linkCode = hashParam("code"), direct = hashParam("direct");
+    if (linkCode === null && direct === null) return;
+    try { history.replaceState(null, "", location.pathname + location.search + "#/"); } catch { /* غير متاح */ }
+    if (direct !== null && config.direct) return setCode("");
+    if (linkCode) verify(linkCode).then(err => err ? setGateError("كلمة المرور في الرابط لم تعد صالحة. اطلب رابطاً جديداً.") : setCode(linkCode));
+  }, [config]);
 
   // التحقق من كلمة المرور (عامة أو خاصة) عبر check_access_code
   const isPrivate = config && config.mode === "private";
@@ -1329,6 +1345,7 @@ function AdminPage({ secret, onLogout }) {
           <h2 className="admin-title">{current === "home" ? "🏠 الرئيسية" : section.title}</h2>
           <div className="admin-top-actions">
             <InstallButton />
+            <EnterComplaintButton secret={secret} />
             <button type="button" className={`btn secondary sm ${current === "guide" ? "is-on" : ""}`} onClick={() => pick("guide")}>📘 <span className="hide-xs">دليل المنصة</span></button>
             {onLogout && <button type="button" className="btn sm" onClick={onLogout}>خروج</button>}
           </div>
@@ -1358,6 +1375,28 @@ function AdminPage({ secret, onLogout }) {
         </div>, document.body
       )}
     </div>
+  );
+}
+
+// زر «📝 إدخال شكوى» في لوحة الإدارة: يفتح نموذج تقديم الشكوى مباشرة (لإدخال شكوى وصلت بالهاتف أو ورقياً):
+// التقديم المباشر إن كان مفعّلاً، وإلا كلمة المرور العامة، وإلا كلمة خاصة تُولَّد للشكوى نفسها؛
+// والعودة إلى اللوحة من زر «🛠️ لوحة الإدارة» في الشريط العلوي
+function EnterComplaintButton({ secret }) {
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    const { data } = await sb.rpc("admin_get_access", { p_secret: secret });
+    const a = data && data[0];
+    if (a && a.direct) { location.hash = "#/?direct=1"; return; }
+    if (a && a.mode === "general" && a.general_password) { location.hash = `#/?code=${encodeURIComponent(a.general_password)}`; return; }
+    const r = await sb.rpc("admin_create_code", { p_secret: secret, p_note: "إدخال من لوحة الإدارة" });
+    setBusy(false);
+    location.hash = r.data && r.data.length ? `#/?code=${encodeURIComponent(r.data[0].code)}` : "#/";
+  }
+  return (
+    <button type="button" className="btn secondary sm" disabled={busy} onClick={go} title="فتح نموذج تقديم الشكوى لإدخال شكوى">
+      📝 <span className="hide-xs">{busy ? "…" : "إدخال شكوى"}</span>
+    </button>
   );
 }
 
@@ -3846,14 +3885,14 @@ function AdminLinks({ secret, isManager = true }) {
     setErr("");
     if (access.mode === "general") {
       if (!access.general_password) return setErr("لم تُحفظ كلمة مرور عامة بعد (تبويب «دخول المشتكين»).");
-      return prepare("رسالة المشتكي", `لتقديم شكوى إلى إدارة الحج والعمرة (قسم الشكاوى) افتح الرابط:\n${siteUrl()}\nكلمة المرور: ${access.general_password}`);
+      return prepare("رسالة المشتكي", `لتقديم شكوى إلى إدارة الحج والعمرة (قسم الشكاوى) افتح الرابط:\n${complaintLink(access.general_password)}\nكلمة المرور: ${access.general_password}`);
     }
     setBusy(true);
     const { data, error } = await sb.rpc("admin_create_code", { p_secret: secret, p_note: note });
     setBusy(false);
     if (error || !data || !data.length) return setErr("تعذّر توليد كلمة المرور، يرجى المحاولة مرة أخرى.");
     setNote("");
-    prepare(`رسالة المشتكي — كلمة المرور ${data[0].code}`, `لتقديم شكواك إلى إدارة الحج والعمرة (قسم الشكاوى) افتح الرابط:\n${siteUrl()}\nكلمة المرور الخاصة بك: ${data[0].code}`);
+    prepare(`رسالة المشتكي — كلمة المرور ${data[0].code}`, `لتقديم شكواك إلى إدارة الحج والعمرة (قسم الشكاوى) افتح الرابط:\n${complaintLink(data[0].code)}\nكلمة المرور الخاصة بك: ${data[0].code}`);
   }
 
   // الإدارة: رابط التقارير مع كلمة مرور الشخص المختار
