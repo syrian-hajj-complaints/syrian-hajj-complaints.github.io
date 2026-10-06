@@ -69,6 +69,9 @@
 //    2026-10-06  ملاحظة عن المشتكي وملاحظة عن المشتكى عليه (اختياريتان، مثل اسم المجموعة): في النموذج والبطاقة وبطاقة الاطلاع
 //                وملف Word وملف الموسم؛ جدولا الجلسات بلا «موضوع الجلسة» (يظهر عند الضغط على الجلسة).
 //    2026-10-06  موضوع الجلسة ونتيجتها حتى 10000 حرف (كانا 2000)، بخانتين أطول وعدّاد للأحرف.
+//    2026-10-06  ملف Word يدمج صور الروابط (روابط الشكوى والاعتراض والجلسات) تحت كل رابط: صور Google Drive المشارَكة
+//                «أي شخص لديه الرابط» وروابط الصور المباشرة؛ وغير الصور يبقى رابطاً نصياً.
+//    2026-10-06  «رأي لجنة الشكاوى والصلح» في كل جلسة بعد موضوعها (اختياري): في النموذج، وتحت الجلسة في بطاقة الاطلاع، وملف Word وملف الموسم.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -202,7 +205,8 @@ function loadDocx() {
 }
 
 // بناء مستند Word للشكوى (sess: جلساتها، logo: صورة الشعار، letterhead: صورة الترويسة الرسمية — أو null)
-function buildComplaintDoc(D, c, sess, logo, letterhead) {
+// images: صور الروابط المجلوبة {الرابط: {data, w, h}} — تُدمج تحت رابطها
+function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
   const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, BorderStyle, ShadingType, Header } = D;
   // ألوان الهوية والخط
   const GREEN = "00594F", GREEN2 = "006E5C", GOLD = "AD9E6E", INK = "333132", MUTED = "939598", SAND = "F5F1EA", FONT = "Arial";
@@ -233,14 +237,24 @@ function buildComplaintDoc(D, c, sess, logo, letterhead) {
   const before = sess.filter(s => objAt === null || new Date(s.session_at).getTime() < objAt);
   const after = objAt === null ? [] : sess.filter(s => new Date(s.session_at).getTime() >= objAt);
   // الروابط: عنوان ثم رابط في كل سطر (من اليسار لليمين)
+  // الروابط: عنوان ثم رابط في كل سطر، وتحته صورته إن كان صورة جُلبت (بعرض حتى 600 وارتفاع حتى 700 مع حفظ النسبة)
+  const imagePara = im => {
+    const k = Math.min(1, 600 / im.w, 700 / im.h);
+    return new Paragraph({ alignment: "center", spacing: { after: 120 },
+      children: [new ImageRun({ data: im.data, transformation: { width: Math.round(im.w * k), height: Math.round(im.h * k) } })] });
+  };
   const linkParas = (label, links) => !cleanLinks(links).length ? [] : [
     para(label, { bold: true, before: 80, after: 40 }),
-    ...cleanLinks(links).map(u => new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: u, font: FONT, size: 20, color: GREEN2 })] })),
+    ...cleanLinks(links).flatMap(u => [
+      new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: u, font: FONT, size: 20, color: GREEN2 })] }),
+      ...(images[u] ? [imagePara(images[u])] : []),
+    ]),
   ];
   const sessionsBlock = list => !list.length ? [para("لا توجد جلسات.", { color: MUTED })] : list.flatMap(s => [
     para(`الجلسة ${sess.indexOf(s) + 1}${s.title ? " — " + s.title : ""} (${xlDate(s.session_at)})`, { bold: true, size: 26, color: GREEN2, before: 160 }),
     ...(s.location ? [para(`المكان: ${s.location}`, { color: MUTED, after: 60 })] : []),
     para("موضوع الجلسة:", { bold: true, after: 40 }), ...box(s.topic),
+    ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...box(s.opinion)] : []),
     para("نتيجة الجلسة:", { bold: true, before: 80, after: 40 }), ...box(s.result),
     ...linkParas("روابط الجلسة:", s.links),
   ]);
@@ -303,14 +317,44 @@ function downloadBlob(blob, name) {
 }
 
 // التصدير: جلب جلسات الشكوى والشعار، بناء المستند، ثم تنزيله
+// رقم ملف Google Drive من رابطه (…/file/d/<الرقم>/… أو ?id=<الرقم>)
+const driveFileId = u => (String(u).match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{20,})/) || [])[1] || null;
+
+// جلب صورة من رابط لدمجها في Word: ملف Google Drive يُجلب من رابط صورته المباشر (يحتاج مشاركة «أي شخص لديه الرابط»)،
+// وغيره كما هو؛ PNG و JPEG كما هما، وغيرهما (مثل WebP) يُحوَّل إلى PNG. تُرجع {data, w, h} أو null إن لم يكن صورة أو تعذّر
+async function fetchLinkImage(url) {
+  const id = driveFileId(url);
+  try {
+    const r = await fetch(id ? `https://lh3.googleusercontent.com/d/${id}=w1600` : url);
+    const type = (r.headers.get("content-type") || "").toLowerCase();
+    if (!r.ok || !type.startsWith("image/")) return null;
+    const blob = await r.blob();
+    const bmp = await createImageBitmap(blob);
+    let data;
+    if (/image\/(png|jpe?g)/.test(type)) data = new Uint8Array(await blob.arrayBuffer());
+    else {
+      const cv = document.createElement("canvas");
+      cv.width = bmp.width; cv.height = bmp.height;
+      cv.getContext("2d").drawImage(bmp, 0, 0);
+      data = new Uint8Array(await (await new Promise(res => cv.toBlob(res, "image/png"))).arrayBuffer());
+    }
+    return { data, w: bmp.width, h: bmp.height };
+  } catch { return null; }
+}
+
+// تصدير ملف الشكوى: الجلسات، الترويسة والشعار، وصور الروابط؛ تُرجع {images: عدد الصور المدمجة, links: عدد الروابط}
 async function exportComplaintWord(secret, c) {
   const D = await loadDocx();
   const s = await sb.rpc("admin_list_sessions", { p_secret: secret, p_complaint_id: c.id });
   if (s.error) throw new Error(NET_ERR);
   const sess = (s.data || []).slice().sort((a, b) => new Date(a.session_at) - new Date(b.session_at));
-  // صورتا الترويسة والشعار من موقع المنصة
-  const [letterhead, logo] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png")]);
-  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead)), `ملف-الشكوى-${c.complaint_number}.docx`);
+  // صورتا الترويسة والشعار من موقع المنصة، وصور روابط الشكوى والاعتراض والجلسات
+  const urls = [...new Set([...cleanLinks(c.links), ...cleanLinks(c.objection_links), ...sess.flatMap(x => cleanLinks(x.links))])];
+  const images = {};
+  const [letterhead, logo] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png"),
+    ...urls.map(async u => { const im = await fetchLinkImage(u); if (im) images[u] = im; })]);
+  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), `ملف-الشكوى-${c.complaint_number}.docx`);
+  return { images: Object.keys(images).length, links: urls.length };
 }
 
 // أعمدة ملف الموسم في Excel: [الحقل في القاعدة، العنوان في الملف، تاريخ؟ (true = تاريخ ووقت، "day" = يوم فقط)] —
@@ -328,7 +372,7 @@ const XL_SHEETS = [
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
-    ["location", "المكان"], ["topic", "موضوع الجلسة"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
+    ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
   { name: "الإحالات", key: "referrals", marker: "تاريخ الإحالة", cols: [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
   { name: "القرارات الإدارية", key: "decisions", marker: "رقم القرار", cols: [
@@ -2893,7 +2937,12 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
   const [wordBusy, setWordBusy] = useState(false);
   async function exportWord() {
     setWordBusy(true); setMsg(null);
-    try { await exportComplaintWord(secret, c); }
+    try {
+      const r = await exportComplaintWord(secret, c);
+      // روابط لم تُدمج صورها: ليست صوراً، أو غير مشارَكة «أي شخص لديه الرابط»
+      if (r && r.links > r.images)
+        setMsg({ type: "ok", text: `📄 نُزّل ملف Word ودُمجت ${r.images} صورة من ${r.links} رابط. الروابط الباقية بقيت نصاً: إمّا ليست صوراً (مثل PDF)، أو غير مشارَكة «أي شخص لديه الرابط».` });
+    }
     catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
     setWordBusy(false);
   }
@@ -3216,7 +3265,7 @@ const sessionStatus = (complaint, s, at) => sessionStatuses(complaint, at)[isClo
 
 function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0 }) {
   // سجل الجلسات، النموذج (جلسة جديدة أو تعديل جلسة: editId)، والرسائل
-  const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", links: [],
+  const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", opinion: "", links: [],
                          status: sessionStatus(complaint, complaint.status),
                          cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
   const [list, setList] = useState(null);
@@ -3244,7 +3293,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   function startEdit(s) {
     setEditId(s.id); setShowForm(true); scrollTo(formRef);
     setForm({ at: toDateTimeInput(s.session_at), title: s.title || "", location: s.location || "", topic: s.topic || "", referred_to: s.referred_to || "", result: s.result || "",
-              links: cleanLinks(s.links),
+              links: cleanLinks(s.links), opinion: s.opinion || "",
               status: sessionStatus(complaint, s.status, s.session_at),
               cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
     setMsg(null);
@@ -3279,13 +3328,15 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     setBusy(true); setMsg(null);
     const done = () => { saving.current = false; setBusy(false); };
     const args = { p_secret: secret, p_session_at: dateTimeInputToIso(form.at), p_title: form.title, p_location: form.location, p_topic: form.topic,
-                   p_referred_to: form.referred_to, p_result: form.result, p_status: form.status, p_links: cleanLinks(form.links) };
+                   p_referred_to: form.referred_to, p_result: form.result, p_status: form.status, p_links: cleanLinks(form.links),
+                   p_opinion: form.opinion };
     const send = a => editId ? sb.rpc("admin_update_session", { ...a, p_id: editId }) : sb.rpc("admin_add_session", { ...a, p_complaint_id: complaint.id });
     const missing = err => err && /function|schema cache/i.test(err.message || "");
     let { data, error } = await send(args);
-    // قاعدة لم يُنفَّذ فيها القسم 34 ثم 30 بعد: النسخة بلا الروابط، ثم بلا «المكان»
+    // قاعدة لم يُنفَّذ فيها القسم 39 ثم 34 ثم 30 بعد: النسخة بلا الرأي، ثم بلا الروابط، ثم بلا «المكان»
+    if (missing(error)) { const { p_opinion, ...noOpinion } = args; ({ data, error } = await send(noOpinion)); }
     if (missing(error)) {
-      const { p_links, ...noLinks } = args;
+      const { p_links, p_opinion, ...noLinks } = args;
       ({ data, error } = await send(noLinks));
       if (missing(error)) { const { p_location, ...old } = noLinks; ({ data, error } = await send(old)); }
     }
@@ -3356,6 +3407,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             <select value={form.status} onChange={set("status")}>{sessionStatuses(complaint, editId ? form.at : null).map(x => <option key={x}>{x}</option>)}</select>
           </Field>
           <Field label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف`} full><textarea style={{ minHeight: 180 }} value={form.topic} onChange={set("topic")} maxLength={10000} placeholder="ما الذي نوقش في الجلسة" /></Field>
+          <Field label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`} full><textarea style={{ minHeight: 140 }} value={form.opinion} onChange={set("opinion")} maxLength={10000} /></Field>
           <Field label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`} full><textarea style={{ minHeight: 140 }} value={form.result} onChange={set("result")} maxLength={10000} /></Field>
           <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
           {isClosed(form.status) && (
@@ -4678,7 +4730,7 @@ function ComplaintView({ c, sessions }) {
                 <tbody>
                   {sess.map((s, i) => (
                     <React.Fragment key={i}>
-                      <tr className={`status-row clickable ${stClass(s.status)}`} onClick={() => setOpenSess(openSess === i ? null : i)} title="اضغط لعرض موضوع الجلسة">
+                      <tr className={`status-row clickable ${stClass(s.status)}`} onClick={() => setOpenSess(openSess === i ? null : i)} title="اضغط لعرض موضوع الجلسة ورأي اللجنة">
                         <td>{fmtDateTime(s.session_at)}</td>
                         <td><b>{s.title || none}</b></td>
                         <td>{s.location || none}</td>
@@ -4687,7 +4739,10 @@ function ComplaintView({ c, sessions }) {
                         <td><StatusBadge value={s.status} /></td>
                         <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : none}</td>
                       </tr>
-                      {openSess === i && <tr><td colSpan={7} className="wrap"><b>موضوع الجلسة:</b> {s.topic || none}</td></tr>}
+                      {openSess === i && <tr><td colSpan={7} className="wrap">
+                        <b>موضوع الجلسة:</b> {s.topic || none}
+                        {s.opinion && <div style={{ marginTop: 6 }}><b>⚖️ رأي لجنة الشكاوى والصلح:</b> {s.opinion}</div>}
+                      </td></tr>}
                     </React.Fragment>
                   ))}
                 </tbody>
