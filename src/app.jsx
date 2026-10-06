@@ -72,6 +72,9 @@
 //    2026-10-06  تعديل المواسم السابقة في Google Sheets نفسه (لمن له دور «محرّر»)، والمنصة تعرضه محدّثاً: حذف «فتح للتعديل»
 //                والإدخال من ملف إلى القاعدة؛ «➕ إضافة موسم سابق برابط ملفه»؛ ملف الأرشيف غير مقفول؛ تنبيه لرابط المجلد.
 //    2026-10-06  زر 🎤 (تحويل الكلام إلى نص) في موضوع الجلسة ورأي اللجنة ونتيجة الجلسة (VoiceArea).
+//    2026-10-06  زر 🎤 في الجلسة لموضوعها فقط (لا لرأي اللجنة ولا للنتيجة).
+//    2026-10-06  إصلاح 🎤: كل جملة جديدة كانت تمسح ما قبلها (نسخة قديمة من النص)؛ الآن تُضاف إلى آخر النص الحالي.
+//    2026-10-06  زر 🎤 يظهر معطّلاً بسبب واضح في المتصفح الذي لا يدعم التعرّف على الكلام (بدل إخفائه).
 //    2026-10-06  تبويب «📜 القرار» في بطاقة الشكوى: قرار لجنة الشكاوى والصلح (Word) بالترويسة الرسمية، قيمه مولَّدة من الشكوى
 //                (الرقم، التاريخ الهجري والميلادي من تاريخ الإغلاق، والبند الأول من نتيجتها) مع تعديل اختياري قبل التوليد.
 //    2026-10-06  رمز التصفير لا يُعرض للحفظ في المتصفح: حقل نصي بأحرف مخفية بدل حقل كلمة المرور.
@@ -1079,15 +1082,20 @@ function LinksEditor({ secret, complaint, target, onSaved }) {
   );
 }
 
+// إضافة كلام إلى آخر نص بمسافة واحدة بينهما
+const appendText = (text, t) => (text ? text.replace(/\s*$/, " ") : "") + t;
+
 // خانة نص طويل بزر 🎤 لتحويل الكلام إلى نص (موضوع الجلسة ورأي اللجنة ونتيجتها): الكلام يُضاف إلى آخر النص،
 // ويظهر أثناء النطق تحت الخانة؛ عدّاد الأحرف في التلميح
-function VoiceArea({ label, hint, value, onChange, minHeight = 140, maxLength = 10000, placeholder, onError }) {
+// onAppend(t): إضافة الكلام إلى آخر النص الحالي (يُفضَّل تحديثاً يعتمد على القيمة الحالية)؛ وإلا يُضاف إلى value
+// mic = false: الخانة نفسها بلا زر 🎤
+function VoiceArea({ label, hint, value, onChange, onAppend, mic = true, minHeight = 140, maxLength = 10000, placeholder, onError }) {
   const [interim, setInterim] = useState("");
   return (
     <div className="field full">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <span className="field-label">{label}</span>
-        <MicButton onText={t => onChange((value ? value.replace(/\s*$/, " ") : "") + t)} onError={onError} onInterim={setInterim} />
+        {mic && <MicButton onText={t => onAppend ? onAppend(t) : onChange((value ? value.replace(/\s*$/, " ") : "") + t)} onError={onError} onInterim={setInterim} />}
       </div>
       <textarea style={{ minHeight }} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength} placeholder={placeholder} />
       {interim && <div className="interim">🎙️ {interim}</div>}
@@ -1120,7 +1128,11 @@ function cleanPhone(v) {
 }
 
 // زر 🎤 تحويل الكلام إلى نص (يظهر فقط في المتصفحات التي تدعمه)؛ يستمر حتى «إيقاف» ويعرض الكلام أثناء النطق
-function MicButton({ onText, onError, onInterim }) {
+function MicButton({ onText: onTextProp, onError, onInterim }) {
+  // أحدث onText دائماً (الاستماع يبدأ مرة ويستمر عبر عدة رسومات للمكوّن؛ النسخة القديمة كانت تمسح ما كُتب قبلها)
+  const onTextRef = React.useRef(onTextProp);
+  onTextRef.current = onTextProp;
+  const onText = t => onTextRef.current(t);
   // هل المتصفح يدعم التعرّف على الكلام؟ وهل التسجيل جارٍ؟
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const [listening, setListening] = useState(false);
@@ -1130,7 +1142,12 @@ function MicButton({ onText, onError, onInterim }) {
 
   // إيقاف التسجيل عند مغادرة الصفحة
   useEffect(() => () => { wantRef.current = false; try { recRef.current && recRef.current.abort(); } catch {} }, []);
-  if (!Recognition) return null;
+  // متصفح لا يدعم التعرّف على الكلام: زر معطّل يوضّح السبب (بدل إخفائه)
+  if (!Recognition) return (
+    <button type="button" className="btn sm secondary" disabled title="التحويل الصوتي يعمل في Chrome أو Edge (حاسوب وأندرويد) وفي Safari الحديث">
+      🎤 غير متاح في هذا المتصفح
+    </button>
+  );
 
   // جلسة استماع واحدة؛ الجوال يُنهيها بعد ثوانٍ من الصمت فنعيد تشغيلها تلقائياً حتى يضغط «إيقاف»
   // (على أندرويد: continuous = false لتجنّب تكرار الجمل المعروف في Chrome)
@@ -3499,11 +3516,11 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             <select value={form.status} onChange={set("status")}>{sessionStatuses(complaint, editId ? form.at : null).map(x => <option key={x}>{x}</option>)}</select>
           </Field>
           <VoiceArea label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={180} placeholder="ما الذي نوقش في الجلسة… أو اضغط 🎤 وتحدّث"
-            value={form.topic} onChange={v => { setForm(f => ({ ...f, topic: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
-          <VoiceArea label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`}
-            value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
-          <VoiceArea label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
-            value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
+            value={form.topic} onChange={v => { setForm(f => ({ ...f, topic: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, topic: appendText(f.topic, t) }))} onError={t => setMsg({ type: "error", text: t })} />
+          <VoiceArea mic={false} label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`}
+            value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, opinion: appendText(f.opinion, t) }))} onError={t => setMsg({ type: "error", text: t })} />
+          <VoiceArea mic={false} label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
+            value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
           {isClosed(form.status) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
