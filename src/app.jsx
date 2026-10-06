@@ -79,6 +79,7 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-06  صور الروابط في Word: قصّ الحواف الفارغة حول الصورة، وحجم أصغر (حتى 480×420) حتى لا تترك مساحات فارغة كبيرة.
 //    2026-10-06  القرار: التوقيع بعد البنود بمسافة (لا في أسفل الصفحة)، والبنود بخط أصغر قليلاً — حسب النموذج المعتمد.
 //    2026-10-06  زر 🎤 في الجلسة لموضوعها فقط (لا لرأي اللجنة ولا للنتيجة).
 //    2026-10-06  إصلاح 🎤: كل جملة جديدة كانت تمسح ما قبلها (نسخة قديمة من النص)؛ الآن تُضاف إلى آخر النص الحالي.
@@ -255,9 +256,9 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
   const before = sess.filter(s => objAt === null || new Date(s.session_at).getTime() < objAt);
   const after = objAt === null ? [] : sess.filter(s => new Date(s.session_at).getTime() >= objAt);
   // الروابط: عنوان ثم رابط في كل سطر (من اليسار لليمين)
-  // الروابط: عنوان ثم رابط في كل سطر، وتحته صورته إن كان صورة جُلبت (بعرض حتى 600 وارتفاع حتى 700 مع حفظ النسبة)
+  // الروابط: عنوان ثم رابط في كل سطر، وتحته صورته إن كان صورة جُلبت (مقصوصة الحواف، بعرض حتى 480 وارتفاع حتى 420 مع حفظ النسبة)
   const imagePara = im => {
-    const k = Math.min(1, 600 / im.w, 700 / im.h);
+    const k = Math.min(1, 480 / im.w, 420 / im.h);
     return new Paragraph({ alignment: "center", spacing: { after: 120 },
       children: [new ImageRun({ data: im.data, transformation: { width: Math.round(im.w * k), height: Math.round(im.h * k) } })] });
   };
@@ -384,17 +385,31 @@ async function fetchLinkImage(url) {
     const r = await fetch(id ? `https://lh3.googleusercontent.com/d/${id}=w1600` : url);
     const type = (r.headers.get("content-type") || "").toLowerCase();
     if (!r.ok || !type.startsWith("image/")) return null;
-    const blob = await r.blob();
-    const bmp = await createImageBitmap(blob);
-    let data;
-    if (/image\/(png|jpe?g)/.test(type)) data = new Uint8Array(await blob.arrayBuffer());
-    else {
-      const cv = document.createElement("canvas");
-      cv.width = bmp.width; cv.height = bmp.height;
-      cv.getContext("2d").drawImage(bmp, 0, 0);
-      data = new Uint8Array(await (await new Promise(res => cv.toBlob(res, "image/png"))).arrayBuffer());
+    const bmp = await createImageBitmap(await r.blob());
+    // رسم الصورة، ثم قصّ الحواف الفارغة (البيضاء أو الشفافة) حولها حتى لا تأخذ مساحة فارغة في الملف
+    const src = document.createElement("canvas");
+    src.width = bmp.width; src.height = bmp.height;
+    const ctx = src.getContext("2d");
+    ctx.drawImage(bmp, 0, 0);
+    const px = ctx.getImageData(0, 0, src.width, src.height).data;
+    const blank = i => px[i + 3] < 16 || (px[i] > 242 && px[i + 1] > 242 && px[i + 2] > 242);
+    let top = src.height, left = src.width, bottom = -1, right = -1;
+    for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) {
+      if (blank((y * src.width + x) * 4)) continue;
+      if (y < top) top = y; if (y > bottom) bottom = y; if (x < left) left = x; if (x > right) right = x;
     }
-    return { data, w: bmp.width, h: bmp.height };
+    if (bottom < 0) return null;                       // صورة فارغة كلها
+    const padPx = 6;
+    top = Math.max(0, top - padPx); left = Math.max(0, left - padPx);
+    const w = Math.min(src.width, right + padPx + 1) - left, h = Math.min(src.height, bottom + padPx + 1) - top;
+    const out = document.createElement("canvas");
+    out.width = w; out.height = h;
+    const octx = out.getContext("2d");
+    octx.fillStyle = "#fff"; octx.fillRect(0, 0, w, h);   // خلفية بيضاء (للصور الشفافة)
+    octx.drawImage(src, left, top, w, h, 0, 0, w, h);
+    // JPEG بجودة عالية: حجم أصغر للملف
+    const data = new Uint8Array(await (await new Promise(res => out.toBlob(res, "image/jpeg", 0.9))).arrayBuffer());
+    return { data, w, h };
   } catch { return null; }
 }
 
