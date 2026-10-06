@@ -62,6 +62,8 @@
 //                فيفتح النموذج دون كتابتها، و‎#/?direct=1 للتقديم المباشر.
 //    2026-10-05  التصفير: خياران للبدء من جديد كلياً — حذف المواسم السابقة (روابط الأرشيف) والقرارات الإدارية أيضاً.
 //    2026-10-05  قسم «🗒️ الملاحظات»: ملاحظات دائمة (إضافة، تعديل، تثبيت، بحث، ومن أضاف ومن عدّل)؛ الحذف للمدير.
+//    2026-10-06  الجلسات: النموذج مخفي حتى «➕ جلسة جديدة» أو الضغط على جلسة في الجدول، ويُخفى بعد الحفظ مع رسالة
+//                «✅ تم حفظ الجلسة» ظاهرة في مكانه؛ الحفظ مرة واحدة (الزر معطّل حتى انتهاء كل الخطوات).
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -3119,9 +3121,15 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   const [list, setList] = useState(null);
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
+  const [showForm, setShowForm] = useState(false);   // نموذج الجلسة مخفي حتى «➕ جلسة جديدة» أو الضغط على جلسة
   const [busy, setBusy] = useState(false);
+  const saving = React.useRef(false);                 // يمنع الحفظ مرتين بضغطتين سريعتين
   const [msg, setMsg] = useState(null);
   const set = key => e => { setForm(f => ({ ...f, [key]: e.target.value })); setMsg(null); };
+  const formRef = React.useRef(null);
+  const msgRef = React.useRef(null);
+  // الصعود إلى النموذج أو إلى رسالة النتيجة بعد ظهورهما
+  const scrollTo = ref => setTimeout(() => ref.current && ref.current.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
 
   // جلب جلسات هذه الشكوى
   const load = useCallback(async () => {
@@ -3133,7 +3141,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
 
   // بدء تعديل جلسة: تعبئة النموذج بقيمها
   function startEdit(s) {
-    setEditId(s.id);
+    setEditId(s.id); setShowForm(true); scrollTo(formRef);
     setForm({ at: toDateTimeInput(s.session_at), title: s.title || "", location: s.location || "", topic: s.topic || "", referred_to: s.referred_to || "", result: s.result || "",
               links: cleanLinks(s.links),
               status: sessionStatus(complaint, s.status, s.session_at),
@@ -3141,19 +3149,21 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     setMsg(null);
   }
 
+  // «➕ جلسة جديدة»: نموذج فارغ
+  function startNew() { setEditId(null); setForm(blank()); setShowForm(true); setMsg(null); scrollTo(formRef); }
+
   // طلب «إغلاق عبر جلسة» من مربع «المطلوب»: نموذج جلسة جديدة بحالة «مغلقة» والصعود إليه
-  const formRef = React.useRef(null);
   useEffect(() => {
     if (!closeReq) return;
-    setEditId(null); setForm(f => ({ ...blank(), title: f.title, topic: f.topic, result: f.result, status: sessionStatuses(complaint)[1] }));
-    setTimeout(() => formRef.current && formRef.current.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    setEditId(null); setShowForm(true); setForm(f => ({ ...blank(), title: f.title, topic: f.topic, result: f.result, status: sessionStatuses(complaint)[1] }));
+    scrollTo(formRef);
   }, [closeReq]);
 
   // الشكوى المغلقة: لا جلسات جديدة (إلا بعد اعتراض)، والتعديل متاح
   const closed = isClosed(complaint.status);
 
   // إلغاء التعديل والعودة لنموذج جلسة جديدة
-  function cancelEdit() { setEditId(null); setForm(blank()); setMsg(null); }
+  function cancelEdit() { setEditId(null); setForm(blank()); setShowForm(false); setMsg(null); }
 
   // حفظ: إضافة جلسة (admin_add_session) أو تعديلها (admin_update_session)؛ تُرجع الشكوى بعد الترحيل
   async function submit(e) {
@@ -3163,7 +3173,10 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     if (closing && !form.cresult.trim()) return setMsg({ type: "error", text: "اكتب النص الذي يظهر للمشتكي في صفحة «نتيجة الشكوى» قبل الإغلاق." });
     if (closing && complaint.objection_at && !form.aresult.trim()) return setMsg({ type: "error", text: "اكتب الرد الذي يظهر للمعترض في صفحة الاعتراض قبل الإغلاق." });
     if (badLink(form.links)) return setMsg({ type: "error", text: BAD_LINK });
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true); setMsg(null);
+    const done = () => { saving.current = false; setBusy(false); };
     const args = { p_secret: secret, p_session_at: dateTimeInputToIso(form.at), p_title: form.title, p_location: form.location, p_topic: form.topic,
                    p_referred_to: form.referred_to, p_result: form.result, p_status: form.status, p_links: cleanLinks(form.links) };
     const send = a => editId ? sb.rpc("admin_update_session", { ...a, p_id: editId }) : sb.rpc("admin_add_session", { ...a, p_complaint_id: complaint.id });
@@ -3175,7 +3188,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       ({ data, error } = await send(noLinks));
       if (missing(error)) { const { p_location, ...old } = noLinks; ({ data, error } = await send(old)); }
     }
-    setBusy(false);
+    if (error || !data || !data.length) done();
     if (error && /مغلقة/.test(error.message || "")) return setMsg({ type: "error", text: "الشكوى مغلقة: يمكن تعديل جلساتها فقط." });
     if (error || !data || !data.length) return setMsg({ type: "error", text: editId ? "تعذّر تعديل الجلسة، يرجى المحاولة مرة أخرى." : "تعذّر إضافة الجلسة، يرجى المحاولة مرة أخرى." });
     // عند الإغلاق: حفظ ما يراه المشتكي (والمعترض) في الشكوى، والتنبيه اليدوي يُلغى
@@ -3189,23 +3202,23 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       if (r2.data && r2.data.length) u = r2.data[0];
     }
     onApplied(u);
-    setMsg({ type: "ok", text: editId ? "تم تعديل الجلسة." : "تمت إضافة الجلسة، ورُحِّل المحال إليه ونتيجة الجلسة والحالة إلى الشكوى (إن كانت أحدث جلسة)." });
-    setEditId(null); setForm(blank());
-    load(); onChanged();
+    done();
+    setMsg({ type: "ok", text: editId ? "✅ تم حفظ تعديل الجلسة." : "✅ تم حفظ الجلسة، ورُحِّل المحال إليه ونتيجتها والحالة إلى الشكوى (إن كانت أحدث جلسة)." });
+    setEditId(null); setForm(blank()); setShowForm(false);
+    load(); onChanged(); scrollTo(msgRef);
   }
 
   // العرض: عنوان القسم، سجل الجلسات (مع زر تعديل)، ثم النموذج
   return (
     <div className="sessions">
       <h3>🗓️ الجلسات {list && `(${list.length})`}</h3>
-      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       {list === null ? <Loading /> : list.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>لا توجد جلسات لهذه الشكوى بعد.</p> : (
         <div className="table-wrap" style={{ maxHeight: 280, marginBottom: 12, border: "1px solid var(--line)" }}>
           <table className="sheet">
             <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
             <tbody>
               {list.map(s => (
-                <tr key={s.id} className={`status-row ${stClass(s.status)} ${editId === s.id ? "selected" : ""}`} style={{ cursor: "default" }}>
+                <tr key={s.id} className={`status-row clickable ${stClass(s.status)} ${editId === s.id ? "selected" : ""}`} onClick={() => startEdit(s)} title="اضغط لعرض الجلسة وتعديلها">
                   <td>{fmtDateTime(s.session_at)}</td>
                   <td><b>{s.title || <span className="muted">—</span>}</b></td>
                   <td>{s.location || <span className="muted">—</span>}</td>
@@ -3214,15 +3227,23 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
                   <td className="wrap">{s.result || <span className="muted">—</span>}</td>
                   <td><StatusBadge value={s.status} /></td>
                   <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : <span className="muted">—</span>}</td>
-                  <td><button className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => startEdit(s)}>✏️ تعديل</button></td>
+                  <td><button className="btn danger-text" style={{ color: "var(--brand)" }} onClick={e => { e.stopPropagation(); startEdit(s); }}>✏️ تعديل</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {closed && !editId ? (
-        <p className="muted" style={{ fontSize: 13.5 }}>🔒 الشكوى مغلقة — لا تُضاف جلسات جديدة{complaint.objection_at ? "" : " إلا بعد وصول اعتراض"}. يمكن تعديل أي جلسة بزر «✏️ تعديل».</p>
+      <div ref={msgRef}>{msg && !showForm && <Alert type={msg.type}>{msg.text}</Alert>}</div>
+      {!showForm ? (
+        closed ? (
+          <p className="muted" style={{ fontSize: 13.5 }}>🔒 الشكوى مغلقة — لا تُضاف جلسات جديدة{complaint.objection_at ? "" : " إلا بعد وصول اعتراض"}. اضغط على أي جلسة لعرضها وتعديلها.</p>
+        ) : (
+          <>
+            <button type="button" className="btn block" onClick={startNew}>➕ جلسة جديدة</button>
+            {list && list.length > 0 && <small className="hint" style={{ display: "block", marginTop: 6 }}>اضغط على أي جلسة في الجدول لعرض تفاصيلها وتعديلها.</small>}
+          </>
+        )
       ) : (
       <form onSubmit={submit} className="session-form" ref={formRef}>
         <div className="field-label" style={{ marginBottom: 8 }}>{editId ? "✏️ تعديل الجلسة" : "➕ جلسة جديدة"}</div>
@@ -3248,14 +3269,11 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             </Field>
           )}
         </div>
-        {editId ? (
-          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
-            <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : "💾 حفظ التعديل"}</button>
-            <button type="button" className="btn secondary" onClick={cancelEdit}>إلغاء التعديل</button>
-          </div>
-        ) : (
-          <button className="btn block" style={{ marginTop: 12 }} disabled={busy}>{busy ? "جارٍ الإضافة…" : "➕ إضافة الجلسة وترحيلها إلى الشكوى"}</button>
-        )}
+        {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+          <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : editId ? "💾 حفظ التعديل" : "💾 حفظ الجلسة"}</button>
+          <button type="button" className="btn secondary" disabled={busy} onClick={cancelEdit}>إلغاء</button>
+        </div>
         <small className="hint" style={{ display: "block", marginTop: 6 }}>
           آخر جلسة تحدّد حالة الشكوى ونتيجتها والمحال إليه (النتيجة إلى «نتيجة الشكوى» الداخلية فقط، لا إلى ما يراه المشتكي أو المعترض)؛ الحقل الفارغ لا يمسح قيمة الشكوى. الجلسات لا تُحذف، ويمكن تعديلها.
         </small>
