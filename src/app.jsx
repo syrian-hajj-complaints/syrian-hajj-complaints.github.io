@@ -79,6 +79,7 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-06  رابط «📄 دراسة الشكوى المنقّحة» لكل شكوى: إضافة وتعديل في البطاقة، وعرضه في بطاقة الاطلاع وملف الموسم.
 //    2026-10-06  صور الروابط في Word: قصّ الحواف الفارغة حول الصورة، وحجم أصغر (حتى 480×420) حتى لا تترك مساحات فارغة كبيرة.
 //    2026-10-06  القرار: التوقيع بعد البنود بمسافة (لا في أسفل الصفحة)، والبنود بخط أصغر قليلاً — حسب النموذج المعتمد.
 //    2026-10-06  زر 🎤 في الجلسة لموضوعها فقط (لا لرأي اللجنة ولا للنتيجة).
@@ -563,7 +564,7 @@ const XL_SHEETS = [
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
-    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["updated_at", "آخر تعديل", true]] },
+    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -1113,6 +1114,47 @@ function PartyNote({ secret, complaint, party, onSaved }) {
       {value || <span className="muted">—</span>}{" "}
       <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(value || "")}>{value ? "✏️" : "➕ إضافة"}</button>
     </dd>
+  );
+}
+
+// رابط ملف «دراسة الشكوى المنقّحة» في بطاقة الشكوى (للإدارة): عرضه، وإضافته أو تعديله أو مسحه عبر admin_set_study_url
+function StudyLink({ secret, complaint, onSaved }) {
+  const [edit, setEdit] = useState(null);   // null = عرض فقط
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // الحفظ (الفارغ يمسح الرابط)
+  async function save() {
+    const v = (edit || "").trim();
+    if (v && !/^https?:\/\/\S+$/i.test(v)) return setErr(BAD_LINK);
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_study_url", { p_secret: secret, p_id: complaint.id, p_url: v });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 40 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+
+  // العرض: خانة التعديل، أو الرابط مع زر التعديل/الإضافة
+  return (
+    <div className="links-line">
+      <b>📄 دراسة الشكوى المنقّحة:</b>
+      {edit !== null ? (
+        <>
+          <input type="url" dir="ltr" autoFocus className="grow" value={edit} onChange={e => setEdit(e.target.value)} maxLength={1000}
+            placeholder="https://docs.google.com/…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); save(); } }} />
+          <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
+          <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+          {err && <small style={{ color: "var(--danger)", width: "100%" }}>{err}</small>}
+        </>
+      ) : (
+        <>
+          {complaint.study_url ? <a className="link-chip" href={complaint.study_url} target="_blank" rel="noopener">فتح الملف ↗</a> : <span className="muted">—</span>}
+          <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint.study_url || "")}>
+            {complaint.study_url ? "✏️ تعديل" : "➕ إضافة رابط"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -3167,6 +3209,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
       <LinksEditor secret={secret} complaint={c} target="complaint" onSaved={onSaved} />
+      <StudyLink secret={secret} complaint={c} onSaved={onSaved} />
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       {fromDue && !isClosed(c.status) && (
         <div className="due-prompt">
@@ -4900,6 +4943,9 @@ function ComplaintView({ c, sessions }) {
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
       {cleanLinks(c.links).length > 0 && <div className="links-line"><LinksView links={c.links} /></div>}
+      {c.study_url && /^https?:\/\//i.test(c.study_url) && (
+        <div className="links-line"><b>📄 دراسة الشكوى المنقّحة:</b><a className="link-chip" href={c.study_url} target="_blank" rel="noopener">فتح الملف ↗</a></div>
+      )}
 
       <div className="tabs card-tabs">
         {TABS.map(([k, t]) => <button key={k} type="button" className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{t}</button>)}

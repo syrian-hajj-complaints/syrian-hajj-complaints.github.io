@@ -81,6 +81,7 @@
 --                الأولى صارت القسم 38.
 --    2026-10-06  القسم 38: موضوع الجلسة ونتيجتها حتى 10000 حرف؛ كلمة مرور الأدمن الأولى صارت القسم 39.
 --    2026-10-06  القسم 39: رأي لجنة الشكاوى والصلح في كل جلسة (sessions.opinion)؛ كلمة مرور الأدمن الأولى صارت القسم 40.
+--    2026-10-06  القسم 40: رابط «دراسة الشكوى المنقّحة» (complaints.study_url)؛ كلمة مرور الأدمن الأولى صارت القسم 41.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -220,6 +221,7 @@ drop function if exists public.submit_complaint(text, text, text, text, text, te
 drop function if exists public.admin_set_party_note(text, uuid, text, text);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text, text[], text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text, text[], text);
+drop function if exists public.admin_set_study_url(text, uuid, text);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -4303,7 +4305,58 @@ grant execute on function public.viewer_complaint_card(text, text)              
 grant execute on function public.admin_restore_season(text, text, json, json, json, json)                                       to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 40) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 40) رابط ملف «دراسة الشكوى المنقّحة» لكل شكوى (اختياري): تضيفه الإدارة في البطاقة، ويظهر في بطاقة التقارير وملف الموسم
+--     يحتاج القسم 39 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- الحقل الجديد
+alter table public.complaints add column if not exists study_url text;   -- رابط دراسة الشكوى المنقّحة
+
+-- الإدارة: حفظ الرابط أو مسحه (فارغ)؛ يجب أن يبدأ بـ http:// أو https://؛ تُرجع الشكوى
+create or replace function public.admin_set_study_url(p_secret text, p_id uuid, p_url text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_url text := nullif(btrim(coalesce(p_url, '')), '');
+begin
+  if public.verify_password('أدمن', p_secret) is null
+     or (v_url is not null and (v_url !~* '^https?://\S+$' or length(v_url) > 1000)) then
+    return;
+  end if;
+  update public.complaints set study_url = v_url where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+-- بطاقة التقارير (نسخة برابط الدراسة المنقّحة)
+create or replace function public.viewer_complaint_card(p_code text, p_number text)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+begin
+  if public.verify_password('إدارة', p_code) is null
+     or coalesce(public.setting('report_card_enabled'), 'off') <> 'on' then
+    return null;
+  end if;
+  select id into v_id from public.complaints where complaint_number = p_number;
+  if v_id is null then
+    return null;
+  end if;
+  return json_build_object(
+    'complaint', (select row_to_json(x) from (
+        select complaint_number, received_date, complainant_name, complainant_role, phone_number, contact_number,
+               accused_name, accused_role, accused_phone, complainant_note, accused_note, title, subject, classification, referred_to, status, result,
+               complainant_result, accused_result, closed_date, objection_text, objection_at, links, objection_links, study_url
+        from public.complaints where id = v_id) x),
+    'sessions', coalesce((select json_agg(s order by s.session_at desc) from (
+        select session_at, title, location, topic, opinion, referred_to, result, status, links from public.sessions where complaint_id = v_id) s), '[]'::json));
+end $$;
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_set_study_url(text, uuid, text) to anon, authenticated;
+grant execute on function public.viewer_complaint_card(text, text)    to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 41) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
