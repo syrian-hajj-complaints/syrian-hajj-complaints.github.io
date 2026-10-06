@@ -79,6 +79,7 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-06  القرار: التوقيع بعد البنود بمسافة (لا في أسفل الصفحة)، والبنود بخط أصغر قليلاً — حسب النموذج المعتمد.
 //    2026-10-06  زر 🎤 في الجلسة لموضوعها فقط (لا لرأي اللجنة ولا للنتيجة).
 //    2026-10-06  إصلاح 🎤: كل جملة جديدة كانت تمسح ما قبلها (نسخة قديمة من النص)؛ الآن تُضاف إلى آخر النص الحالي.
 //    2026-10-06  زر 🎤 يظهر معطّلاً بسبب واضح في المتصفح الذي لا يدعم التعرّف على الكلام (بدل إخفائه).
@@ -430,7 +431,7 @@ function decisionDefaults(c) {
 
 // بناء مستند القرار (f: {number, hijri, greg, items}، letterhead: صورة الترويسة أو null)
 function buildDecisionDoc(D, f, letterhead) {
-  const { Document, Paragraph, TextRun, ImageRun, Header, Footer, Table, TableRow, TableCell, WidthType, BorderStyle,
+  const { Document, Paragraph, TextRun, ImageRun, Header, Table, TableRow, TableCell, WidthType, BorderStyle,
           HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
   const INK = "333132", FONT = "Arial";
   // نص عربي من اليمين لليسار، والأرقام والتواريخ من اليسار لليمين
@@ -444,7 +445,7 @@ function buildDecisionDoc(D, f, letterhead) {
   const cell = (children, align) => new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE },
     borders: { top: none, bottom: none, left: none, right: none }, children: [line(children, { align, after: 0 })] });
   // البنود: سطر لكل بند
-  const items = String(f.items || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => line(runs(x, { size: 30 }), { after: 320, align: "both", line: 400 }));
+  const items = String(f.items || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => line(runs(x, { size: 28 }), { after: 280, align: "both", line: 360 }));
   const greg = String(f.greg || "").split("/").reverse().join("-");   // 02/06/2025 ← 2025-06-02 للتوقيع
   const body = [
     field("الرقم:", f.number),
@@ -452,17 +453,18 @@ function buildDecisionDoc(D, f, letterhead) {
     field("الموافق:", f.greg, "م"),
     line(runs("قـــــرار لجنـــة الشكـــاوى والصلـــــح", { bold: true, size: 36, underline: true }), { align: "center", before: 600, after: 600 }),
     ...items,
+    // التوقيع بعد البنود بمسافة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً (الخلية الأولى يساراً)
+    line([], { before: 1800, after: 0 }),
+    new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [new TableRow({ children: [cell(runs("لجنة الشكاوى والصلح", { bold: true }), "center"), cell(runs(greg + "م", { bold: true }), "center")] })] }),
   ];
-  // التوقيع في تذييل الصفحة (أسفلها): «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً (الخلية الأولى يساراً)
-  const footers = { default: new Footer({ children: [new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [new TableRow({ children: [cell(runs("لجنة الشكاوى والصلح", { bold: true }), "center"), cell(runs(greg + "م", { bold: true }), "center")] })] })] }) };
   // الترويسة بعرض الصفحة كاملاً (A4 = 794 × 189 بكسل بنسبة الصورة): عائمة من حافتي الصفحة اليسرى والعليا
   const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
     new ImageRun({ data: letterhead, transformation: { width: 794, height: 189 },
       floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
                   verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true } })] })] }) } : undefined;
-  const margin = { top: letterhead ? 3300 : 1200, bottom: 1800, left: 1000, right: 1000, header: 0, footer: 900 };
-  return new Document({ sections: [{ headers, footers, properties: { page: { margin } }, children: body }] });
+  const margin = { top: letterhead ? 3300 : 1200, bottom: 1000, left: 1000, right: 1000, header: 0 };
+  return new Document({ sections: [{ headers, properties: { page: { margin } }, children: body }] });
 }
 
 // تبويب «📜 القرار» في بطاقة الشكوى: معاينة القرار بقيمه المولَّدة، وتعديلها اختيارياً، ثم توليده Word
