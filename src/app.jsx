@@ -72,6 +72,13 @@
 //    2026-10-06  تعديل المواسم السابقة في Google Sheets نفسه (لمن له دور «محرّر»)، والمنصة تعرضه محدّثاً: حذف «فتح للتعديل»
 //                والإدخال من ملف إلى القاعدة؛ «➕ إضافة موسم سابق برابط ملفه»؛ ملف الأرشيف غير مقفول؛ تنبيه لرابط المجلد.
 //    2026-10-06  زر 🎤 (تحويل الكلام إلى نص) في موضوع الجلسة ورأي اللجنة ونتيجة الجلسة (VoiceArea).
+//    2026-10-06  دراسة الشكوى: «بعد اطلاع اللجنة على الشكوى، اتصلت بالمشتكي لمناقشة مضمونها.» بعد نصها، ثم الجلسات، ثم «لذلك ولكل
+//                ما تقدم، قررت لجنة الشكاوى والصلح ما يلي:» وبنود مرقّمة من النتيجة وآخرها التبليغ، ثم «دمشق في: …هـ – الموافق: …م»
+//                و«لجنة الشكاوى والصلح»؛ بلا سطر «أُعدّ من منصة الشكاوى».
+//    2026-10-06  ملف الشكوى (Word) بشكل «دراسة شكوى»: الترويسة بعرض الصفحة، الرقم (01/47/ ق.ش)، العنوان «دراسة شكوى في موسم حج …هـ»،
+//                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
+//    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
+//                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-06  زر 🎤 في الجلسة لموضوعها فقط (لا لرأي اللجنة ولا للنتيجة).
 //    2026-10-06  إصلاح 🎤: كل جملة جديدة كانت تمسح ما قبلها (نسخة قديمة من النص)؛ الآن تُضاف إلى آخر النص الحالي.
 //    2026-10-06  زر 🎤 يظهر معطّلاً بسبب واضح في المتصفح الذي لا يدعم التعرّف على الكلام (بدل إخفائه).
@@ -216,7 +223,8 @@ function loadDocx() {
 // بناء مستند Word للشكوى (sess: جلساتها، logo: صورة الشعار، letterhead: صورة الترويسة الرسمية — أو null)
 // images: صور الروابط المجلوبة {الرابط: {data, w, h}} — تُدمج تحت رابطها
 function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
-  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, BorderStyle, ShadingType, Header } = D;
+  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, BorderStyle, ShadingType, Header,
+          HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
   // ألوان الهوية والخط
   const GREEN = "00594F", GREEN2 = "006E5C", GOLD = "AD9E6E", INK = "333132", MUTED = "939598", SAND = "F5F1EA", FONT = "Arial";
 
@@ -268,49 +276,87 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
     ...linkParas("روابط الجلسة:", s.links),
   ]);
 
-  // الترويسة: الصورة الرسمية (letterhead.jpg) في رأس كل صفحة، أو — إن تعذّر تحميلها — الشعار واسم الإدارة وخط ذهبي
-  const title = para(`ملف الشكوى ${c.complaint_number}`, { bold: true, size: 34, color: GREEN, after: 160 });
-  const head = letterhead ? [title] : [
+  // الترويسة: الصورة الرسمية (letterhead.jpg) بعرض الصفحة في رأس كل صفحة، أو — إن تعذّر تحميلها — الشعار واسم الإدارة وخط ذهبي
+  const head = letterhead ? [] : [
     new Paragraph({ bidirectional: true, children: [
       ...(logo ? [new ImageRun({ data: logo, transformation: { width: 64, height: 62 } })] : []),
       new TextRun({ text: "  إدارة الحج والعمرة", font: FONT, size: 32, bold: true, color: GREEN, rightToLeft: true }),
-      new TextRun({ text: "قسم الشكاوى", font: FONT, size: 24, color: GOLD, rightToLeft: true, break: 1 }),
+      new TextRun({ text: "لجنة الشكاوى والصلح", font: FONT, size: 24, color: GOLD, rightToLeft: true, break: 1 }),
     ] }),
     new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: GOLD, space: 4 } }, spacing: { after: 200 }, children: [] }),
-    title,
   ];
 
-  // المحتوى بالترتيب المعتمد
+  // جدول «دراسة شكوى»: عناوين بخلفية خضراء ونص أبيض، والقيم في الوسط؛ الخلايا من اليسار إلى اليمين
+  // (أي بترتيب معكوس: القيمة ثم عنوانها، فيظهر العنوان على اليمين)؛ عرض المحتوى 9906 = A4 ناقص الهامشين
+  const COLS = [1800, 1000, 1700, 1600, 2306, 1500];
+  const tc = (text, o = {}) => new TableCell({
+    columnSpan: o.span, margins: { top: 80, bottom: 80, left: 100, right: 100 }, verticalAlign: "center",
+    shading: o.head ? { type: ShadingType.CLEAR, fill: GREEN, color: "auto" } : undefined,
+    children: [new Paragraph({ bidirectional: true, alignment: "center", children: runs(text, { bold: !!o.head, color: o.head ? "FFFFFF" : INK, size: 24 }) })],
+  });
+  const h = text => tc(text, { head: true });
+  const wide = (label, value) => new TableRow({ children: [tc(value, { span: 5 }), h(label)] });
+  const info = new Table({
+    width: { size: 9906, type: WidthType.DXA }, columnWidths: COLS,
+    rows: [
+      new TableRow({ children: [tc(c.phone_number), h("الهاتف"), tc(c.complainant_role), h("صفة المشتكي"), tc(c.complainant_name), h("اسم المشتكي")] }),
+      new TableRow({ children: [tc(c.accused_phone), h("الهاتف"), tc(c.accused_role), h("صفة المشتكى عليه"), tc(c.accused_name), h("اسم المشتكى عليه")] }),
+      wide("موضوع الشكوى", c.title),
+      wide("تصنيف الشكوى", c.classification),
+      ...(c.complainant_note ? [wide("ملاحظة عن المشتكي", c.complainant_note)] : []),
+      ...(c.accused_note ? [wide("ملاحظة عن المشتكى عليه", c.accused_note)] : []),
+    ],
+  });
+  const rd = new Date(c.received_date);
+  const received = `${rd.getFullYear()}/${pad(rd.getMonth() + 1)}/${pad(rd.getDate())}`;
+
+  // المحتوى بالترتيب المعتمد: الرقم، العنوان، الجدول، نص الشكوى، ثم الجلسات والنتائج والاعتراض
   const closedBefore = objAt !== null || isClosed(c.status);
   const body = [
-    kv([
-      ["رقم الشكوى", c.complaint_number], ["تاريخ الشكوى", xlDate(c.received_date)], ["الحالة", c.status],
-      ["اسم المشتكي", withRole(c.complainant_name, c.complainant_role)],
-      ["اسم المشتكى عليه", withRole(c.accused_name, c.accused_role)],
-      ["هاتف المشتكى عليه", c.accused_phone],
-      ["ملاحظة عن المشتكي", c.complainant_note],
-      ["ملاحظة عن المشتكى عليه", c.accused_note],
-      ["عنوان الاعتراض", c.title],
-    ]),
-    heading("نص الاعتراض"), ...box(c.subject), ...linkParas("روابط الشكوى:", c.links),
+    para(`الرقم: ${complaintRef(c)}`, { bold: true, size: 26, after: 200 }),
+    new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 120, after: 280 },
+      children: runs(`دراسة شكوى في موسم حج ${c.season || ""}هـ`, { bold: true, size: 32 }) }),
+    info,
+    para(`تقدم المشتكي ضد المشتكى عليه إلى لجنة الشكاوى والصلح بتاريخ ${received}م مفادها نصاً:`, { bold: true, size: 26, before: 360, after: 120 }),
+    ...box(c.subject), ...linkParas("روابط الشكوى:", c.links),
+    para("بعد اطلاع اللجنة على الشكوى، اتصلت بالمشتكي لمناقشة مضمونها.", { size: 26, before: 240, after: 120 }),
     heading(objAt !== null ? "الجلسات قبل الاعتراض" : "الجلسات"), ...sessionsBlock(before),
-    heading("نتيجة الشكوى عند إغلاقها"),
-    ...(closedBefore ? box(objAt !== null ? c.result_before_objection : c.result) : [para("لم تُغلق الشكوى بعد.", { color: MUTED })]),
   ];
-  if (objAt !== null) body.push(
+  // الخاتمة: «لذلك ولكل ما تقدم…» ثم بنود القرار مرقّمة (سطر لكل بند من النتيجة، وآخرها التبليغ)،
+  // ثم «دمشق في: …هـ – الموافق: …م» في الوسط، و«لجنة الشكاوى والصلح» يساراً
+  const conclusion = (result, at) => {
+    const lines = String(result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).filter(Boolean);
+    const items = [...lines, "يُبلَّغ هذا القرار من يلزم لتنفيذه."];
+    const d = at ? new Date(at) : new Date();
+    // التاريخ بمسافات حول الشرطات: في السطر العربي يعرض Word أجزاء الأرقام المفصولة بمسافات من اليمين لليسار،
+    // فتُكتب بترتيب معكوس لتظهر «28 / 05 / 1447»
+    const spaced = t => String(t).split("/").reverse().join(" / ");
+    return [
+      para("لذلك ولكل ما تقدم، قررت لجنة الشكاوى والصلح ما يلي:", { bold: true, size: 26, before: 360, after: 160 }),
+      ...items.map((x, i) => new Paragraph({ bidirectional: true, alignment: "both", spacing: { after: 160, line: 360 },
+        children: runs(`${i + 1}- ${x}`, { size: 26 }) })),
+      new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 480, after: 360 }, children: [
+        ...runs("دمشق في: ", { bold: true, size: 26 }), ...runs(`${spaced(hijriDate(d))}هـ`, { size: 26 }),
+        ...runs(" – الموافق: ", { bold: true, size: 26 }), ...runs(`${spaced(gregDate(d))}م`, { size: 26 })] }),
+      // (في الفقرة العربية «right» = نهاية السطر، أي اليسار)
+      new Paragraph({ bidirectional: true, alignment: "right", spacing: { before: 240 }, children: runs("لجنة الشكاوى والصلح", { bold: true, size: 26 }) }),
+    ];
+  };
+  if (objAt === null) body.push(...(closedBefore ? conclusion(c.result, c.closed_date) : [para("لم تُغلق الشكوى بعد.", { color: MUTED, before: 240 })]));
+  else body.push(
+    heading("نتيجة الشكوى عند إغلاقها"), ...box(c.result_before_objection),
     heading("⚖️ الاعتراض"), para(`تاريخ الاعتراض: ${xlDate(c.objection_at)}`, { color: MUTED }), ...box(c.objection_text),
     ...linkParas("روابط الاعتراض:", c.objection_links),
     heading("الجلسات بعد الاعتراض"), ...sessionsBlock(after),
-    heading("نتيجة الاعتراض"),
-    ...(c.status === CLOSED_OBJ ? [para(`تاريخ الإغلاق النهائي: ${xlDate(c.closed_date)}`, { color: MUTED }), ...box(c.result)]
-                                : [para("الاعتراض قيد المتابعة.", { color: MUTED })]),
+    ...(c.status === CLOSED_OBJ ? conclusion(c.result, c.closed_date) : [para("الاعتراض قيد المتابعة.", { color: MUTED, before: 240 })]),
   );
-  body.push(para(`أُعدّ من منصة الشكاوى في ${xlDate(new Date())}`, { size: 18, color: MUTED, before: 400 }));
 
-  // الصفحة: A4 بهوامش 1000 (≈1.8 سم)؛ مع الترويسة يتسع الهامش العلوي لصورتها (عرض المحتوى × 590/2480)
+  // الصفحة: A4 بهوامش 1000 (≈1.8 سم)؛ الترويسة بعرض الصفحة كاملاً (794 × 189 بكسل) عائمة من حافتيها، والهامش العلوي يتسع لها
   const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
-    new ImageRun({ data: letterhead, transformation: { width: 660, height: 157 } })] })] }) } : undefined;
-  const margin = { top: letterhead ? 3000 : 1000, bottom: 1000, left: 1000, right: 1000, header: 450 };
+    new ImageRun({ data: letterhead, transformation: { width: 794, height: 189 },
+      floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+                  verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true } })] })] }) } : undefined;
+  const margin = { top: letterhead ? 3300 : 1000, bottom: 1000, left: 1000, right: 1000, header: 0 };
   return new Document({ sections: [{ headers, properties: { page: { margin } }, children: [...head, ...body] }] });
 }
 
@@ -365,12 +411,17 @@ function hijriDate(d) {
 }
 const gregDate = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 
+// رقم المراسلة من رقم الشكوى: 1447-00001 ← 01/47/ ق.ش
+function complaintRef(c) {
+  const [season, serial] = String(c.complaint_number || "").split("-");
+  return serial ? `${String(Number(serial)).padStart(2, "0")}/${String(season).slice(-2)}/ ق.ش` : "";
+}
+
 // القيم الأولى للقرار من الشكوى
 function decisionDefaults(c) {
   const d = c.closed_date ? new Date(c.closed_date) : new Date();
-  const [season, serial] = String(c.complaint_number || "").split("-");
   return {
-    number: serial ? `${Number(serial)}/${String(season).slice(-2)}/ ق.ش` : "",
+    number: complaintRef(c),
     hijri: hijriDate(d),
     greg: gregDate(d),
     items: [`أولاً: ${(c.result || c.complainant_result || "").trim()}`, "ثانياً: يُبلَّغ هذا القرار من يلزم لتنفيذه."].join("\n"),
@@ -379,35 +430,39 @@ function decisionDefaults(c) {
 
 // بناء مستند القرار (f: {number, hijri, greg, items}، letterhead: صورة الترويسة أو null)
 function buildDecisionDoc(D, f, letterhead) {
-  const { Document, Paragraph, TextRun, ImageRun, Header, Table, TableRow, TableCell, WidthType, BorderStyle } = D;
+  const { Document, Paragraph, TextRun, ImageRun, Header, Footer, Table, TableRow, TableCell, WidthType, BorderStyle,
+          HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
   const INK = "333132", FONT = "Arial";
   // نص عربي من اليمين لليسار، والأرقام والتواريخ من اليسار لليمين
   const runs = (text, o = {}) => String(text || "").split(/(\d[\d\-:\/ .]*\d|\d)/).filter(x => x !== "")
     .map(part => new TextRun({ text: part, font: FONT, size: o.size || 28, bold: !!o.bold, underline: o.underline ? {} : undefined,
       color: o.color || INK, rightToLeft: !/^\d/.test(part) }));
-  const line = (children, o = {}) => new Paragraph({ bidirectional: true, alignment: o.align, spacing: { before: o.before || 0, after: o.after == null ? 120 : o.after }, children });
+  const line = (children, o = {}) => new Paragraph({ bidirectional: true, alignment: o.align,
+    spacing: { before: o.before || 0, after: o.after == null ? 120 : o.after, line: o.line }, children });
   const field = (label, value, suffix = "") => line([...runs(label, { bold: true }), ...runs(" "), ...runs(value + suffix, { bold: true })], { after: 80 });
   const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
   const cell = (children, align) => new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE },
     borders: { top: none, bottom: none, left: none, right: none }, children: [line(children, { align, after: 0 })] });
   // البنود: سطر لكل بند
-  const items = String(f.items || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => line(runs(x), { after: 160 }));
+  const items = String(f.items || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => line(runs(x, { size: 30 }), { after: 320, align: "both", line: 400 }));
   const greg = String(f.greg || "").split("/").reverse().join("-");   // 02/06/2025 ← 2025-06-02 للتوقيع
   const body = [
     field("الرقم:", f.number),
     field("التاريخ:", f.hijri, "هـ"),
     field("الموافق:", f.greg, "م"),
-    line(runs("قرار لجنة الشكاوى والصلح", { bold: true, size: 32, underline: true }), { align: "center", before: 360, after: 480 }),
+    line(runs("قـــــرار لجنـــة الشكـــاوى والصلـــــح", { bold: true, size: 36, underline: true }), { align: "center", before: 600, after: 600 }),
     ...items,
-    // التوقيع: «لجنة الشكاوى والصلح» يميناً والتاريخ يساراً (الخلايا بترتيب معكوس كما في ملف الشكوى)
-    new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [new TableRow({ children: [cell(runs(greg + "م", { bold: true }), "center"), cell(runs("لجنة الشكاوى والصلح", { bold: true }), "center")] })] }),
   ];
-  body.splice(body.length - 1, 0, line([], { before: 600, after: 0 }));
+  // التوقيع في تذييل الصفحة (أسفلها): «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً (الخلية الأولى يساراً)
+  const footers = { default: new Footer({ children: [new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({ children: [cell(runs("لجنة الشكاوى والصلح", { bold: true }), "center"), cell(runs(greg + "م", { bold: true }), "center")] })] })] }) };
+  // الترويسة بعرض الصفحة كاملاً (A4 = 794 × 189 بكسل بنسبة الصورة): عائمة من حافتي الصفحة اليسرى والعليا
   const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
-    new ImageRun({ data: letterhead, transformation: { width: 660, height: 157 } })] })] }) } : undefined;
-  const margin = { top: letterhead ? 3000 : 1200, bottom: 1000, left: 1000, right: 1000, header: 450 };
-  return new Document({ sections: [{ headers, properties: { page: { margin } }, children: body }] });
+    new ImageRun({ data: letterhead, transformation: { width: 794, height: 189 },
+      floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+                  verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true } })] })] }) } : undefined;
+  const margin = { top: letterhead ? 3300 : 1200, bottom: 1800, left: 1000, right: 1000, header: 0, footer: 900 };
+  return new Document({ sections: [{ headers, footers, properties: { page: { margin } }, children: body }] });
 }
 
 // تبويب «📜 القرار» في بطاقة الشكوى: معاينة القرار بقيمه المولَّدة، وتعديلها اختيارياً، ثم توليده Word
@@ -445,9 +500,9 @@ function DecisionTab({ c }) {
           <div><b>الرقم:</b> <span className="dv">{f.number || "—"}</span></div>
           <div><b>التاريخ:</b> <span className="dv" dir="ltr">{f.hijri}</span>هـ</div>
           <div><b>الموافق:</b> <span className="dv" dir="ltr">{f.greg}</span>م</div>
-          <div className="dp-title">قرار لجنة الشكاوى والصلح</div>
+          <div className="dp-title">قـــــرار لجنـــة الشكـــاوى والصلـــــح</div>
           {String(f.items).split("\n").filter(x => x.trim()).map((x, i) => <p key={i} className="dv">{x}</p>)}
-          <div className="dp-sign"><b>لجنة الشكاوى والصلح</b><span className="dv" dir="ltr">{String(f.greg).split("/").reverse().join("-")}م</span></div>
+          <div className="dp-sign"><span className="dv" dir="ltr">{String(f.greg).split("/").reverse().join("-")}م</span><b>لجنة الشكاوى والصلح</b></div>
         </div>
       )}
       {err && <Alert type="error">{err}</Alert>}
@@ -475,7 +530,7 @@ async function exportComplaintWord(secret, c) {
   const images = {};
   const [letterhead, logo] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png"),
     ...urls.map(async u => { const im = await fetchLinkImage(u); if (im) images[u] = im; })]);
-  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), `ملف-الشكوى-${c.complaint_number}.docx`);
+  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), `دراسة-شكوى-${c.complaint_number}.docx`);
   return { images: Object.keys(images).length, links: urls.length };
 }
 
