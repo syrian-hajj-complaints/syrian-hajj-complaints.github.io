@@ -85,6 +85,8 @@
     2026-10-04  الروابط المرفقة (.links-inputs / .links-view / .link-chip / .links-line / .links-edit).
     2026-10-05  مربع «إعداد لمرة واحدة» في أرشفة المواسم (.setup-box).
     2026-10-05  بطاقات الملاحظات (.note-card / .note-body).
+    2026-10-06  أحرف مخفية لرمز التصفير دون عرض حفظه في المتصفح (input.masked).
+    2026-10-06  معاينة القرار في تبويب «📜 القرار» (.decision-preview).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -186,6 +188,8 @@
   input.code-input { text-align: center; font-size: 24px; letter-spacing: 6px; font-weight: 700; direction: ltr; }
   /* خانة كلمة المرور المخفية: في المنتصف مع زر إظهار/إخفاء */
   input.secret-input { text-align: center; font-size: 20px; letter-spacing: 2px; direction: ltr; padding-inline: 48px; }
+  /* أحرف مخفية في حقل نصي (رمز التصفير): لا يعرض المتصفح حفظه كما يفعل مع حقل كلمة المرور */
+  input.masked { -webkit-text-security: disc; text-security: disc; }
   .pw-wrap { position: relative; }
   .pw-toggle { position: absolute; top: 50%; transform: translateY(-50%); inset-inline-start: 6px; width: 38px; height: 38px; border: 0; background: transparent; cursor: pointer; font-size: 20px; border-radius: 8px; }
   .pw-toggle:hover { background: #f2eee6; }
@@ -424,6 +428,11 @@
   .note-card { border-inline-start: 4px solid var(--brand-light); }
   .note-card.pinned { border-inline-start-color: var(--gold, #ad9e6e); background: #fffdf7; }
   .note-body { white-space: pre-wrap; margin: 10px 0 8px; line-height: 1.8; }
+  /* معاينة قرار لجنة الشكاوى والصلح: القيم المولَّدة بالأحمر كما في نموذج القرار */
+  .decision-preview { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; line-height: 2; }
+  .decision-preview .dv { color: #c00000; font-weight: 700; }
+  .decision-preview .dp-title { text-align: center; font-weight: 800; font-size: 18px; text-decoration: underline; margin: 12px 0; }
+  .decision-preview .dp-sign { display: flex; justify-content: space-between; margin-top: 16px; }
   .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
@@ -700,6 +709,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=0718d2726e"></script>
+<script src="app.js?v=c5cee6a70c"></script>
 </body>
 </html>

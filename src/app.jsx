@@ -71,6 +71,9 @@
 //    2026-10-06  موضوع الجلسة ونتيجتها حتى 10000 حرف (كانا 2000)، بخانتين أطول وعدّاد للأحرف.
 //    2026-10-06  تعديل المواسم السابقة في Google Sheets نفسه (لمن له دور «محرّر»)، والمنصة تعرضه محدّثاً: حذف «فتح للتعديل»
 //                والإدخال من ملف إلى القاعدة؛ «➕ إضافة موسم سابق برابط ملفه»؛ ملف الأرشيف غير مقفول؛ تنبيه لرابط المجلد.
+//    2026-10-06  تبويب «📜 القرار» في بطاقة الشكوى: قرار لجنة الشكاوى والصلح (Word) بالترويسة الرسمية، قيمه مولَّدة من الشكوى
+//                (الرقم، التاريخ الهجري والميلادي من تاريخ الإغلاق، والبند الأول من نتيجتها) مع تعديل اختياري قبل التوليد.
+//    2026-10-06  رمز التصفير لا يُعرض للحفظ في المتصفح: حقل نصي بأحرف مخفية بدل حقل كلمة المرور.
 //    2026-10-06  ملف Word يدمج صور الروابط (روابط الشكوى والاعتراض والجلسات) تحت كل رابط: صور Google Drive المشارَكة
 //                «أي شخص لديه الرابط» وروابط الصور المباشرة؛ وغير الصور يبقى رابطاً نصياً.
 //    2026-10-06  «رأي لجنة الشكاوى والصلح» في كل جلسة بعد موضوعها (اختياري): في النموذج، وتحت الجلسة في بطاقة الاطلاع، وملف Word وملف الموسم.
@@ -342,6 +345,119 @@ async function fetchLinkImage(url) {
     }
     return { data, w: bmp.width, h: bmp.height };
   } catch { return null; }
+}
+
+// ---------------------------------------------------------------------
+// قرار لجنة الشكاوى والصلح (Word) لشكوى: الترويسة الرسمية، الرقم، التاريخ الهجري والميلادي، العنوان، البنود، والتوقيع.
+// القيم تُولَّد مباشرة من الشكوى (الرقم من تسلسلها وموسمها، التاريخ من تاريخ إغلاقها، والبند الأول من نتيجتها)
+// ---------------------------------------------------------------------
+// التاريخ الهجري (أم القرى) بأرقام لاتينية: 06/12/1446
+function hijriDate(d) {
+  try {
+    const parts = new Intl.DateTimeFormat("ar-SA-u-ca-islamic-umalqura-nu-latn", { day: "2-digit", month: "2-digit", year: "numeric" }).formatToParts(d);
+    const get = t => (parts.find(x => x.type === t) || {}).value || "";
+    return `${get("day")}/${get("month")}/${get("year")}`;
+  } catch { return ""; }
+}
+const gregDate = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+
+// القيم الأولى للقرار من الشكوى
+function decisionDefaults(c) {
+  const d = c.closed_date ? new Date(c.closed_date) : new Date();
+  const [season, serial] = String(c.complaint_number || "").split("-");
+  return {
+    number: serial ? `${Number(serial)}/${String(season).slice(-2)}/ ق.ش` : "",
+    hijri: hijriDate(d),
+    greg: gregDate(d),
+    items: [`أولاً: ${(c.result || c.complainant_result || "").trim()}`, "ثانياً: يُبلَّغ هذا القرار من يلزم لتنفيذه."].join("\n"),
+  };
+}
+
+// بناء مستند القرار (f: {number, hijri, greg, items}، letterhead: صورة الترويسة أو null)
+function buildDecisionDoc(D, f, letterhead) {
+  const { Document, Paragraph, TextRun, ImageRun, Header, Table, TableRow, TableCell, WidthType, BorderStyle } = D;
+  const INK = "333132", FONT = "Arial";
+  // نص عربي من اليمين لليسار، والأرقام والتواريخ من اليسار لليمين
+  const runs = (text, o = {}) => String(text || "").split(/(\d[\d\-:\/ .]*\d|\d)/).filter(x => x !== "")
+    .map(part => new TextRun({ text: part, font: FONT, size: o.size || 28, bold: !!o.bold, underline: o.underline ? {} : undefined,
+      color: o.color || INK, rightToLeft: !/^\d/.test(part) }));
+  const line = (children, o = {}) => new Paragraph({ bidirectional: true, alignment: o.align, spacing: { before: o.before || 0, after: o.after == null ? 120 : o.after }, children });
+  const field = (label, value, suffix = "") => line([...runs(label, { bold: true }), ...runs(" "), ...runs(value + suffix, { bold: true })], { after: 80 });
+  const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  const cell = (children, align) => new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE },
+    borders: { top: none, bottom: none, left: none, right: none }, children: [line(children, { align, after: 0 })] });
+  // البنود: سطر لكل بند
+  const items = String(f.items || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => line(runs(x), { after: 160 }));
+  const greg = String(f.greg || "").split("/").reverse().join("-");   // 02/06/2025 ← 2025-06-02 للتوقيع
+  const body = [
+    field("الرقم:", f.number),
+    field("التاريخ:", f.hijri, "هـ"),
+    field("الموافق:", f.greg, "م"),
+    line(runs("قرار لجنة الشكاوى والصلح", { bold: true, size: 32, underline: true }), { align: "center", before: 360, after: 480 }),
+    ...items,
+    // التوقيع: «لجنة الشكاوى والصلح» يميناً والتاريخ يساراً (الخلايا بترتيب معكوس كما في ملف الشكوى)
+    new Table({ width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [new TableRow({ children: [cell(runs(greg + "م", { bold: true }), "center"), cell(runs("لجنة الشكاوى والصلح", { bold: true }), "center")] })] }),
+  ];
+  body.splice(body.length - 1, 0, line([], { before: 600, after: 0 }));
+  const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
+    new ImageRun({ data: letterhead, transformation: { width: 660, height: 157 } })] })] }) } : undefined;
+  const margin = { top: letterhead ? 3000 : 1200, bottom: 1000, left: 1000, right: 1000, header: 450 };
+  return new Document({ sections: [{ headers, properties: { page: { margin } }, children: body }] });
+}
+
+// تبويب «📜 القرار» في بطاقة الشكوى: معاينة القرار بقيمه المولَّدة، وتعديلها اختيارياً، ثم توليده Word
+function DecisionTab({ c }) {
+  const [f, setF] = useState(() => decisionDefaults(c));
+  const [edit, setEdit] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const set = key => e => setF(x => ({ ...x, [key]: e.target.value }));
+
+  // التوليد والتنزيل
+  async function generate() {
+    setBusy(true); setErr("");
+    try {
+      const D = await loadDocx();
+      const letterhead = await fetchBytes("letterhead.jpg");
+      downloadBlob(await D.Packer.toBlob(buildDecisionDoc(D, f, letterhead)), `قرار-${c.complaint_number}.docx`);
+    } catch (e) { setErr(e.message || NET_ERR); }
+    setBusy(false);
+  }
+
+  // العرض: معاينة بالقيم (أو خانات التعديل)، ثم زر التوليد
+  return (
+    <div className="card-pane">
+      {!c.result && !c.complainant_result && <Alert type="error">لم تصدر نتيجة للشكوى بعد؛ البند الأول فارغ — أضف جلسة إغلاق أو اكتبه بالتعديل.</Alert>}
+      {edit ? (
+        <div className="grid">
+          <Field label="الرقم"><input type="text" value={f.number} onChange={set("number")} maxLength={40} /></Field>
+          <Field label="التاريخ (هجري)" hint="مثال: 06/12/1446"><input type="text" dir="ltr" value={f.hijri} onChange={set("hijri")} maxLength={20} /></Field>
+          <Field label="الموافق (ميلادي)" hint="مثال: 02/06/2025"><input type="text" dir="ltr" value={f.greg} onChange={set("greg")} maxLength={20} /></Field>
+          <Field label="البنود" hint="سطر لكل بند" full><textarea style={{ minHeight: 160 }} value={f.items} onChange={set("items")} maxLength={10000} /></Field>
+        </div>
+      ) : (
+        <div className="decision-preview">
+          <div><b>الرقم:</b> <span className="dv">{f.number || "—"}</span></div>
+          <div><b>التاريخ:</b> <span className="dv" dir="ltr">{f.hijri}</span>هـ</div>
+          <div><b>الموافق:</b> <span className="dv" dir="ltr">{f.greg}</span>م</div>
+          <div className="dp-title">قرار لجنة الشكاوى والصلح</div>
+          {String(f.items).split("\n").filter(x => x.trim()).map((x, i) => <p key={i} className="dv">{x}</p>)}
+          <div className="dp-sign"><b>لجنة الشكاوى والصلح</b><span className="dv" dir="ltr">{String(f.greg).split("/").reverse().join("-")}م</span></div>
+        </div>
+      )}
+      {err && <Alert type="error">{err}</Alert>}
+      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+        <button type="button" className="btn" disabled={busy} onClick={generate}>{busy ? "جارٍ التوليد…" : "📄 توليد القرار (Word)"}</button>
+        {edit
+          ? <button type="button" className="btn secondary" onClick={() => setEdit(false)}>👁️ معاينة</button>
+          : <button type="button" className="btn secondary" onClick={() => setEdit(true)}>✏️ تعديل قبل التوليد</button>}
+      </div>
+      <small className="hint" style={{ display: "block", marginTop: 6 }}>
+        القيم تُولَّد من الشكوى: الرقم من تسلسلها وموسمها، والتاريخ من تاريخ إغلاقها (أو اليوم)، والبند الأول من نتيجتها. التعديل لا يُحفظ في الشكوى، والملف قابل للتعديل في Word.
+      </small>
+    </div>
+  );
 }
 
 // تصدير ملف الشكوى: الجلسات، الترويسة والشعار، وصور الروابط؛ تُرجع {images: عدد الصور المدمجة, links: عدد الروابط}
@@ -2091,8 +2207,9 @@ function AdminSettings({ secret, rows, reload }) {
       <div className="grid" style={{ marginTop: 14 }}>
         <Field label="رمز التصفير الخاص" hint="يُعيَّن من Supabase ← SQL Editor، وليس كلمة مرور الأدمن">
           <div className="pw-wrap">
-            <input className="secret-input" type={show ? "text" : "password"} value={code} onChange={e => setCode(e.target.value)}
-              autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" />
+            {/* حقل نصي بأحرف مخفية (لا «password») حتى لا يعرض المتصفح حفظ رمز التصفير */}
+            <input className={`secret-input${show ? "" : " masked"}`} type="text" name="no-save-reset" value={code} onChange={e => setCode(e.target.value)}
+              autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" data-lpignore="true" data-1p-ignore="true" />
             <button type="button" className="pw-toggle" onClick={() => setShow(v => !v)}
               aria-label={show ? "إخفاء الرمز" : "إظهار الرمز"}><EyeIcon closed={show} /></button>
           </div>
@@ -2438,8 +2555,9 @@ function SeasonArchiveCard({ secret, rows, reload }) {
               <li>
                 أدخل رمز التصفير الخاص، ثم أرشف:
                 <div className="row" style={{ flexWrap: "nowrap", marginTop: 4 }}>
-                  <input className="secret-input grow" type="password" placeholder="رمز التصفير" value={code} onChange={e => setCode(e.target.value)}
-                    autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" />
+                  {/* حقل نصي بأحرف مخفية (لا «password») حتى لا يعرض المتصفح حفظ رمز التصفير */}
+                  <input className="secret-input grow masked" type="text" name="no-save-reset" placeholder="رمز التصفير" value={code} onChange={e => setCode(e.target.value)}
+                    autoComplete="off" autoCapitalize="off" spellCheck={false} dir="ltr" data-lpignore="true" data-1p-ignore="true" />
                   <button type="button" className="btn danger" disabled={!!busy || !(check && check.ok) || !code} onClick={archive}>
                     {busy === "archive" ? "جارٍ التنفيذ…" : "🗄️ أرشفة الموسم"}
                   </button>
@@ -2909,7 +3027,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
   const alerts = smartAlerts(c);
 
   // تبويبات البطاقة بعد المعلومات الأساسية
-  const CARD_TABS = [["follow", "⚙️ المتابعة"], ["sessions", "🗓️ الجلسات"], ["results", "📋 النتائج"], ["objection", "⚖️ الاعتراض"]];
+  const CARD_TABS = [["follow", "⚙️ المتابعة"], ["sessions", "🗓️ الجلسات"], ["results", "📋 النتائج"], ["objection", "⚖️ الاعتراض"], ["decision", "📜 القرار"]];
   const saveBtn = <button className="btn block" style={{ marginTop: 14 }} disabled={busy} onClick={() => save()}>{busy ? "جارٍ الحفظ…" : "💾 حفظ"}</button>;
 
   // العرض: الرأس (الرقم والحالة وزر Word)، التنبيهات، المعلومات الأساسية، مربع «المطلوب»، ثم التبويبات
@@ -3018,6 +3136,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       )}
 
       {cardTab === "objection" && <ObjectionSection secret={secret} complaint={c} onSaved={onSaved} />}
+      {cardTab === "decision" && <DecisionTab key={c.updated_at} c={c} />}
 
       {finalClosed && <div className="locked-note">🔒 أُغلقت الشكوى نهائياً بعد الاعتراض — يمكن تعديل الجلسات فقط.</div>}
     </div>
