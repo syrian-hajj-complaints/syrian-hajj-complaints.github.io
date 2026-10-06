@@ -64,6 +64,11 @@
 //    2026-10-05  قسم «🗒️ الملاحظات»: ملاحظات دائمة (إضافة، تعديل، تثبيت، بحث، ومن أضاف ومن عدّل)؛ الحذف للمدير.
 //    2026-10-06  الجلسات: النموذج مخفي حتى «➕ جلسة جديدة» أو الضغط على جلسة في الجدول، ويُخفى بعد الحفظ مع رسالة
 //                «✅ تم حفظ الجلسة» ظاهرة في مكانه؛ الحفظ مرة واحدة (الزر معطّل حتى انتهاء كل الخطوات).
+//    2026-10-06  رقم هاتف المشتكى عليه (اختياري): في نموذج الشكوى، وفي البطاقة (إضافة وتعديل للإدارة)، وبطاقة الاطلاع،
+//                وملف Word، وملف الموسم.
+//    2026-10-06  ملاحظة عن المشتكي وملاحظة عن المشتكى عليه (اختياريتان، مثل اسم المجموعة): في النموذج والبطاقة وبطاقة الاطلاع
+//                وملف Word وملف الموسم؛ جدولا الجلسات بلا «موضوع الجلسة» (يظهر عند الضغط على الجلسة).
+//    2026-10-06  موضوع الجلسة ونتيجتها حتى 10000 حرف (كانا 2000)، بخانتين أطول وعدّاد للأحرف.
 // =======================================================================
 // استيراد خطافات React المستخدمة في المكونات
 const { useState, useEffect, useCallback } = React;
@@ -259,6 +264,9 @@ function buildComplaintDoc(D, c, sess, logo, letterhead) {
       ["رقم الشكوى", c.complaint_number], ["تاريخ الشكوى", xlDate(c.received_date)], ["الحالة", c.status],
       ["اسم المشتكي", withRole(c.complainant_name, c.complainant_role)],
       ["اسم المشتكى عليه", withRole(c.accused_name, c.accused_role)],
+      ["هاتف المشتكى عليه", c.accused_phone],
+      ["ملاحظة عن المشتكي", c.complainant_note],
+      ["ملاحظة عن المشتكى عليه", c.accused_note],
       ["عنوان الاعتراض", c.title],
     ]),
     heading("نص الاعتراض"), ...box(c.subject), ...linkParas("روابط الشكوى:", c.links),
@@ -312,7 +320,7 @@ const XL_SHEETS = [
   { name: "الشكاوى", key: "complaints", marker: "نص الشكوى", cols: [
     ["season", "الموسم"], ["complaint_number", "رقم الشكوى"], ["received_date", "تاريخ الشكوى", true], ["status", "الحالة"],
     ["title", "عنوان الاعتراض"], ["complainant_name", "المشتكي"], ["complainant_role", "صفة المشتكي"], ["phone_number", "رقم الهاتف"],
-    ["contact_number", "واتس / تلغرام"], ["accused_name", "المشتكى عليه"], ["accused_role", "صفة المشتكى عليه"], ["subject", "نص الشكوى"],
+    ["contact_number", "واتس / تلغرام"], ["accused_name", "المشتكى عليه"], ["accused_role", "صفة المشتكى عليه"], ["accused_phone", "هاتف المشتكى عليه"], ["complainant_note", "ملاحظة عن المشتكي"], ["accused_note", "ملاحظة عن المشتكى عليه"], ["subject", "نص الشكوى"],
     ["links", "روابط الشكوى"], ["classification", "التصنيف"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الشكوى"], ["complainant_result", "النتيجة للمشتكي"],
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
@@ -653,7 +661,7 @@ const FORM_STEPS = ["بياناتك", "المشتكى عليه", "شكواك"];
 
 function ComplaintForm({ code, onDone, onRejected }) {
   // بيانات النموذج، الخطوة الحالية (0..2)، وحالة الإرسال
-  const [form, setForm] = useState({ name: "", crole: "", phone: "", contact: "", accused: "", arole: "", title: "", subject: "", links: [] });
+  const [form, setForm] = useState({ name: "", crole: "", phone: "", contact: "", accused: "", arole: "", aphone: "", cnote: "", anote: "", title: "", subject: "", links: [] });
   const [step, setStep] = useState(0);
   // قائمة الصفات من الإعدادات (وإلا قائمة config.js)
   const [roles, setRoles] = useState([...ROLES]);
@@ -676,6 +684,7 @@ function ComplaintForm({ code, onDone, onRejected }) {
     if (i === 1) {
       if (!form.accused.trim()) return "اكتب اسم المشتكى عليه.";
       if (!form.arole.trim()) return "اختر صفة المشتكى عليه.";
+      if (form.aphone && !/^\d{7,15}$/.test(form.aphone)) return "رقم هاتف المشتكى عليه غير صالح. اكتب الأرقام فقط مع رمز الدولة، أو اتركه فارغاً.";
     }
     if (i === 2) {
       if (!form.title.trim()) return "اكتب عنواناً قصيراً للاعتراض.";
@@ -701,9 +710,16 @@ function ComplaintForm({ code, onDone, onRejected }) {
       p_accused_name: form.accused, p_accused_role: form.arole, p_title: form.title, p_subject: form.subject,
     };
     const links = cleanLinks(form.links);
-    let { data, error: rpcErr } = await sb.rpc("submit_complaint", links.length ? { ...base, p_links: links } : base);
-    // قاعدة لم يُنفَّذ فيها القسم 34 بعد: التقديم بلا الروابط
-    if (links.length && rpcErr && /function|schema cache/i.test(rpcErr.message || "")) ({ data, error: rpcErr } = await sb.rpc("submit_complaint", base));
+    const aphone = form.aphone;
+    const notes = form.cnote.trim() || form.anote.trim();
+    const missing = e => e && /function|schema cache/i.test(e.message || "");
+    let { data, error: rpcErr } = await sb.rpc("submit_complaint",
+      notes ? { ...base, p_links: links, p_accused_phone: aphone, p_complainant_note: form.cnote, p_accused_note: form.anote }
+      : aphone ? { ...base, p_links: links, p_accused_phone: aphone } : links.length ? { ...base, p_links: links } : base);
+    // قاعدة لم يُنفَّذ فيها القسم 37 ثم 36 ثم 34 بعد: التقديم بلا الملاحظتين، ثم بلا رقم المشتكى عليه، ثم بلا الروابط
+    if (notes && missing(rpcErr)) ({ data, error: rpcErr } = await sb.rpc("submit_complaint", { ...base, p_links: links, p_accused_phone: aphone }));
+    if ((aphone || notes) && links.length && missing(rpcErr)) ({ data, error: rpcErr } = await sb.rpc("submit_complaint", { ...base, p_links: links }));
+    if ((aphone || notes || links.length) && missing(rpcErr)) ({ data, error: rpcErr } = await sb.rpc("submit_complaint", base));
     // قاعدة لم يُنفَّذ فيها القسم 23 بعد: النسخة القديمة، والصفة بين قوسين بعد الاسم حتى لا تضيع
     if (rpcErr && /submit_complaint|function/i.test(rpcErr.message || "") && !rpcErr.message.includes("INVALID_CODE"))
       ({ data, error: rpcErr } = await sb.rpc("submit_complaint", {
@@ -744,12 +760,21 @@ function ComplaintForm({ code, onDone, onRejected }) {
               <Field label="رقم واتس / تلغرام" hint="اختياري — إن كان مختلفاً عن رقم الهاتف">
                 <input type="tel" inputMode="tel" dir="ltr" value={form.contact} onChange={setPhone("contact")} maxLength={15} />
               </Field>
+              <Field label="ملاحظة عنك" hint="اختياري — مثل اسم المجموعة أو رقم الحافلة أو الفندق">
+                <input type="text" value={form.cnote} onChange={set("cnote")} maxLength={300} />
+              </Field>
             </>
           )}
           {step === 1 && (
             <>
               <Field label="اسم المشتكى عليه" required><input type="text" value={form.accused} onChange={set("accused")} maxLength={200} /></Field>
               <RoleField label="صفة المشتكى عليه" roles={roles} value={form.arole} onChange={v => setForm(f => ({ ...f, arole: v }))} />
+              <Field label="رقم هاتف المشتكى عليه" hint="اختياري — إن كنت تعرفه، مع رمز الدولة">
+                <input type="tel" inputMode="tel" dir="ltr" value={form.aphone} onChange={setPhone("aphone")} maxLength={15} />
+              </Field>
+              <Field label="ملاحظة عن المشتكى عليه" hint="اختياري — مثل اسم المجموعة أو الشركة">
+                <input type="text" value={form.anote} onChange={set("anote")} maxLength={300} />
+              </Field>
             </>
           )}
           {step === 2 && (
@@ -806,6 +831,79 @@ function LinksField({ value, onChange, label = "🔗 روابط مرفقة", hin
         {v.map((x, i) => <input key={i} type="url" dir="ltr" inputMode="url" value={x} onChange={e => put(i, e.target.value)} maxLength={1000} placeholder={`https://…  (رابط ${i + 1})`} />)}
       </div>
     </Field>
+  );
+}
+
+// رقم هاتف المشتكى عليه في بطاقة الشكوى (للإدارة): عرضه، وإضافته أو تعديله أو مسحه عبر admin_set_accused_phone
+function AccusedPhone({ secret, complaint, onSaved }) {
+  const [edit, setEdit] = useState(null);   // null = عرض فقط
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // الحفظ (الفارغ يمسح الرقم)
+  async function save() {
+    if (edit && !/^\d{7,15}$/.test(edit)) return setErr("اكتب الأرقام فقط مع رمز الدولة (7 إلى 15 رقماً).");
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_accused_phone", { p_secret: secret, p_id: complaint.id, p_phone: edit });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 36 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+
+  // العرض: خانة التعديل مع الحفظ والإلغاء، أو الرقم مع زر التعديل/الإضافة
+  if (edit !== null) return (
+    <dd>
+      <div className="row" style={{ flexWrap: "nowrap" }}>
+        <input type="tel" inputMode="tel" dir="ltr" autoFocus value={edit} onChange={e => setEdit(cleanPhone(e.target.value))} maxLength={15} placeholder="963912345678" />
+        <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
+        <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+      </div>
+      {err && <small style={{ color: "var(--danger)" }}>{err}</small>}
+    </dd>
+  );
+  return (
+    <dd>
+      <span dir="ltr">{complaint.accused_phone || "—"}</span>{" "}
+      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint.accused_phone || "")}>
+        {complaint.accused_phone ? "✏️" : "➕ إضافة"}
+      </button>
+    </dd>
+  );
+}
+
+// ملاحظة عن المشتكي أو المشتكى عليه في بطاقة الشكوى (للإدارة): عرضها، وإضافتها أو تعديلها أو مسحها عبر admin_set_party_note
+function PartyNote({ secret, complaint, party, onSaved }) {
+  const value = party === "accused" ? complaint.accused_note : complaint.complainant_note;
+  const [edit, setEdit] = useState(null);   // null = عرض فقط
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // الحفظ (الفارغ يمسح الملاحظة)
+  async function save() {
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_party_note", { p_secret: secret, p_id: complaint.id, p_party: party, p_note: edit });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 37 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+
+  // العرض: خانة التعديل مع الحفظ والإلغاء، أو الملاحظة مع زر التعديل/الإضافة
+  if (edit !== null) return (
+    <dd>
+      <div className="row" style={{ flexWrap: "nowrap" }}>
+        <input type="text" autoFocus value={edit} onChange={e => setEdit(e.target.value)} maxLength={300} placeholder="مثال: مجموعة النور — حافلة 12"
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); save(); } }} />
+        <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
+        <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+      </div>
+      {err && <small style={{ color: "var(--danger)" }}>{err}</small>}
+    </dd>
+  );
+  return (
+    <dd>
+      {value || <span className="muted">—</span>}{" "}
+      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(value || "")}>{value ? "✏️" : "➕ إضافة"}</button>
+    </dd>
   );
 }
 
@@ -2833,6 +2931,9 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div><dt>📞 الهاتف</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.phone_number || "—"}</dd></div>
         {c.contact_number && <div><dt>💬 واتس / تلغرام</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.contact_number}</dd></div>}
         <div><dt>⚠️ المشتكى عليه</dt><dd>{c.accused_name || "—"}{c.accused_role && <span className="muted"> ({c.accused_role})</span>}</dd></div>
+        <div><dt>📱 هاتف المشتكى عليه</dt><AccusedPhone secret={secret} complaint={c} onSaved={onSaved} /></div>
+        <div><dt>🗒️ ملاحظة عن المشتكي</dt><PartyNote secret={secret} complaint={c} party="complainant" onSaved={onSaved} /></div>
+        <div><dt>🗒️ ملاحظة عن المشتكى عليه</dt><PartyNote secret={secret} complaint={c} party="accused" onSaved={onSaved} /></div>
       </dl>
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
@@ -3215,14 +3316,13 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       {list === null ? <Loading /> : list.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>لا توجد جلسات لهذه الشكوى بعد.</p> : (
         <div className="table-wrap" style={{ maxHeight: 280, marginBottom: 12, border: "1px solid var(--line)" }}>
           <table className="sheet">
-            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
             <tbody>
               {list.map(s => (
                 <tr key={s.id} className={`status-row clickable ${stClass(s.status)} ${editId === s.id ? "selected" : ""}`} onClick={() => startEdit(s)} title="اضغط لعرض الجلسة وتعديلها">
                   <td>{fmtDateTime(s.session_at)}</td>
                   <td><b>{s.title || <span className="muted">—</span>}</b></td>
                   <td>{s.location || <span className="muted">—</span>}</td>
-                  <td className="wrap">{s.topic || <span className="muted">—</span>}</td>
                   <td>{s.referred_to || <span className="muted">—</span>}</td>
                   <td className="wrap">{s.result || <span className="muted">—</span>}</td>
                   <td><StatusBadge value={s.status} /></td>
@@ -3255,8 +3355,8 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <Field label="حالة الشكوى بعد الجلسة" required hint="«مغلقة» تغلق الشكوى بتاريخ الجلسة">
             <select value={form.status} onChange={set("status")}>{sessionStatuses(complaint, editId ? form.at : null).map(x => <option key={x}>{x}</option>)}</select>
           </Field>
-          <Field label="موضوع الجلسة" full><textarea style={{ minHeight: 60 }} value={form.topic} onChange={set("topic")} maxLength={2000} placeholder="ما الذي نوقش في الجلسة" /></Field>
-          <Field label="نتيجة الجلسة" full><textarea style={{ minHeight: 70 }} value={form.result} onChange={set("result")} maxLength={2000} /></Field>
+          <Field label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف`} full><textarea style={{ minHeight: 180 }} value={form.topic} onChange={set("topic")} maxLength={10000} placeholder="ما الذي نوقش في الجلسة" /></Field>
+          <Field label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`} full><textarea style={{ minHeight: 140 }} value={form.result} onChange={set("result")} maxLength={10000} /></Field>
           <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
           {isClosed(form.status) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
@@ -4538,6 +4638,7 @@ function ReportsPage({ code, viewerName }) {
 // ثم تبويبات الجلسات والنتائج والاعتراض والمتابعة — بلا أي تعديل
 function ComplaintView({ c, sessions }) {
   const [tab, setTab] = useState("sessions");
+  const [openSess, setOpenSess] = useState(null);   // الجلسة المفتوحة لعرض موضوعها
   const sess = [...(sessions || [])].sort((a, b) => new Date(b.session_at) - new Date(a.session_at));
   const TABS = [["sessions", `🗓️ الجلسات (${sess.length})`], ["results", "📋 النتائج"], ["objection", "⚖️ الاعتراض"], ["follow", "⚙️ المتابعة"]];
   const none = <span className="muted">—</span>;
@@ -4556,6 +4657,9 @@ function ComplaintView({ c, sessions }) {
         <div><dt>📞 الهاتف</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.phone_number || "—"}</dd></div>
         {c.contact_number && <div><dt>💬 واتس / تلغرام</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.contact_number}</dd></div>}
         <div><dt>⚠️ المشتكى عليه</dt><dd>{c.accused_name || "—"}{c.accused_role && <span className="muted"> ({c.accused_role})</span>}</dd></div>
+        {c.accused_phone && <div><dt>📱 هاتف المشتكى عليه</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.accused_phone}</dd></div>}
+        {c.complainant_note && <div><dt>🗒️ ملاحظة عن المشتكي</dt><dd>{c.complainant_note}</dd></div>}
+        {c.accused_note && <div><dt>🗒️ ملاحظة عن المشتكى عليه</dt><dd>{c.accused_note}</dd></div>}
       </dl>
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
@@ -4570,19 +4674,21 @@ function ComplaintView({ c, sessions }) {
           {sess.length === 0 ? <p className="muted" style={{ margin: 0 }}>لا توجد جلسات.</p> : (
             <div className="table-wrap" style={{ maxHeight: 320, border: "1px solid var(--line)" }}>
               <table className="sheet">
-                <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>موضوع الجلسة</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th></tr></thead>
+                <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th></tr></thead>
                 <tbody>
                   {sess.map((s, i) => (
-                    <tr key={i} className={`status-row ${stClass(s.status)}`} style={{ cursor: "default" }}>
-                      <td>{fmtDateTime(s.session_at)}</td>
-                      <td><b>{s.title || none}</b></td>
-                      <td>{s.location || none}</td>
-                      <td className="wrap">{s.topic || none}</td>
-                      <td>{s.referred_to || none}</td>
-                      <td className="wrap">{s.result || none}</td>
-                      <td><StatusBadge value={s.status} /></td>
-                      <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : none}</td>
-                    </tr>
+                    <React.Fragment key={i}>
+                      <tr className={`status-row clickable ${stClass(s.status)}`} onClick={() => setOpenSess(openSess === i ? null : i)} title="اضغط لعرض موضوع الجلسة">
+                        <td>{fmtDateTime(s.session_at)}</td>
+                        <td><b>{s.title || none}</b></td>
+                        <td>{s.location || none}</td>
+                        <td>{s.referred_to || none}</td>
+                        <td className="wrap">{s.result || none}</td>
+                        <td><StatusBadge value={s.status} /></td>
+                        <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : none}</td>
+                      </tr>
+                      {openSess === i && <tr><td colSpan={7} className="wrap"><b>موضوع الجلسة:</b> {s.topic || none}</td></tr>}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
