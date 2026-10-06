@@ -71,6 +71,7 @@
 //    2026-10-06  موضوع الجلسة ونتيجتها حتى 10000 حرف (كانا 2000)، بخانتين أطول وعدّاد للأحرف.
 //    2026-10-06  تعديل المواسم السابقة في Google Sheets نفسه (لمن له دور «محرّر»)، والمنصة تعرضه محدّثاً: حذف «فتح للتعديل»
 //                والإدخال من ملف إلى القاعدة؛ «➕ إضافة موسم سابق برابط ملفه»؛ ملف الأرشيف غير مقفول؛ تنبيه لرابط المجلد.
+//    2026-10-06  زر 🎤 (تحويل الكلام إلى نص) في موضوع الجلسة ورأي اللجنة ونتيجة الجلسة (VoiceArea).
 //    2026-10-06  تبويب «📜 القرار» في بطاقة الشكوى: قرار لجنة الشكاوى والصلح (Word) بالترويسة الرسمية، قيمه مولَّدة من الشكوى
 //                (الرقم، التاريخ الهجري والميلادي من تاريخ الإغلاق، والبند الأول من نتيجتها) مع تعديل اختياري قبل التوليد.
 //    2026-10-06  رمز التصفير لا يُعرض للحفظ في المتصفح: حقل نصي بأحرف مخفية بدل حقل كلمة المرور.
@@ -1074,6 +1075,23 @@ function LinksEditor({ secret, complaint, target, onSaved }) {
       <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(cleanLinks(current))}>
         {cleanLinks(current).length ? "✏️ تعديل الروابط" : "➕ إضافة رابط"}
       </button>
+    </div>
+  );
+}
+
+// خانة نص طويل بزر 🎤 لتحويل الكلام إلى نص (موضوع الجلسة ورأي اللجنة ونتيجتها): الكلام يُضاف إلى آخر النص،
+// ويظهر أثناء النطق تحت الخانة؛ عدّاد الأحرف في التلميح
+function VoiceArea({ label, hint, value, onChange, minHeight = 140, maxLength = 10000, placeholder, onError }) {
+  const [interim, setInterim] = useState("");
+  return (
+    <div className="field full">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <span className="field-label">{label}</span>
+        <MicButton onText={t => onChange((value ? value.replace(/\s*$/, " ") : "") + t)} onError={onError} onInterim={setInterim} />
+      </div>
+      <textarea style={{ minHeight }} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength} placeholder={placeholder} />
+      {interim && <div className="interim">🎙️ {interim}</div>}
+      {hint && <small className="hint">{hint}</small>}
     </div>
   );
 }
@@ -3480,9 +3498,12 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <Field label="حالة الشكوى بعد الجلسة" required hint="«مغلقة» تغلق الشكوى بتاريخ الجلسة">
             <select value={form.status} onChange={set("status")}>{sessionStatuses(complaint, editId ? form.at : null).map(x => <option key={x}>{x}</option>)}</select>
           </Field>
-          <Field label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف`} full><textarea style={{ minHeight: 180 }} value={form.topic} onChange={set("topic")} maxLength={10000} placeholder="ما الذي نوقش في الجلسة" /></Field>
-          <Field label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`} full><textarea style={{ minHeight: 140 }} value={form.opinion} onChange={set("opinion")} maxLength={10000} /></Field>
-          <Field label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`} full><textarea style={{ minHeight: 140 }} value={form.result} onChange={set("result")} maxLength={10000} /></Field>
+          <VoiceArea label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={180} placeholder="ما الذي نوقش في الجلسة… أو اضغط 🎤 وتحدّث"
+            value={form.topic} onChange={v => { setForm(f => ({ ...f, topic: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
+          <VoiceArea label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`}
+            value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
+          <VoiceArea label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
+            value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onError={t => setMsg({ type: "error", text: t })} />
           <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
           {isClosed(form.status) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
