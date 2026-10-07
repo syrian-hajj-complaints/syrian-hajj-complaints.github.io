@@ -95,6 +95,7 @@
 --                صارت القسم 47.
 --    2026-10-07  القسم 47: التعديل والحذف للمدير فقط (أحدث نسخ دوال التعديل بكلمة المدير)، و«المسؤول» يحدد التنبيه
 --                (admin_set_reminder)؛ الملاحظات والروابط السريعة للمدير؛ كلمة مرور الأدمن الأولى صارت القسم 48.
+--    2026-10-07  القسم 48: حذف مسؤول أو كلمة مرور إدارة نهائياً (admin_delete_access، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 49.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -244,6 +245,7 @@ drop function if exists public.admin_save_decision(text, uuid, text, date, text,
 drop function if exists public.admin_get_quick_links(text);
 drop function if exists public.admin_set_quick_links(text, json);
 drop function if exists public.admin_set_reminder(text, uuid, timestamptz, text);
+drop function if exists public.admin_delete_access(text, uuid);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -5351,7 +5353,26 @@ grant execute on function public.admin_save_note(text, uuid, text, text, boolean
 grant execute on function public.admin_get_quick_links(text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 48) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 48) حذف مستخدم نهائياً (للمدير): مسؤول (موظف) أو كلمة مرور إدارة (التقارير) — لا يُحذف المدير ولا كلمات المشتكين هنا
+--     يحتاج القسم 24 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات غير المستخدم المحدد)
+-- ---------------------------------------------------------------------
+-- تُرجع true عند الحذف
+create or replace function public.admin_delete_access(p_secret text, p_id uuid)
+returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return false;
+  end if;
+  delete from public.access_passwords where id = p_id and role in ('موظف', 'إدارة');
+  return found;
+end $$;
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.admin_delete_access(text, uuid) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 49) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

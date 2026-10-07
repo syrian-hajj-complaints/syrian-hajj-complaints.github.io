@@ -80,6 +80,7 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  «🗑️ حذف» نهائي في «👥 المسؤولون» و«📊 كلمات مرور الإدارة» (القسم 48، للمدير).
 //    2026-10-07  عارض المواسم السابقة: رابط «فتح في Google Sheets» للمدير فقط (لا للمسؤول ولا لصفحة التقارير).
 //    2026-10-07  الصلاحيات (القسم 47): التعديل والحذف للمدير؛ «المسؤول» يطّلع، ويحدد التنبيه والمطلوب عنده، ويُدخل شكوى، ويصدّر Word،
 //                ويضيف روابط الشكوى ورابط الدراسة المنقّحة؛ الجلسات للاطلاع له؛ الملاحظات والروابط السريعة في قسم المدير.
@@ -2028,6 +2029,14 @@ function AdminHome({ me, isManager, rows, go, secret, onOpen }) {
   );
 }
 
+// حذف مستخدم (مسؤول أو كلمة مرور إدارة) نهائياً بعد التأكيد؛ تُرجع true عند الحذف
+async function deleteAccessUser(secret, r, label) {
+  if (!window.confirm(`حذف ${label} «${r.name || ""}» نهائياً؟\nلن يستطيع الدخول بكلمة مروره بعد ذلك، ولا يمكن التراجع.`)) return false;
+  const { data, error } = await sb.rpc("admin_delete_access", { p_secret: secret, p_id: r.id });
+  if (error || !data) { window.alert("تعذّر الحذف (للمدير فقط؛ ونفّذ القسم 48 من schema.sql في Supabase)."); return false; }
+  return true;
+}
+
 // قسم الموظفين (للمدير): إضافة موظف بكلمة مرور خاصة، نسخ رسالته، وإيقافه أو تفعيله
 function AdminStaff({ secret }) {
   // اسم الموظف الجديد، الكلمة المولّدة الأخيرة، القائمة، والرسائل
@@ -2092,7 +2101,10 @@ function AdminStaff({ secret }) {
                   <b>{r.name}</b> · <span className="mono">{r.code}</span>
                   <div className="muted" style={{ fontSize: 13 }}>آخر دخول: {fmtDateTime(r.last_seen_at)}</div>
                 </div>
-                <button className={`btn sm ${r.active ? "secondary" : ""}`} onClick={() => toggle(r)}>{r.active ? "إيقاف" : "تفعيل"}</button>
+                <span className="row" style={{ gap: 6 }}>
+                  <button className={`btn sm ${r.active ? "secondary" : ""}`} onClick={() => toggle(r)}>{r.active ? "إيقاف" : "تفعيل"}</button>
+                  <button type="button" className="btn danger-text" onClick={async () => { if (await deleteAccessUser(secret, r, "المسؤول")) load(); }}>🗑️ حذف</button>
+                </span>
               </li>
             ))}
           </ul>
@@ -5123,7 +5135,10 @@ function AdminViewers({ secret }) {
                   <b>{r.name}</b> · <span className="mono">{r.code}</span>
                   <div className="muted" style={{ fontSize: 13 }}>آخر دخول: {fmtDateTime(r.last_seen_at)}</div>
                 </div>
-                <button className={`btn sm ${r.active ? "secondary" : ""}`} onClick={() => toggle(r)}>{r.active ? "إيقاف" : "تفعيل"}</button>
+                <span className="row" style={{ gap: 6 }}>
+                  <button className={`btn sm ${r.active ? "secondary" : ""}`} onClick={() => toggle(r)}>{r.active ? "إيقاف" : "تفعيل"}</button>
+                  <button type="button" className="btn danger-text" onClick={async () => { if (await deleteAccessUser(secret, r, "صاحب كلمة مرور الإدارة")) load(); }}>🗑️ حذف</button>
+                </span>
               </li>
             ))}
           </ul>
