@@ -93,6 +93,8 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 46.
 --    2026-10-07  القسم 46: «روابط سريعة» للوحة (quick_links: admin_get_quick_links / admin_set_quick_links)؛ كلمة مرور الأدمن الأولى
 --                صارت القسم 47.
+--    2026-10-07  القسم 47: التعديل والحذف للمدير فقط (أحدث نسخ دوال التعديل بكلمة المدير)، و«المسؤول» يحدد التنبيه
+--                (admin_set_reminder)؛ الملاحظات والروابط السريعة للمدير؛ كلمة مرور الأدمن الأولى صارت القسم 48.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -241,6 +243,7 @@ drop function if exists public.admin_record_objection(text, uuid, text, timestam
 drop function if exists public.admin_save_decision(text, uuid, text, date, text, text, text, text, text, text, boolean, text);
 drop function if exists public.admin_get_quick_links(text);
 drop function if exists public.admin_set_quick_links(text, json);
+drop function if exists public.admin_set_reminder(text, uuid, timestamptz, text);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -5030,7 +5033,325 @@ grant execute on function public.admin_get_quick_links(text)       to anon, auth
 grant execute on function public.admin_set_quick_links(text, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 47) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 47) الصلاحيات: التعديل والحذف للمدير فقط؛ «المسؤول» يطّلع، ويحدد التنبيه والمطلوب عنده (admin_set_reminder)،
+--     ويُدخل شكوى، ويصدّر Word، ويضيف روابط الشكوى ورابط الدراسة المنقّحة. الملاحظات والروابط السريعة للمدير فقط.
+--     (أحدث نسخة من كل دالة تعديل، بالتحقق من كلمة مرور المدير بدل الأدمن)
+--     يحتاج الأقسام حتى 46 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- تنبيه المتابعة والمطلوب عنده (للمدير والمسؤول)؛ الفارغ يمسحهما؛ تُرجع الشكوى
+create or replace function public.admin_set_reminder(p_secret text, p_id uuid, p_at timestamptz, p_note text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return;
+  end if;
+  update public.complaints set reminder_at = p_at, reminder_note = case when p_at is null then null else nullif(btrim(left(p_note, 500)), '') end
+   where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_update_complaint(
+  p_secret text, p_id uuid, p_classification text, p_referred_to text, p_status text,
+  p_result text, p_complainant_result text, p_accused_result text,
+  p_closed_date timestamptz, p_reminder_at timestamptz, p_reminder_note text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  update public.complaints set
+    classification     = nullif(btrim(p_classification), ''),
+    referred_to        = nullif(btrim(p_referred_to), ''),
+    complainant_result = nullif(btrim(p_complainant_result), ''),
+    accused_result     = nullif(btrim(p_accused_result), ''),
+    reminder_at        = p_reminder_at,
+    reminder_note      = nullif(btrim(left(p_reminder_note, 500)), '')
+  where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_bulk_update(
+  p_secret text, p_ids uuid[], p_status text, p_classification text, p_referred_to text, p_closed_date timestamptz
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  update public.complaints set
+    classification = coalesce(nullif(btrim(p_classification), ''), classification),
+    referred_to    = coalesce(nullif(btrim(p_referred_to), ''), referred_to)
+  where id = any (p_ids);
+  return query select * from public.complaints where id = any (p_ids);
+end $$;
+
+create or replace function public.admin_add_session(
+  p_secret text, p_complaint_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  if exists (select 1 from public.complaints where id = p_complaint_id and status in ('مغلقة', 'مغلقة بعد الاعتراض')) then
+    raise exception 'الشكوى مغلقة: يمكن تعديل جلساتها فقط';
+  end if;
+  insert into public.sessions (complaint_id, session_at, title, location, topic, referred_to, result, status)
+  values (p_complaint_id, coalesce(p_session_at, now()),
+          nullif(btrim(left(p_title, 200)), ''), nullif(btrim(left(p_location, 300)), ''), nullif(btrim(left(p_topic, 10000)), ''),
+          nullif(btrim(left(p_referred_to, 200)), ''), nullif(btrim(left(p_result, 10000)), ''), p_status);
+  return query select * from public.complaints where id = p_complaint_id;
+end $$;
+
+create or replace function public.admin_add_session(
+  p_secret text, p_complaint_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text, p_links text[]
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  perform public.admin_add_session(p_secret, p_complaint_id, p_session_at, p_title, p_location, p_topic, p_referred_to, p_result, p_status);
+  update public.sessions set links = public.clean_links(p_links)
+   where id = (select id from public.sessions where complaint_id = p_complaint_id order by created_at desc limit 1);
+  return query select * from public.complaints where id = p_complaint_id;
+end $$;
+
+create or replace function public.admin_add_session(
+  p_secret text, p_complaint_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text, p_links text[], p_opinion text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  perform public.admin_add_session(p_secret, p_complaint_id, p_session_at, p_title, p_location, p_topic, p_referred_to, p_result, p_status, p_links);
+  update public.sessions set opinion = nullif(btrim(left(p_opinion, 10000)), '')
+   where id = (select id from public.sessions where complaint_id = p_complaint_id order by created_at desc limit 1);
+  return query select * from public.complaints where id = p_complaint_id;
+end $$;
+
+create or replace function public.admin_update_session(
+  p_secret text, p_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cid uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  update public.sessions set
+    session_at  = coalesce(p_session_at, session_at),
+    title       = nullif(btrim(left(p_title, 200)), ''),
+    location    = nullif(btrim(left(p_location, 300)), ''),
+    topic       = nullif(btrim(left(p_topic, 10000)), ''),
+    referred_to = nullif(btrim(left(p_referred_to, 200)), ''),
+    result      = nullif(btrim(left(p_result, 10000)), ''),
+    status      = p_status
+  where id = p_id
+  returning complaint_id into v_cid;
+  return query select * from public.complaints where id = v_cid;
+end $$;
+
+create or replace function public.admin_update_session(
+  p_secret text, p_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text, p_links text[]
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  perform public.admin_update_session(p_secret, p_id, p_session_at, p_title, p_location, p_topic, p_referred_to, p_result, p_status);
+  update public.sessions set links = public.clean_links(p_links) where id = p_id;
+  return query select * from public.complaints where id = (select complaint_id from public.sessions where id = p_id);
+end $$;
+
+create or replace function public.admin_update_session(
+  p_secret text, p_id uuid, p_session_at timestamptz,
+  p_title text, p_location text, p_topic text, p_referred_to text, p_result text, p_status text, p_links text[], p_opinion text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  perform public.admin_update_session(p_secret, p_id, p_session_at, p_title, p_location, p_topic, p_referred_to, p_result, p_status, p_links);
+  update public.sessions set opinion = nullif(btrim(left(p_opinion, 10000)), '') where id = p_id;
+  return query select * from public.complaints where id = (select complaint_id from public.sessions where id = p_id);
+end $$;
+
+create or replace function public.admin_set_objection_code(p_secret text, p_id uuid, p_summary text, p_deadline timestamptz)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  if not exists (select 1 from public.complaints where id = p_id and status = 'مغلقة' and objection_at is null) then
+    raise exception 'رمز الاعتراض يُولَّد بعد إغلاق الشكوى، ومرة اعتراض واحدة فقط';
+  end if;
+  update public.complaints
+     set objection_code     = public.random_password(6, true),
+         objection_summary  = title,
+         objection_deadline = coalesce(p_deadline, now() + interval '3 days')
+   where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_set_objection_deadline(p_secret text, p_id uuid, p_deadline timestamptz, p_reason text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  if coalesce(btrim(p_reason), '') = '' then
+    raise exception 'يرجى كتابة سبب التمديد الاستثنائي';
+  end if;
+  if p_deadline is null or p_deadline <= now() then
+    raise exception 'الموعد الجديد يجب أن يكون في المستقبل';
+  end if;
+  update public.complaints set objection_deadline = p_deadline, objection_extension_reason = btrim(left(p_reason, 500))
+   where id = p_id and objection_code is not null and objection_at is null;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_set_accused_phone(p_secret text, p_id uuid, p_phone text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_phone text := public.normalize_phone(p_phone);
+begin
+  if public.verify_password('مدير', p_secret) is null or length(coalesce(v_phone, '')) > 20 then
+    return;
+  end if;
+  update public.complaints set accused_phone = v_phone where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_set_party_note(p_secret text, p_id uuid, p_party text, p_note text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null or p_party not in ('complainant', 'accused') then
+    return;
+  end if;
+  if p_party = 'complainant' then
+    update public.complaints set complainant_note = nullif(btrim(left(p_note, 300)), '') where id = p_id;
+  else
+    update public.complaints set accused_note = nullif(btrim(left(p_note, 300)), '') where id = p_id;
+  end if;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+create or replace function public.admin_add_season_complaint(
+  p_secret text, p_season text, p_received_at timestamptz,
+  p_complainant_name text, p_complainant_role text, p_phone_number text, p_contact_number text,
+  p_accused_name text, p_accused_role text, p_accused_phone text, p_title text, p_subject text, p_classification text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_next int;
+  v_id   uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(p_season, '') !~ '^\d{4}$' or p_season = public.setting('season')
+     or coalesce(btrim(p_complainant_name), '') = '' or coalesce(btrim(p_accused_name), '') = '' or coalesce(btrim(p_subject), '') = ''
+     or not exists (select 1 from public.complaints where season = p_season) then
+    return;
+  end if;
+  select coalesce(max(nullif(substring(complaint_number from '-(\d+)$'), '')::int), 0) + 1 into v_next
+    from public.complaints where season = p_season;
+
+  -- الإدخال بلا مشغّلات الإدخال (التي ترقّم بالموسم الحالي)؛ تعود عند نهاية الدالة
+  alter table public.complaints disable trigger user;
+  insert into public.complaints (season, complaint_number, tracking_code, received_date, status, title,
+         complainant_name, complainant_role, phone_number, contact_number, accused_name, accused_role, accused_phone,
+         subject, classification, updated_at, changes)
+  values (p_season, p_season || '-' || lpad(v_next::text, 5, '0'), public.random_password(6, true), coalesce(p_received_at, now()), 'جديد',
+          nullif(btrim(left(p_title, 150)), ''), btrim(left(p_complainant_name, 200)), nullif(btrim(left(p_complainant_role, 100)), ''),
+          public.normalize_phone(p_phone_number), public.normalize_phone(p_contact_number),
+          btrim(left(p_accused_name, 200)), nullif(btrim(left(p_accused_role, 100)), ''), public.normalize_phone(p_accused_phone),
+          btrim(left(p_subject, 5000)), nullif(btrim(left(p_classification, 60)), ''), now(),
+          to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI') || ' — '
+            || coalesce(nullif(current_setting('app.actor', true), ''), 'النظام') || ' أضاف الشكوى إلى موسم ' || p_season || ' المؤرشف')
+  returning id into v_id;
+  alter table public.complaints enable trigger user;
+  return query select * from public.complaints where id = v_id;
+end $$;
+
+create or replace function public.admin_list_notes(p_secret text)
+returns setof public.notes
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  return query select * from public.notes order by pinned desc, updated_at desc;
+end $$;
+
+create or replace function public.admin_save_note(p_secret text, p_id uuid, p_title text, p_body text, p_pinned boolean)
+returns setof public.notes
+language plpgsql security definer set search_path = public as $$
+declare
+  v_who text;
+  v_id  uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(btrim(p_title), '') = '' then
+    return;
+  end if;
+  v_who := nullif(current_setting('app.actor', true), '');
+  if p_id is null then
+    insert into public.notes (title, body, pinned, created_by, updated_by)
+    values (btrim(left(p_title, 200)), nullif(btrim(left(p_body, 20000)), ''), coalesce(p_pinned, false), v_who, v_who)
+    returning id into v_id;
+  else
+    update public.notes set title = btrim(left(p_title, 200)), body = nullif(btrim(left(p_body, 20000)), ''),
+           pinned = coalesce(p_pinned, false), updated_by = v_who, updated_at = now()
+     where id = p_id
+    returning id into v_id;
+  end if;
+  return query select * from public.notes where id = v_id;
+end $$;
+
+create or replace function public.admin_get_quick_links(p_secret text)
+returns json
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return null;
+  end if;
+  return coalesce(public.setting('quick_links'), '[]')::json;
+end $$;
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_set_reminder(text, uuid, timestamptz, text) to anon, authenticated;
+grant execute on function public.admin_update_complaint(text, uuid, text, text, text, text, text, text, timestamptz, timestamptz, text) to anon, authenticated;
+grant execute on function public.admin_bulk_update(text, uuid[], text, text, text, timestamptz) to anon, authenticated;
+grant execute on function public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text) to anon, authenticated;
+grant execute on function public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text, text[]) to anon, authenticated;
+grant execute on function public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text, text[], text) to anon, authenticated;
+grant execute on function public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text) to anon, authenticated;
+grant execute on function public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text, text[]) to anon, authenticated;
+grant execute on function public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text, text[], text) to anon, authenticated;
+grant execute on function public.admin_set_objection_code(text, uuid, text, timestamptz) to anon, authenticated;
+grant execute on function public.admin_set_objection_deadline(text, uuid, timestamptz, text) to anon, authenticated;
+grant execute on function public.admin_set_accused_phone(text, uuid, text) to anon, authenticated;
+grant execute on function public.admin_set_party_note(text, uuid, text, text) to anon, authenticated;
+grant execute on function public.admin_add_season_complaint(text, text, timestamptz, text, text, text, text, text, text, text, text, text, text) to anon, authenticated;
+grant execute on function public.admin_list_notes(text) to anon, authenticated;
+grant execute on function public.admin_save_note(text, uuid, text, text, boolean) to anon, authenticated;
+grant execute on function public.admin_get_quick_links(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 48) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

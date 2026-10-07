@@ -91,6 +91,7 @@
     2026-10-07  شارة درجة سرية القرار (.secrecy-tag).
     2026-10-07  مربع ربط المصادقة (.approval-box).
     2026-10-07  «روابط سريعة» في القائمة الجانبية (.side-ext / a.side-item).
+    2026-10-07  حاوية تعطيل نموذج الجلسة (.plain-fieldset).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -448,6 +449,8 @@
   /* علامة الرابط الخارجي في «روابط سريعة» بالقائمة الجانبية */
   .side-ext { margin-inline-start: auto; opacity: .6; font-size: 12px; }
   a.side-item { text-decoration: none; }
+  /* حاوية بلا إطار لتعطيل خانات نموذج الجلسة (عرض المسؤول) */
+  .plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
@@ -724,6 +727,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=dc45ffefa4"></script>
+<script src="app.js?v=c6b7353698"></script>
 </body>
 </html>

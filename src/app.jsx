@@ -80,6 +80,8 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  الصلاحيات (القسم 47): التعديل والحذف للمدير؛ «المسؤول» يطّلع، ويحدد التنبيه والمطلوب عنده، ويُدخل شكوى، ويصدّر Word،
+//                ويضيف روابط الشكوى ورابط الدراسة المنقّحة؛ الجلسات للاطلاع له؛ الملاحظات والروابط السريعة في قسم المدير.
 //    2026-10-07  «🔗 روابط سريعة» (القسم 46): يحفظها المدير من الإعدادات (اسم ورابط، وترتيب)، وتظهر في القائمة الجانبية للجميع.
 //    2026-10-07  القرارات: تصنيفات متعددة (يظهر القرار في تبويب كل تصنيف)، والمصادقة على قرارات الشكاوى بربط داخلي بقرار الإدارة
 //                («تمت المصادقة» + رقم قرار المصادقة من قائمة) يظهر في القرارين، وتصفية «مصادَق / بانتظار المصادقة» (القسم 45).
@@ -1121,9 +1123,9 @@ function AccusedPhone({ secret, complaint, onSaved }) {
   return (
     <dd>
       <span dir="ltr">{complaint.accused_phone || "—"}</span>{" "}
-      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint.accused_phone || "")}>
+      {ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint.accused_phone || "")}>
         {complaint.accused_phone ? "✏️" : "➕ إضافة"}
-      </button>
+      </button>}
     </dd>
   );
 }
@@ -1159,7 +1161,7 @@ function PartyNote({ secret, complaint, party, onSaved }) {
   return (
     <dd>
       {value || <span className="muted">—</span>}{" "}
-      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(value || "")}>{value ? "✏️" : "➕ إضافة"}</button>
+      {ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(value || "")}>{value ? "✏️" : "➕ إضافة"}</button>}
     </dd>
   );
 }
@@ -1244,9 +1246,9 @@ function LinksEditor({ secret, complaint, target, onSaved }) {
   return (
     <div className="links-line">
       <LinksView links={current} />
-      <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(cleanLinks(current))}>
+      {(ADMIN_CTX.manager || target === "complaint") && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(cleanLinks(current))}>
         {cleanLinks(current).length ? "✏️ تعديل الروابط" : "➕ إضافة رابط"}
-      </button>
+      </button>}
     </div>
   );
 }
@@ -1667,7 +1669,7 @@ const SECTIONS = {
   admindec:   { title: "🏛️ قرارات الإدارة" },
   archive:    { title: "📚 المواسم السابقة" },
   indicators: { title: "📈 المؤشرات" },
-  notes:      { title: "🗒️ الملاحظات" },
+  notes:      { title: "🗒️ الملاحظات", manager: true },
   guide:      { title: "📘 دليل المنصة" },
   access:     { title: "🔐 دخول المشتكين", manager: true },
   viewers:    { title: "📊 كلمات مرور الإدارة", manager: true },
@@ -1853,8 +1855,8 @@ function EnterComplaintButton({ secret }) {
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
 const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
-                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "قرارات الشكاوى"], ["admindec", "🏛️", "قرارات الإدارة"], ["archive", "📚", "المواسم السابقة"], ["notes", "🗒️", "الملاحظات"]];
-const NAV_MANAGER = [["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
+                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "قرارات الشكاوى"], ["admindec", "🏛️", "قرارات الإدارة"], ["archive", "📚", "المواسم السابقة"]];
+const NAV_MANAGER = [["notes", "🗒️", "الملاحظات"], ["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
 
 // زر «📲 تثبيت»: على أندرويد والحاسوب يفتح نافذة التثبيت مباشرة، وعلى آيفون يشرح «مشاركة ← إضافة إلى الشاشة الرئيسية»؛
@@ -1917,7 +1919,7 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose, links 
           <nav className="side-nav">{NAV_MANAGER.map(item)}</nav>
         </>
       )}
-      {links.length > 0 && (
+      {isManager && links.length > 0 && (
         <>
           <div className="side-group">🔗 روابط سريعة</div>
           <nav className="side-nav">
@@ -3302,7 +3304,7 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
     (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
   // موسم سابق مفتوح للتعديل (ليس الحالي، وله شكاوى في القاعدة): زر «➕ إضافة شكوى» إليه
-  const pastOpen = season && current && season !== current && (rows || []).some(c => c.season === season);
+  const pastOpen = ADMIN_CTX.manager && season && current && season !== current && (rows || []).some(c => c.season === season);
   const [adding, setAdding] = useState(false);
 
   // العرض: أزرار التصفية مع الأعداد، البحث، ثم الجدول
@@ -3365,7 +3367,10 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
     const v = { ...vState, ...(overrides || {}) };
     if (overrides) setV(v);
     setBusy(true); setMsg(null);
-    const { data, error } = await sb.rpc("admin_update_complaint", {
+    // المسؤول: التنبيه والمطلوب عنده فقط (admin_set_reminder)؛ المدير: كل الحقول
+    const { data, error } = !ADMIN_CTX.manager
+      ? await sb.rpc("admin_set_reminder", { p_secret: secret, p_id: c.id, p_at: dateTimeInputToIso(v.reminder), p_note: v.reminder_note })
+      : await sb.rpc("admin_update_complaint", {
       p_secret: secret, p_id: c.id, p_classification: v.classification, p_referred_to: v.referred_to,
       p_status: c.status, p_result: c.result, p_complainant_result: v.complainant_result, p_accused_result: v.accused_result,
       p_closed_date: c.closed_date,
@@ -3463,7 +3468,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
           </div>
           <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 10 }}>
             <button type="button" className="btn" disabled={busy} onClick={saveReminder}>{busy ? "جارٍ الحفظ…" : "حفظ التنبيه والتعديلات"}</button>
-            <button type="button" className="btn secondary" disabled={busy} onClick={() => setCloseReq(n => n + 1)}>🔒 إغلاق عبر جلسة</button>
+            {ADMIN_CTX.manager && <button type="button" className="btn secondary" disabled={busy} onClick={() => setCloseReq(n => n + 1)}>🔒 إغلاق عبر جلسة</button>}
           </div>
         </div>
       )}
@@ -3476,13 +3481,15 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div className="card-pane">
           <div className="grid">
             <Field label="التصنيف">
-              <select value={v.classification} onChange={set("classification")}>
+              {/* التصنيف والإحالة للمدير؛ المسؤول يراهما فقط */}
+              <select value={v.classification} onChange={set("classification")} disabled={!ADMIN_CTX.manager}>
                 <option value="">— اختر —</option>
                 {CLASSIFICATIONS.map(x => <option key={x}>{x}</option>)}
                 {v.classification && !CLASSIFICATIONS.includes(v.classification) && <option>{v.classification}</option>}
               </select>
             </Field>
-            <Field label="ترحيل / مُحالة إلى"><ReferralSelect value={v.referred_to} onChange={val => setV(x => ({ ...x, referred_to: val }))} /></Field>
+            <Field label="ترحيل / مُحالة إلى">{ADMIN_CTX.manager ? <ReferralSelect value={v.referred_to} onChange={val => setV(x => ({ ...x, referred_to: val }))} />
+              : <div className="readonly-field">{v.referred_to || "—"}</div>}</Field>
             <Field label="الحالة" hint="تتغيّر تلقائياً من الجلسات">
               <div className="readonly-field"><StatusBadge value={c.status} />{c.closed_date && <span className="muted"> · أُغلقت {fmtDate(c.closed_date)}</span>}</div>
             </Field>
@@ -3505,7 +3512,8 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       )}
 
       {cardTab === "sessions" && (
-        <SessionsSection secret={secret} complaint={c} onApplied={applyFromSession} onChanged={() => (onSessionsChanged || (() => {}))()} closeReq={closeReq} />
+        <SessionsSection secret={secret} complaint={c} onApplied={applyFromSession} onChanged={() => (onSessionsChanged || (() => {}))()} closeReq={closeReq}
+          readOnly={!ADMIN_CTX.manager} />
       )}
 
       {cardTab === "results" && (
@@ -3513,13 +3521,13 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
           <ResultBox c={c} />
           <div className="grid" style={{ marginTop: 12 }}>
             <Field label="👤 النتيجة التي يراها المشتكي" hint="تظهر للمشتكي في صفحة «نتيجة الشكوى» — لا تأتي من الجلسات" full>
-              <textarea style={{ minHeight: 70 }} value={v.complainant_result} onChange={set("complainant_result")} maxLength={2000} />
+              <textarea style={{ minHeight: 70 }} value={v.complainant_result} onChange={set("complainant_result")} maxLength={2000} readOnly={!ADMIN_CTX.manager} />
             </Field>
             <Field label="⚖️ النتيجة التي يراها المعترض" hint="تظهر للمشتكى عليه في صفحة الاعتراض — لا تأتي من الجلسات" full>
-              <textarea style={{ minHeight: 70 }} value={v.accused_result} onChange={set("accused_result")} maxLength={2000} />
+              <textarea style={{ minHeight: 70 }} value={v.accused_result} onChange={set("accused_result")} maxLength={2000} readOnly={!ADMIN_CTX.manager} />
             </Field>
           </div>
-          {saveBtn}
+          {ADMIN_CTX.manager && saveBtn}
         </div>
       )}
 
@@ -3707,11 +3715,11 @@ function ObjectionSection({ secret, complaint: c, onSaved }) {
             ⏳ آخر موعد للاعتراض: <b>{fmtDateTime(c.objection_deadline)}</b> {expired ? "— انتهت المهلة" : ""}
             {c.objection_extension_reason && <div style={{ fontSize: 13.5, marginTop: 4 }}>سبب التمديد الاستثنائي: {c.objection_extension_reason}</div>}
           </div>
-          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <div className="grid" style={{ gridTemplateColumns: ADMIN_CTX.manager ? "1fr 1fr" : "1fr" }}>
             <button type="button" className="btn secondary" onClick={async () => setMsg(await copyText(text) ? { type: "ok", text: "تم نسخ الرسالة." } : { type: "error", text: "تعذّر النسخ." })}>📋 نسخ الرسالة</button>
-            <button type="button" className={`btn ${expired ? "gold" : "secondary"}`} onClick={() => { setMode("extend"); setMsg(null); }}>⏳ تمديد استثنائي</button>
+            {ADMIN_CTX.manager && <button type="button" className={`btn ${expired ? "gold" : "secondary"}`} onClick={() => { setMode("extend"); setMsg(null); }}>⏳ تمديد استثنائي</button>}
           </div>
-          <button type="button" className="btn danger-text" style={{ marginTop: 6 }} onClick={() => { setMode("generate"); setMsg(null); }}>🔄 رمز جديد / تعديل الملخص</button>
+          {ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ marginTop: 6 }} onClick={() => { setMode("generate"); setMsg(null); }}>🔄 رمز جديد / تعديل الملخص</button>}
           {ADMIN_CTX.manager && c.status === CLOSED && <button type="button" className="btn secondary block" style={{ marginTop: 8 }} onClick={() => { setMode("past"); setMsg(null); }}>🗂️ تسجيل اعتراض سابق (بتاريخه الأصلي)</button>}
         </>
       ) : !mode && c.status !== CLOSED ? (
@@ -3719,7 +3727,8 @@ function ObjectionSection({ secret, complaint: c, onSaved }) {
       ) : !mode ? (
         <>
           <p className="muted" style={{ marginTop: 0 }}>أُغلقت الشكوى — يمكنك الآن إرسال رمز اعتراض للمشتكى عليه (مرة واحدة).</p>
-          <button type="button" className="btn block" onClick={() => setMode("generate")}>⚖️ توليد رمز اعتراض للمشتكى عليه</button>
+          {ADMIN_CTX.manager ? <button type="button" className="btn block" onClick={() => setMode("generate")}>⚖️ توليد رمز اعتراض للمشتكى عليه</button>
+            : <p className="muted" style={{ fontSize: 13.5 }}>توليد رمز الاعتراض وتسجيله للمدير.</p>}
           {ADMIN_CTX.manager && <button type="button" className="btn secondary block" style={{ marginTop: 8 }} onClick={() => setMode("past")}>🗂️ تسجيل اعتراض سابق (بتاريخه الأصلي)</button>}
         </>
       ) : null}
@@ -3770,7 +3779,8 @@ const sessionStatuses = (complaint, at) =>
     ? ["جاري متابعة الاعتراض", CLOSED_OBJ] : ["جاري المتابعة", CLOSED];
 const sessionStatus = (complaint, s, at) => sessionStatuses(complaint, at)[isClosed(s) ? 1 : 0];
 
-function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0 }) {
+// readOnly: للمسؤول — عرض الجلسات وتفاصيلها فقط، بلا إضافة ولا تعديل
+function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0, readOnly = false }) {
   // سجل الجلسات، النموذج (جلسة جديدة أو تعديل جلسة: editId)، والرسائل
   const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", opinion: "", links: [],
                          status: sessionStatus(complaint, complaint.status),
@@ -3885,7 +3895,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
                   <td className="wrap">{s.result || <span className="muted">—</span>}</td>
                   <td><StatusBadge value={s.status} /></td>
                   <td>{cleanLinks(s.links).length ? <LinksView links={s.links} /> : <span className="muted">—</span>}</td>
-                  <td><button className="btn danger-text" style={{ color: "var(--brand)" }} onClick={e => { e.stopPropagation(); startEdit(s); }}>✏️ تعديل</button></td>
+                  <td><button className="btn danger-text" style={{ color: "var(--brand)" }} onClick={e => { e.stopPropagation(); startEdit(s); }}>{readOnly ? "👁️ عرض" : "✏️ تعديل"}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -3894,7 +3904,9 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       )}
       <div ref={msgRef}>{msg && !showForm && <Alert type={msg.type}>{msg.text}</Alert>}</div>
       {!showForm ? (
-        closed ? (
+        readOnly ? (
+          list && list.length > 0 && <small className="hint" style={{ display: "block", marginTop: 6 }}>👁️ اضغط على أي جلسة لعرض تفاصيلها (التعديل للمدير).</small>
+        ) : closed ? (
           <p className="muted" style={{ fontSize: 13.5 }}>🔒 الشكوى مغلقة — لا تُضاف جلسات جديدة{complaint.objection_at ? "" : " إلا بعد وصول اعتراض"}. اضغط على أي جلسة لعرضها وتعديلها.</p>
         ) : (
           <>
@@ -3904,7 +3916,8 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
         )
       ) : (
       <form onSubmit={submit} className="session-form" ref={formRef}>
-        <div className="field-label" style={{ marginBottom: 8 }}>{editId ? "✏️ تعديل الجلسة" : "➕ جلسة جديدة"}</div>
+        <div className="field-label" style={{ marginBottom: 8 }}>{readOnly ? "👁️ تفاصيل الجلسة" : editId ? "✏️ تعديل الجلسة" : "➕ جلسة جديدة"}</div>
+        <fieldset disabled={readOnly} className="plain-fieldset">
         <div className="grid">
           <Field label="التاريخ والوقت" required><input type="datetime-local" value={form.at} onChange={set("at")} /></Field>
           <Field label="عنوان الجلسة"><input type="text" value={form.title} onChange={set("title")} maxLength={200} placeholder="مثال: جلسة استماع للطرفين" /></Field>
@@ -3931,11 +3944,16 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             </Field>
           )}
         </div>
+        </fieldset>
         {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
-          <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : editId ? "💾 حفظ التعديل" : "💾 حفظ الجلسة"}</button>
-          <button type="button" className="btn secondary" disabled={busy} onClick={cancelEdit}>إلغاء</button>
-        </div>
+        {readOnly ? (
+          <button type="button" className="btn secondary block" style={{ marginTop: 12 }} onClick={cancelEdit}>إغلاق</button>
+        ) : (
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+            <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : editId ? "💾 حفظ التعديل" : "💾 حفظ الجلسة"}</button>
+            <button type="button" className="btn secondary" disabled={busy} onClick={cancelEdit}>إلغاء</button>
+          </div>
+        )}
         <small className="hint" style={{ display: "block", marginTop: 6 }}>
           آخر جلسة تحدّد حالة الشكوى ونتيجتها والمحال إليه (النتيجة إلى «نتيجة الشكوى» الداخلية فقط، لا إلى ما يراه المشتكي أو المعترض)؛ الحقل الفارغ لا يمسح قيمة الشكوى. الجلسات لا تُحذف، ويمكن تعديلها.
         </small>
