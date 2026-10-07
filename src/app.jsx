@@ -79,8 +79,12 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-07  أزرار الروابط باسم نوعها (📁 مجلد، 📝 مستند، 📊 جدول، 📄 PDF، 🖼️ صورة، 🎬 فيديو، 📎 ملف Drive) بدل «رابط 1».
+//    2026-10-07  روابط الجلسة في نموذجها كأزرار «🔗 رابط 1» مع «✏️ تعديل الروابط» (الخانتان تظهران عند التعديل فقط)؛
+//                اسم ملفَي Word: «دراسة شكوى - اسم المشتكي - الرقم» و«قرار - اسم المشتكي - الرقم».
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
 //    2026-10-07  أيقونة «تقارير الشكاوى» (reports.html و manifest-reports.webmanifest) وزر «📲 تثبيت» في صفحة التقارير.
+//    2026-10-07  إلغاء «🔄 التغييرات» كلياً (القسم 51) لتخفيف المنصة.
 //    2026-10-07  «📋 الشكاوى»: تصفية «⚠️ بلا دراسة شكوى» و«⚠️ بلا ملف قرار» بأعدادها (مع تصفية الحالة).
 //    2026-10-07  رابط «📜 ملف القرار» لكل شكوى (القسم 50)، وعمود «الملفات» في سجل الشكاوى بأيقونتي الدراسة المنقّحة وملف القرار.
 //    2026-10-07  صفحة التقارير: تبويبا «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» للاطلاع (القسم 49)، وبلا زر «لوحة الإدارة».
@@ -515,7 +519,7 @@ function DecisionTab({ c }) {
     try {
       const D = await loadDocx();
       const letterhead = await fetchBytes("letterhead.jpg");
-      downloadBlob(await D.Packer.toBlob(buildDecisionDoc(D, f, letterhead)), `قرار-${c.complaint_number}.docx`);
+      downloadBlob(await D.Packer.toBlob(buildDecisionDoc(D, f, letterhead)), wordName("قرار", c));
     } catch (e) { setErr(e.message || NET_ERR); }
     setBusy(false);
   }
@@ -555,6 +559,10 @@ function DecisionTab({ c }) {
   );
 }
 
+// اسم ملف Word للشكوى: «النوع - اسم المشتكي - رقم الشكوى.docx» (بلا الأحرف الممنوعة في أسماء الملفات)
+const wordName = (kind, c) => [kind, c.complainant_name, c.complaint_number]
+  .map(x => String(x || "").replace(/[\\/:*?"<>|\r\n\t]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean).join(" - ") + ".docx";
+
 // تصدير ملف الشكوى: الجلسات، الترويسة والشعار، وصور الروابط؛ تُرجع {images: عدد الصور المدمجة, links: عدد الروابط}
 async function exportComplaintWord(secret, c) {
   const D = await loadDocx();
@@ -566,7 +574,7 @@ async function exportComplaintWord(secret, c) {
   const images = {};
   const [letterhead, logo] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png"),
     ...urls.map(async u => { const im = await fetchLinkImage(u); if (im) images[u] = im; })]);
-  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), `دراسة-شكوى-${c.complaint_number}.docx`);
+  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), wordName("دراسة شكوى", c));
   return { images: Object.keys(images).length, links: urls.length };
 }
 
@@ -582,7 +590,7 @@ const XL_SHEETS = [
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
-    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["changes", "التغييرات"], ["updated_at", "آخر تعديل", true]] },
+    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -1079,11 +1087,28 @@ const cleanLinks = arr => [...new Set((Array.isArray(arr) ? arr : String(arr || 
 const badLink = arr => cleanLinks(arr).find(x => !/^https?:\/\/\S+$/i.test(x));
 const BAD_LINK = "كل رابط يجب أن يبدأ بـ https:// (انسخه كاملاً من المتصفح أو من Google Drive).";
 
-// عرض الروابط كأزرار صغيرة تفتح في نافذة جديدة (لا شيء إن لم توجد)
+// نوع الرابط من شكله (بلا فتحه): مجلد أو مستند أو جدول أو عرض Google، PDF، صورة، فيديو، ملف Drive، أو رابط عام
+const LINK_KINDS = [
+  [/drive\.google\.com\/(drive\/)?(u\/\d+\/)?folders\//i, "📁 مجلد"],
+  [/docs\.google\.com\/document\//i,                      "📝 مستند"],
+  [/docs\.google\.com\/spreadsheets\//i,                  "📊 جدول"],
+  [/docs\.google\.com\/presentation\//i,                  "📽️ عرض"],
+  [/\.pdf(\?|#|$)/i,                                      "📄 PDF"],
+  [/\.(jpe?g|png|gif|webp|heic|bmp)(\?|#|$)|googleusercontent\.com|photos\.(app\.goo\.gl|google\.com)/i, "🖼️ صورة"],
+  [/\.(mp4|mov|webm|3gp)(\?|#|$)|youtube\.com|youtu\.be/i, "🎬 فيديو"],
+  [/\.(docx?|rtf)(\?|#|$)/i,                              "📝 مستند"],
+  [/\.(xlsx?|csv)(\?|#|$)/i,                              "📊 جدول"],
+  [/drive\.google\.com|docs\.google\.com/i,               "📎 ملف Drive"],
+];
+const linkKind = u => (LINK_KINDS.find(([re]) => re.test(u)) || [null, "🔗 رابط"])[1];
+
+// عرض الروابط كأزرار صغيرة باسم نوعها تفتح في نافذة جديدة (لا شيء إن لم توجد)؛ النوع المكرر يُرقَّم (🖼️ صورة 1، 🖼️ صورة 2)
 function LinksView({ links }) {
   const list = cleanLinks(links);
   if (!list.length) return null;
-  return <span className="links-view">{list.map((u, i) => <a key={i} className="link-chip" href={u} target="_blank" rel="noopener" title={u}>🔗 رابط {i + 1}</a>)}</span>;
+  const kinds = list.map(linkKind);
+  const label = (k, i) => kinds.filter(x => x === k).length > 1 ? `${k} ${kinds.slice(0, i + 1).filter(x => x === k).length}` : k;
+  return <span className="links-view">{list.map((u, i) => <a key={i} className="link-chip" href={u} target="_blank" rel="noopener" title={u}>{label(kinds[i], i)}</a>)}</span>;
 }
 
 // خانتا إدخال الرابطين
@@ -1096,6 +1121,30 @@ function LinksField({ value, onChange, label = "🔗 روابط مرفقة", hin
         {v.map((x, i) => <input key={i} type="url" dir="ltr" inputMode="url" value={x} onChange={e => put(i, e.target.value)} maxLength={1000} placeholder={`https://…  (رابط ${i + 1})`} />)}
       </div>
     </Field>
+  );
+}
+
+// روابط الجلسة في نموذجها: أزرار «🔗 رابط 1» تفتح الرابط، مع «✏️ تعديل الروابط» أو «➕ إضافة رابط» يُظهر الخانتين؛
+// الخانتان تبقيان ظاهرتين إن كان فيهما رابط غير صالح؛ readOnly: الأزرار فقط (للاطلاع)
+function LinksInline({ value, onChange, readOnly, hint }) {
+  const [open, setOpen] = useState(false);
+  const list = cleanLinks(value);
+  if ((open || badLink(value)) && !readOnly) return (
+    <div className="field full">
+      <LinksField value={value} onChange={onChange} hint={hint} full={false} />
+      <button type="button" className="btn secondary sm" disabled={!!badLink(value)} onClick={() => setOpen(false)}>✔️ تم</button>
+    </div>
+  );
+  return (
+    <div className="field full">
+      <span className="field-label">🔗 روابط مرفقة</span>
+      <div className="links-line" style={{ margin: 0 }}>
+        {list.length ? <LinksView links={list} /> : <span className="muted">—</span>}
+        {!readOnly && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setOpen(true)}>
+          {list.length ? "✏️ تعديل الروابط" : "➕ إضافة رابط"}
+        </button>}
+      </div>
+    </div>
   );
 }
 
@@ -1171,14 +1220,6 @@ function PartyNote({ secret, complaint, party, onSaved }) {
     </dd>
   );
 }
-
-// خانة «🔄 التغييرات»: سطر لكل تعديل على الشكوى أو جلساتها (تُكتب تلقائياً؛ للاطلاع فقط)
-const ChangesBox = ({ text }) => (
-  <div style={{ marginTop: 12 }}>
-    <div className="field-label">🔄 التغييرات <small className="muted">— تُضاف تلقائياً مع كل تعديل</small></div>
-    {text ? <div className="changes-box">{text}</div> : <p className="muted" style={{ margin: 0 }}>لا تغييرات بعد.</p>}
-  </div>
-);
 
 // رابط ملف «دراسة الشكوى المنقّحة» في بطاقة الشكوى (للإدارة): عرضه، وإضافته أو تعديله أو مسحه عبر admin_set_study_url
 // field: «study_url» (دراسة الشكوى المنقّحة) أو «decision_url» (ملف القرار)
@@ -3551,7 +3592,6 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
           </div>
           <ReferralsLine secret={secret} id={c.id} version={c.updated_at} />
           {saveBtn}
-          <ChangesBox text={c.changes} />
         </div>
       )}
 
@@ -3976,7 +4016,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, opinion: appendText(f.opinion, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <VoiceArea mic={false} label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
-          <LinksField value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive" />
+          <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
           {isClosed(form.status) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
               <textarea style={{ minHeight: 70 }} value={form.cresult} onChange={set("cresult")} maxLength={2000} />
@@ -5450,7 +5490,6 @@ function ComplaintView({ c, sessions }) {
             <div><dt>ترحيل / مُحالة إلى</dt><dd>{c.referred_to || none}</dd></div>
             <div><dt>تاريخ الإغلاق</dt><dd>{c.closed_date ? fmtDate(c.closed_date) : none}</dd></div>
           </dl>
-          <ChangesBox text={c.changes} />
         </div>
       )}
     </div>
