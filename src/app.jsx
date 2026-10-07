@@ -81,6 +81,8 @@
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
 //    2026-10-07  أيقونة «تقارير الشكاوى» (reports.html و manifest-reports.webmanifest) وزر «📲 تثبيت» في صفحة التقارير.
+//    2026-10-07  «📋 الشكاوى»: تصفية «⚠️ بلا دراسة شكوى» و«⚠️ بلا ملف قرار» بأعدادها (مع تصفية الحالة).
+//    2026-10-07  رابط «📜 ملف القرار» لكل شكوى (القسم 50)، وعمود «الملفات» في سجل الشكاوى بأيقونتي الدراسة المنقّحة وملف القرار.
 //    2026-10-07  صفحة التقارير: تبويبا «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» للاطلاع (القسم 49)، وبلا زر «لوحة الإدارة».
 //    2026-10-07  «🗑️ حذف» نهائي في «👥 المسؤولون» و«📊 كلمات مرور الإدارة» (القسم 48، للمدير).
 //    2026-10-07  عارض المواسم السابقة: رابط «فتح في Google Sheets» للمدير فقط (لا للمسؤول ولا لصفحة التقارير).
@@ -580,7 +582,7 @@ const XL_SHEETS = [
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
-    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["changes", "التغييرات"], ["updated_at", "آخر تعديل", true]] },
+    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["changes", "التغييرات"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -1179,7 +1181,13 @@ const ChangesBox = ({ text }) => (
 );
 
 // رابط ملف «دراسة الشكوى المنقّحة» في بطاقة الشكوى (للإدارة): عرضه، وإضافته أو تعديله أو مسحه عبر admin_set_study_url
-function StudyLink({ secret, complaint, onSaved }) {
+// field: «study_url» (دراسة الشكوى المنقّحة) أو «decision_url» (ملف القرار)
+const FILE_LINKS = {
+  study_url:    { label: "📄 دراسة الشكوى المنقّحة:", rpc: "admin_set_study_url",    section: 40 },
+  decision_url: { label: "📜 ملف القرار:",            rpc: "admin_set_decision_url", section: 50 },
+};
+function StudyLink({ secret, complaint, onSaved, field = "study_url" }) {
+  const F = FILE_LINKS[field];
   const [edit, setEdit] = useState(null);   // null = عرض فقط
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1189,16 +1197,16 @@ function StudyLink({ secret, complaint, onSaved }) {
     const v = (edit || "").trim();
     if (v && !/^https?:\/\/\S+$/i.test(v)) return setErr(BAD_LINK);
     setBusy(true); setErr("");
-    const { data, error } = await sb.rpc("admin_set_study_url", { p_secret: secret, p_id: complaint.id, p_url: v });
+    const { data, error } = await sb.rpc(F.rpc, { p_secret: secret, p_id: complaint.id, p_url: v });
     setBusy(false);
-    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 40 من schema.sql في Supabase).");
+    if (error || !data || !data.length) return setErr(`تعذّر الحفظ (نفّذ القسم ${F.section} من schema.sql في Supabase).`);
     onSaved(data[0]); setEdit(null);
   }
 
   // العرض: خانة التعديل، أو الرابط مع زر التعديل/الإضافة
   return (
     <div className="links-line">
-      <b>📄 دراسة الشكوى المنقّحة:</b>
+      <b>{F.label}</b>
       {edit !== null ? (
         <>
           <input type="url" dir="ltr" autoFocus className="grow" value={edit} onChange={e => setEdit(e.target.value)} maxLength={1000}
@@ -1209,9 +1217,9 @@ function StudyLink({ secret, complaint, onSaved }) {
         </>
       ) : (
         <>
-          {complaint.study_url ? <a className="link-chip" href={complaint.study_url} target="_blank" rel="noopener">فتح الملف ↗</a> : <span className="muted">—</span>}
-          <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint.study_url || "")}>
-            {complaint.study_url ? "✏️ تعديل" : "➕ إضافة رابط"}
+          {complaint[field] ? <a className="link-chip" href={complaint[field]} target="_blank" rel="noopener">فتح الملف ↗</a> : <span className="muted">—</span>}
+          <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(complaint[field] || "")}>
+            {complaint[field] ? "✏️ تعديل" : "➕ إضافة رابط"}
           </button>
         </>
       )}
@@ -2140,6 +2148,14 @@ const COLUMNS = [
   { key: "class", label: "التصنيف", sort: c => c.classification, text: c => c.classification, cell: c => muted(c.classification) },
   { key: "referred", label: "مُحالة إلى", sort: c => c.referred_to, text: c => c.referred_to, cell: c => muted(c.referred_to) },
   { key: "status", label: "الحالة", sort: c => STATUSES.indexOf(c.status), text: c => c.status, cell: c => <StatusBadge value={c.status} /> },
+  // الملفات: 📄 دراسة الشكوى المنقّحة و📜 ملف القرار — الأيقونة الملوّنة تفتح الملف، والباهتة تعني أنه لم يُضف بعد
+  { key: "files", label: "الملفات", sort: c => (c.study_url ? 2 : 0) + (c.decision_url ? 1 : 0),
+    text: c => [c.study_url && "دراسة", c.decision_url && "قرار"].filter(Boolean).join("، "),
+    cell: c => (
+      <span className="file-icons" onClick={e => e.stopPropagation()}>
+        {c.study_url ? <a href={c.study_url} target="_blank" rel="noopener" title="فتح دراسة الشكوى المنقّحة">📄</a> : <span className="off" title="لا يوجد رابط دراسة الشكوى">📄</span>}
+        {c.decision_url ? <a href={c.decision_url} target="_blank" rel="noopener" title="فتح ملف القرار">📜</a> : <span className="off" title="لا يوجد رابط ملف القرار">📜</span>}
+      </span>) },
   { key: "result", label: "نتيجة الشكوى", sort: c => c.result, text: c => c.result, wrap: true, cell: c => c.result ? <span className="clip">{c.result}</span> : muted() },
   { key: "cresult", label: "نتيجة المشتكي", sort: c => c.complainant_result, text: c => c.complainant_result, wrap: true, cell: c => c.complainant_result ? <span className="clip">{c.complainant_result}</span> : muted() },
   { key: "aresult", label: "نتيجة المعترض", sort: c => c.accused_result, text: c => c.accused_result, wrap: true, cell: c => c.accused_result ? <span className="clip">{c.accused_result}</span> : muted() },
@@ -3314,7 +3330,11 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
 
   // التصفية بالحالة ونص البحث (الرقم، الأسماء، الموضوع، الرموز)
   const term = search.trim();
+  // تصفية الملفات الناقصة: بلا رابط دراسة الشكوى المنقّحة، أو بلا رابط ملف القرار
+  const [missing, setMissing] = useState("");
+  const MISSING = { study: c => !c.study_url, decision: c => !c.decision_url };
   const visible = inSeason.filter(c =>
+    (!missing || MISSING[missing](c)) &&
     (filter === "الكل" || c.status === filter) &&
     (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
@@ -3341,6 +3361,14 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
         {["الكل", ...STATUSES].map(s => (
           <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{s} ({count(s)})</button>
         ))}
+      </div>
+      {/* الملفات الناقصة (مع تصفية الحالة: مثلاً «مغلقة» + «بلا ملف القرار») */}
+      <div className="chips">
+        <button className={!missing ? "active" : ""} onClick={() => setMissing("")}>📂 كل الملفات</button>
+        <button className={missing === "study" ? "active" : ""} onClick={() => setMissing("study")}>
+          ⚠️ بلا دراسة شكوى ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.study_url).length})</button>
+        <button className={missing === "decision" ? "active" : ""} onClick={() => setMissing("decision")}>
+          ⚠️ بلا ملف قرار ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.decision_url).length})</button>
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="grow" type="text" placeholder="بحث بالرقم أو الاسم أو الهاتف أو الموضوع أو الجهة…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -3467,6 +3495,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       <div className="subject">{c.subject}</div>
       <LinksEditor secret={secret} complaint={c} target="complaint" onSaved={onSaved} />
       <StudyLink secret={secret} complaint={c} onSaved={onSaved} />
+      <StudyLink secret={secret} complaint={c} onSaved={onSaved} field="decision_url" />
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       {fromDue && !isClosed(c.status) && (
         <div className="due-prompt">
@@ -5352,6 +5381,9 @@ function ComplaintView({ c, sessions }) {
       {cleanLinks(c.links).length > 0 && <div className="links-line"><LinksView links={c.links} /></div>}
       {c.study_url && /^https?:\/\//i.test(c.study_url) && (
         <div className="links-line"><b>📄 دراسة الشكوى المنقّحة:</b><a className="link-chip" href={c.study_url} target="_blank" rel="noopener">فتح الملف ↗</a></div>
+      )}
+      {c.decision_url && /^https?:\/\//i.test(c.decision_url) && (
+        <div className="links-line"><b>📜 ملف القرار:</b><a className="link-chip" href={c.decision_url} target="_blank" rel="noopener">فتح الملف ↗</a></div>
       )}
 
       <div className="tabs card-tabs">
