@@ -88,6 +88,7 @@
 --                (admin_add_season_complaint)؛ كلمة مرور الأدمن الأولى صارت القسم 43.
 --    2026-10-07  القسم 43: «قرارات الشكاوى» و«قرارات الإدارة» (decisions.kind) ودرجة السرية (decisions.secrecy)؛ النوعان مع الموسم
 --                (يُحذفان ويُستعادان معه)؛ كلمة مرور الأدمن الأولى صارت القسم 44.
+--    2026-10-07  القسم 44: تسجيل اعتراض سابق بتاريخه الأصلي (admin_record_objection، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 45.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -232,6 +233,7 @@ drop function if exists public.change_value(text);
 drop function if exists public.change_line(text, text, text);
 drop function if exists public.admin_add_season_complaint(text, text, timestamptz, text, text, text, text, text, text, text, text, text, text);
 drop function if exists public.admin_save_decision(text, uuid, text, date, text, text, text, text, text, text);
+drop function if exists public.admin_record_objection(text, uuid, text, timestamptz, text[]);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -4778,7 +4780,53 @@ grant execute on function public.admin_restore_season(text, text, json, json, js
 grant execute on function public.admin_delete_season(text, text, text)                                         to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 44) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 44) تسجيل اعتراض سابق بتاريخه الأصلي (للمدير): على شكوى «مغلقة» بلا اعتراض؛ النص والتاريخ (لا في المستقبل، ولا قبل
+--     تاريخ الشكوى) والروابط؛ تصبح «قيد مراجعة الاعتراض» (وتُحفظ «النتيجة قبل الاعتراض» تلقائياً)، وسطر في «التغييرات»
+--     يحتاج الأقسام 25 و26 و34 و41 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- تُرجع الشكوى بعد التسجيل، أو تُطلق خطأً واضحاً (NOT_CLOSED / ALREADY / BAD_DATE)
+create or replace function public.admin_record_objection(p_secret text, p_id uuid, p_text text, p_at timestamptz, p_links text[])
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  c public.complaints;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(btrim(p_text), '') = '' or p_at is null then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id for update;
+  if c.id is null then
+    return;
+  end if;
+  if c.objection_at is not null then
+    raise exception 'ALREADY';
+  end if;
+  if c.status <> 'مغلقة' then
+    raise exception 'NOT_CLOSED';
+  end if;
+  if p_at > now() or p_at < c.received_date then
+    raise exception 'BAD_DATE';
+  end if;
+  update public.complaints set
+    objection_text  = btrim(left(p_text, 5000)),
+    objection_at    = p_at,
+    objection_links = public.clean_links(p_links),
+    status          = 'قيد مراجعة الاعتراض'
+  where id = p_id;
+  -- سطر في «التغييرات» (تحديث مستقل يضيف إلى آخرها)
+  update public.complaints set changes = concat_ws(E'\n', nullif(changes, ''),
+      to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI') || ' — '
+      || coalesce(nullif(current_setting('app.actor', true), ''), 'النظام')
+      || ' سجّل اعتراضاً سابقاً بتاريخ ' || to_char(p_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI'))
+  where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.admin_record_objection(text, uuid, text, timestamptz, text[]) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 45) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

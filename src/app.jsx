@@ -79,6 +79,8 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  «🗂️ تسجيل اعتراض سابق» في تبويب الاعتراض للشكوى المغلقة (للمدير): النص والتاريخ الأصلي والروابط (القسم 44).
 //    2026-10-07  «📑 قرارات الشكاوى» (كانت «القرارات الإدارية») وقسم جديد «🏛️ قرارات الإدارة» (القسم 43): درجة السرية، رقم مقترح
 //                (آخر رقم في التصنيف + 1، قابل للتعديل)، و🎤 لموضوع القرار؛ النوعان مع الموسم: ورقتان في ملفه، ويُحذفان ويُستعادان معه.
 //    2026-10-07  تعديل المواسم المؤرشفة من المنصة: عودة «🔓 فتح للتعديل في المنصة»، و«➕ إضافة شكوى إلى موسم …» في «الشكاوى»
@@ -996,7 +998,9 @@ function ComplaintForm({ code, onDone, onRejected }) {
           </li>
         ))}
       </ol>
-      <form className="card" onSubmit={submit} noValidate>
+      {/* زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى: الإرسال بزر «✅ إرسال الشكوى» فقط */}
+      <form className="card" onSubmit={submit} noValidate
+        onKeyDown={e => { if (e.key === "Enter" && e.target.tagName === "INPUT" && step === FORM_STEPS.length - 1) e.preventDefault(); }}>
         {error && <Alert type="error">{error}</Alert>}
         <div className="grid" style={{ gridTemplateColumns: "1fr" }}>
           {step === 0 && (
@@ -3516,6 +3520,47 @@ function ReferralsLine({ secret, id, version }) {
 const OBJECTION_DAYS = Number(cfg.OBJECTION_DAYS) || 3;
 const defaultDeadline = () => { const d = new Date(); d.setDate(d.getDate() + OBJECTION_DAYS); return toDateTimeInput(d); };
 
+// نموذج «🗂️ تسجيل اعتراض سابق» (للمدير): نص الاعتراض وتاريخه الأصلي وروابطه، على شكوى مغلقة بلا اعتراض
+function PastObjectionForm({ secret, complaint: c, onSaved, onClose }) {
+  const [f, setF] = useState({ at: toDateTimeInput(c.closed_date ? new Date(c.closed_date) : new Date()), text: "", links: [] });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const ERR = { NOT_CLOSED: "الشكوى ليست «مغلقة»؛ الاعتراض بعد الإغلاق فقط.", ALREADY: "لهذه الشكوى اعتراض مسجّل من قبل.",
+                BAD_DATE: "تاريخ الاعتراض يجب ألا يكون في المستقبل، ولا قبل تاريخ الشكوى." };
+
+  // الحفظ عبر admin_record_objection
+  async function save() {
+    if (!f.text.trim()) return setErr("اكتب نص الاعتراض.");
+    if (!f.at) return setErr("حدّد تاريخ الاعتراض.");
+    if (badLink(f.links)) return setErr(BAD_LINK);
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_record_objection", { p_secret: secret, p_id: c.id, p_text: f.text, p_at: dateTimeInputToIso(f.at), p_links: cleanLinks(f.links) });
+    setBusy(false);
+    const code = error && (String(error.message || "").match(/NOT_CLOSED|ALREADY|BAD_DATE/) || [])[0];
+    if (code) return setErr(ERR[code]);
+    if (error || !data || !data.length) return setErr("تعذّر التسجيل (للمدير فقط؛ ونفّذ القسم 44 من schema.sql في Supabase).");
+    onSaved(data[0]); onClose();
+  }
+
+  return (
+    <div className="session-form">
+      <div className="field-label" style={{ marginBottom: 8 }}>🗂️ تسجيل اعتراض سابق بتاريخه الأصلي</div>
+      <div className="grid">
+        <Field label="تاريخ الاعتراض" required hint="التاريخ الأصلي؛ والجلسات بعده تُكتب بتواريخ لاحقة له"><input type="datetime-local" value={f.at} onChange={e => setF(x => ({ ...x, at: e.target.value }))} /></Field>
+        <VoiceArea label="نص الاعتراض" hint={`${f.text.length} / 5000 حرف`} minHeight={130} maxLength={5000}
+          value={f.text} onChange={v => setF(x => ({ ...x, text: v }))} onAppend={t => setF(x => ({ ...x, text: appendText(x.text, t) }))} onError={t => t && setErr(t)} />
+        <LinksField value={f.links} onChange={l => setF(x => ({ ...x, links: l }))} label="🔗 روابط الاعتراض" />
+      </div>
+      {err && <Alert type="error">{err}</Alert>}
+      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 10 }}>
+        <button type="button" className="btn" disabled={busy} onClick={save}>{busy ? "جارٍ التسجيل…" : "💾 تسجيل الاعتراض"}</button>
+        <button type="button" className="btn secondary" onClick={onClose}>إلغاء</button>
+      </div>
+      <small className="hint" style={{ display: "block", marginTop: 6 }}>تصبح الشكوى «قيد مراجعة الاعتراض»، وتُحفظ نتيجتها قبل الاعتراض تلقائياً؛ ثم تابعها بالجلسات حتى «مغلقة بعد الاعتراض».</small>
+    </div>
+  );
+}
+
 function ObjectionSection({ secret, complaint: c, onSaved }) {
   // الملخص، آخر موعد، وضع النموذج (generate / extend)، بيانات التمديد، والرسائل
   const [deadline, setDeadline] = useState(defaultDeadline);
@@ -3580,6 +3625,7 @@ function ObjectionSection({ secret, complaint: c, onSaved }) {
             <button type="button" className={`btn ${expired ? "gold" : "secondary"}`} onClick={() => { setMode("extend"); setMsg(null); }}>⏳ تمديد استثنائي</button>
           </div>
           <button type="button" className="btn danger-text" style={{ marginTop: 6 }} onClick={() => { setMode("generate"); setMsg(null); }}>🔄 رمز جديد / تعديل الملخص</button>
+          {ADMIN_CTX.manager && c.status === CLOSED && <button type="button" className="btn secondary block" style={{ marginTop: 8 }} onClick={() => { setMode("past"); setMsg(null); }}>🗂️ تسجيل اعتراض سابق (بتاريخه الأصلي)</button>}
         </>
       ) : !mode && c.status !== CLOSED ? (
         <p className="muted" style={{ marginTop: 0 }}>يصبح الاعتراض متاحاً بعد إغلاق الشكوى.</p>
@@ -3587,8 +3633,11 @@ function ObjectionSection({ secret, complaint: c, onSaved }) {
         <>
           <p className="muted" style={{ marginTop: 0 }}>أُغلقت الشكوى — يمكنك الآن إرسال رمز اعتراض للمشتكى عليه (مرة واحدة).</p>
           <button type="button" className="btn block" onClick={() => setMode("generate")}>⚖️ توليد رمز اعتراض للمشتكى عليه</button>
+          {ADMIN_CTX.manager && <button type="button" className="btn secondary block" style={{ marginTop: 8 }} onClick={() => setMode("past")}>🗂️ تسجيل اعتراض سابق (بتاريخه الأصلي)</button>}
         </>
       ) : null}
+
+      {mode === "past" && !c.objection_at && <PastObjectionForm secret={secret} complaint={c} onSaved={onSaved} onClose={() => setMode(null)} />}
 
       {mode === "generate" && !c.objection_at && (
         <div className="session-form">
