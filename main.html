@@ -87,6 +87,8 @@
     2026-10-05  بطاقات الملاحظات (.note-card / .note-body).
     2026-10-06  أحرف مخفية لرمز التصفير دون عرض حفظه في المتصفح (input.masked).
     2026-10-06  معاينة القرار في تبويب «📜 القرار» (.decision-preview).
+    2026-10-07  خانة «التغييرات» (.changes-box).
+    2026-10-07  شارة درجة سرية القرار (.secrecy-tag).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -434,6 +436,10 @@
   .decision-preview .dp-title { text-align: center; font-weight: 800; font-size: 18px; text-decoration: underline; margin: 12px 0; }
   .decision-preview .dp-sign { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 10px; border-top: 1px dashed var(--line); }
   .decision-preview p { text-align: justify; }
+  /* «التغييرات»: سطر لكل تعديل، بخط أصغر وتمرير إن طالت */
+  .changes-box { white-space: pre-wrap; font-size: 13.5px; line-height: 1.9; max-height: 260px; overflow-y: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: #faf8f4; }
+  /* درجة سرية القرار (غير «عادي») */
+  .badge.secrecy-tag { background: #fbe9e7; color: #a12d1f; }
   .archive-sub { margin: 18px 0 8px; font-size: 16px; color: var(--brand-dark); border-top: 1px solid var(--line); padding-top: 14px; }
 
   /* المؤشرات: أدوات الفترة، بطاقات الأرقام، أشرطة أفقية بلون واحد (والحالات بألوانها)، وأعمدة الوارد يومياً */
@@ -710,6 +716,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=6e28c4509c"></script>
+<script src="app.js?v=bb48248211"></script>
 </body>
 </html>

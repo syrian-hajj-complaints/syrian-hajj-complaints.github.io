@@ -79,6 +79,11 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-07  «📑 قرارات الشكاوى» (كانت «القرارات الإدارية») وقسم جديد «🏛️ قرارات الإدارة» (القسم 43): درجة السرية، رقم مقترح
+//                (آخر رقم في التصنيف + 1، قابل للتعديل)، و🎤 لموضوع القرار؛ النوعان مع الموسم: ورقتان في ملفه، ويُحذفان ويُستعادان معه.
+//    2026-10-07  تعديل المواسم المؤرشفة من المنصة: عودة «🔓 فتح للتعديل في المنصة»، و«➕ إضافة شكوى إلى موسم …» في «الشكاوى»
+//                لموسم سابق مفتوح (برقم من تسلسله وتاريخ يُختار)، ثم إعادة الأرشفة؛ ويبقى التعديل في Google Sheets متاحاً.
+//    2026-10-07  «🔄 التغييرات» في تبويب المتابعة (اللوحة والاطلاع) وفي ملف الموسم: سطر تلقائي لكل تعديل (القسم 41)، لا في Word.
 //    2026-10-06  رابط «📄 دراسة الشكوى المنقّحة» لكل شكوى: إضافة وتعديل في البطاقة، وعرضه في بطاقة الاطلاع وملف الموسم.
 //    2026-10-06  صور الروابط في Word: قصّ الحواف الفارغة حول الصورة، وحجم أصغر (حتى 480×420) حتى لا تترك مساحات فارغة كبيرة.
 //    2026-10-06  القرار: التوقيع بعد البنود بمسافة (لا في أسفل الصفحة)، والبنود بخط أصغر قليلاً — حسب النموذج المعتمد.
@@ -564,15 +569,18 @@ const XL_SHEETS = [
     ["accused_result", "النتيجة للمعترض"], ["closed_date", "تاريخ الإغلاق", true], ["tracking_code", "رمز المتابعة"],
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
-    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["updated_at", "آخر تعديل", true]] },
+    ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["changes", "التغييرات"], ["updated_at", "آخر تعديل", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
   { name: "الإحالات", key: "referrals", marker: "تاريخ الإحالة", cols: [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
-  { name: "القرارات الإدارية", key: "decisions", marker: "رقم القرار", cols: [
+  { name: "قرارات الشكاوى", key: "decisions", marker: "رقم القرار", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
-    ["subject", "موضوع القرار"], ["url", "رابط القرار"]] },
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"]] },
+  { name: "قرارات الإدارة", key: "admindecisions", cols: [
+    ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"]] },
 ];
 
 // جلب جلسات وإحالات مجموعة شكاوى من القاعدة، وقرارات موسمها (season فارغ = كل القرارات)
@@ -586,20 +594,21 @@ async function fetchSeasonParts(secret, complaints, season) {
   const nums = new Set(complaints.map(c => c.complaint_number));
   return { sessions: (s.data || []).filter(x => nums.has(x.complaint_number)),
            referrals: (r.data || []).filter(x => nums.has(x.complaint_number)),     // فارغة إن لم يُنفَّذ القسم 25
-           decisions: (d.data || []).filter(x => !season || x.season === season) };  // حسب الموسم بعد القسم 33
+           decisions: (d.data || []).filter(x => (x.kind || "complaints") === "complaints" && (!season || x.season === season)),   // قرارات الشكاوى للموسم
+           admindecisions: (d.data || []).filter(x => x.kind === "admin" && (!season || x.season === season)) };                // وقرارات الإدارة (القسم 43)
 }
 
 // تصدير كامل للأدمن: الشكاوى والجلسات والإحالات والقرارات — في ملف واحد
 // opts.season: موسم القرارات (فارغ = الكل)، opts.empty: قالب فارغ، opts.lock = false: غير مقفول
 async function exportAllToExcel(secret, complaints, filename, opts = {}) {
-  const parts = opts.empty ? { sessions: [], referrals: [], decisions: [] } : await fetchSeasonParts(secret, complaints, opts.season);
+  const parts = opts.empty ? { sessions: [], referrals: [], decisions: [], admindecisions: [] } : await fetchSeasonParts(secret, complaints, opts.season);
   const data = { complaints, ...parts };
   await saveWorkbook(XL_SHEETS.map(sh => ({
     name: sh.name, headers: sh.cols.map(c => c[1]),
     // الروابط (قائمة) ← سطر لكل رابط في الخلية
     rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f]) : Array.isArray(x[f]) ? x[f].join("\n") : x[f])),
   })), filename || `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`, opts);
-  return { complaints: complaints.length, sessions: parts.sessions.length, decisions: parts.decisions.length };
+  return { complaints: complaints.length, sessions: parts.sessions.length, decisions: parts.decisions.length + parts.admindecisions.length };
 }
 
 // قيمة خلية من ملف موسم بصيغة القاعدة: التاريخ ← ISO (أو null إن تعذّر)، والنص ← نص مقصوص (أو null إن كان فارغاً)
@@ -622,7 +631,7 @@ async function readSeasonBook(buf) {
   XL_SHEETS.forEach(sh => {
     const name = wb.SheetNames.find(n => n.trim() === sh.name) || wb.SheetNames.find(n => {
       const first = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, range: 0 })[0] || [];
-      return first.some(h => String(h).trim() === sh.marker);
+      return !!sh.marker && first.some(h => String(h).trim() === sh.marker);
     });
     if (!name) { out[sh.key] = []; return; }
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true });
@@ -636,6 +645,36 @@ async function readSeasonBook(buf) {
       })]));
   });
   return out;
+}
+
+// تجهيز ملف موسم للإدخال في القاعدة: الموسم المحدد لكل شكوى، رقم تلقائي للناقص، الحالة الفارغة = «مغلقة»،
+// ومراجعة الأخطاء (رقم مكرر، حقل إلزامي فارغ، حالة غير معروفة، جلسة لشكوى غير موجودة) — تُرجع {data, errors}
+function prepareSeason(book, season) {
+  const errors = [];
+  const complaints = book.complaints.map(c => ({ ...c, season, status: c.status || CLOSED }));
+  // الأرقام الناقصة: بعد أكبر رقم في الملف (الموسم-00001 …)
+  let next = Math.max(0, ...complaints.map(c => Number(((c.complaint_number || "").match(/-(\d+)$/) || [])[1]) || 0));
+  complaints.forEach(c => { if (!c.complaint_number) c.complaint_number = `${season}-${String(++next).padStart(5, "0")}`; });
+  const seen = new Set();
+  complaints.forEach(c => {
+    const at = `الشكاوى، السطر ${c._row}`;
+    if (seen.has(c.complaint_number)) errors.push(`${at}: الرقم ${c.complaint_number} مكرر.`);
+    seen.add(c.complaint_number);
+    if (!c.complainant_name || !c.accused_name || !c.subject) errors.push(`${at}: اسم المشتكي واسم المشتكى عليه ونص الشكوى إلزامية.`);
+    if (!STATUSES.includes(c.status)) errors.push(`${at}: الحالة «${c.status}» غير معروفة.`);
+  });
+  const sessions = book.sessions.filter(s => s.complaint_number || s.topic || s.result);
+  sessions.forEach(s => {
+    const at = `الجلسات، السطر ${s._row}`;
+    if (!seen.has(s.complaint_number)) errors.push(`${at}: لا توجد شكوى برقم «${s.complaint_number || ""}».`);
+    if (s.status && !STATUSES.includes(s.status)) errors.push(`${at}: الحالة «${s.status}» غير معروفة.`);
+  });
+  const referrals = book.referrals.filter(x => x.referred_to && seen.has(x.complaint_number));
+  const decisions = [...(book.decisions || []).map(d => ({ ...d, kind: "complaints" })), ...(book.admindecisions || []).map(d => ({ ...d, kind: "admin" }))]
+    .filter(d => d.decision_number || d.title || d.subject);
+  decisions.forEach(d => { if (!d.decision_number || !d.title) errors.push(`القرارات، السطر ${d._row}: رقم القرار وعنوانه إلزاميان.`); });
+  if (!complaints.length) errors.push("لا توجد شكاوى في الملف (ورقة «الشكاوى»).");
+  return { data: { complaints, sessions, referrals, decisions }, errors };
 }
 
 // رقم ملف Google Sheet من رابطه (…/spreadsheets/d/<الرقم>/…)
@@ -1116,6 +1155,14 @@ function PartyNote({ secret, complaint, party, onSaved }) {
     </dd>
   );
 }
+
+// خانة «🔄 التغييرات»: سطر لكل تعديل على الشكوى أو جلساتها (تُكتب تلقائياً؛ للاطلاع فقط)
+const ChangesBox = ({ text }) => (
+  <div style={{ marginTop: 12 }}>
+    <div className="field-label">🔄 التغييرات <small className="muted">— تُضاف تلقائياً مع كل تعديل</small></div>
+    {text ? <div className="changes-box">{text}</div> : <p className="muted" style={{ margin: 0 }}>لا تغييرات بعد.</p>}
+  </div>
+);
 
 // رابط ملف «دراسة الشكوى المنقّحة» في بطاقة الشكوى (للإدارة): عرضه، وإضافته أو تعديله أو مسحه عبر admin_set_study_url
 function StudyLink({ secret, complaint, onSaved }) {
@@ -1608,7 +1655,8 @@ const SECTIONS = {
   complaints: { title: "📋 الشكاوى" },
   sessions:   { title: "🗓️ الجلسات" },
   links:      { title: "🔗 إرسال رابط", manager: true },
-  decisions:  { title: "📑 القرارات الإدارية" },
+  decisions:  { title: "📑 قرارات الشكاوى" },
+  admindec:   { title: "🏛️ قرارات الإدارة" },
   archive:    { title: "📚 المواسم السابقة" },
   indicators: { title: "📈 المؤشرات" },
   notes:      { title: "🗒️ الملاحظات" },
@@ -1739,7 +1787,8 @@ function AdminPage({ secret, onLogout }) {
         {current === "home" && <AdminHome me={me} isManager={isManager} rows={rows} go={go} secret={secret} onOpen={openComplaint} />}
         {current === "today" && <AdminDue secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c, true)} />}
         {current === "links" && <AdminLinks secret={secret} isManager={isManager} />}
-        {current === "decisions" && <AdminDecisions secret={secret} isManager={isManager} />}
+        {current === "decisions" && <AdminDecisions key="complaints" secret={secret} isManager={isManager} kind="complaints" />}
+        {current === "admindec" && <AdminDecisions key="admin" secret={secret} isManager={isManager} kind="admin" />}
         {current === "notes" && <AdminNotes secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
@@ -1788,7 +1837,7 @@ function EnterComplaintButton({ secret }) {
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
 const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
-                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "القرارات الإدارية"], ["archive", "📚", "المواسم السابقة"], ["notes", "🗒️", "الملاحظات"]];
+                  ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "قرارات الشكاوى"], ["admindec", "🏛️", "قرارات الإدارة"], ["archive", "📚", "المواسم السابقة"], ["notes", "🗒️", "الملاحظات"]];
 const NAV_MANAGER = [["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
 
@@ -2282,7 +2331,7 @@ function AdminSettings({ secret, rows, reload }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
-  // البدء من جديد كلياً: حذف المواسم السابقة (روابط الأرشيف) والقرارات الإدارية مع التصفير (اختياري)
+  // البدء من جديد كلياً: حذف المواسم السابقة (روابط الأرشيف) والقرارات (الشكاوى والإدارة) مع التصفير (اختياري)
   const [wipePast, setWipePast] = useState(false);
   const [wipeDecisions, setWipeDecisions] = useState(false);
 
@@ -2296,7 +2345,7 @@ function AdminSettings({ secret, rows, reload }) {
 
   // التنفيذ: سؤال أخير، ثم الدالة admin_reset_platform
   async function reset() {
-    const extra = [wipePast && "روابط المواسم السابقة", wipeDecisions && "القرارات الإدارية"].filter(Boolean);
+    const extra = [wipePast && "روابط المواسم السابقة", wipeDecisions && "كل القرارات (الشكاوى والإدارة)"].filter(Boolean);
     if (!window.confirm(`سيتم حذف جميع الشكاوى${extra.length ? " و" + extra.join(" و") : ""} نهائياً ولا يمكن التراجع. متابعة؟`)) return;
     setBusy(true); setMsg(null);
     const { data, error } = await sb.rpc("admin_reset_platform", { p_secret: secret, p_reset_code: code });
@@ -2335,8 +2384,8 @@ function AdminSettings({ secret, rows, reload }) {
       hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
     <ListCard secret={secret} listKey="referral_targets" list={REFERRAL_TARGETS} title="↗️ جهات الإحالة"
       hint="تظهر في قائمة «ترحيل / مُحالة إلى» في الشكوى والجلسة (ويمكن إضافة جهة جديدة من القائمة نفسها)" />
-    <ListCard secret={secret} listKey="decision_classes" list={DECISION_CLASSES} title="📑 تصنيفات القرارات الإدارية"
-      hint="تظهر في قسم «القرارات الإدارية» عند إضافة قرار وفي التصفية" />
+    <ListCard secret={secret} listKey="decision_classes" list={DECISION_CLASSES} title="📑 تصنيفات القرارات"
+      hint="تظهر في «قرارات الشكاوى» و«قرارات الإدارة» عند إضافة قرار وفي التصفية" />
     <ListCard secret={secret} listKey="roles" list={ROLES} title="🪪 الصفات"
       hint="تظهر للمشتكي في نموذج الشكوى لاختيار صفته وصفة المشتكى عليه (مع خيار «أخرى»)" />
     <ExcelLockCard secret={secret} />
@@ -2349,7 +2398,7 @@ function AdminSettings({ secret, rows, reload }) {
       </ul>
       <div className="grid" style={{ gridTemplateColumns: "1fr", gap: 4, margin: "6px 0" }}>
         <label><input type="checkbox" checked={wipePast} onChange={e => setWipePast(e.target.checked)} /> حذف <b>المواسم السابقة</b> أيضاً (روابطها في المنصة؛ ملفاتها على Drive تبقى)</label>
-        <label><input type="checkbox" checked={wipeDecisions} onChange={e => setWipeDecisions(e.target.checked)} /> حذف <b>القرارات الإدارية</b> أيضاً</label>
+        <label><input type="checkbox" checked={wipeDecisions} onChange={e => setWipeDecisions(e.target.checked)} /> حذف <b>كل القرارات</b> (الشكاوى والإدارة) أيضاً</label>
       </div>
       <p className="muted">ننصح بتصدير نسخة احتياطية أولاً ({(rows || []).length} شكوى حالياً).</p>
       <button type="button" className="btn secondary" disabled={busy} onClick={backup}>📥 نسخة احتياطية (Excel)</button>
@@ -2513,7 +2562,7 @@ function AdminPastSeasons({ secret, isManager, rows }) {
     <div>
       {error && <Alert type="error">{error}</Alert>}
       <p className="muted" style={{ marginTop: 0 }}>كل موسم سابق محفوظ في ملف على Google Drive، ويُعرض هنا للاطلاع فقط.
-         التعديل يتم في ملف Google Sheets نفسه لمن له دور «محرّر» (زر «فتح في Google Sheets» داخل العرض).</p>
+         لتعديله أو إضافة شكاوى إليه: «الإعدادات ← 📚 أرشفة المواسم ← 🔓 فتح للتعديل في المنصة» (للمدير)، أو في ملف Google Sheets.</p>
       {list.length === 0 ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>لا توجد مواسم مؤرشفة بعد.</p></div>
       ) : (
@@ -2532,7 +2581,13 @@ function AdminPastSeasons({ secret, isManager, rows }) {
   );
 }
 
-// رسائل نتائج حذف الموسم من القاعدة
+// رسائل نتائج الاستعادة والحذف من القاعدة
+const RESTORE_MSG = {
+  CURRENT: "هذا هو الموسم الحالي؛ لا يُستعاد فوق نفسه.",
+  EXISTS: "لهذا الموسم شكاوى في القاعدة الآن (مفتوح للتعديل أصلاً).",
+  DUPLICATE: "بعض أرقام الشكاوى في الملف موجودة في موسم آخر في القاعدة.",
+  INVALID: "تعذّرت الاستعادة: للمدير فقط، والملف يجب أن يحتوي شكاوى.",
+};
 const DELETE_MSG = {
   WRONG_CODE: "رمز التصفير غير صحيح (وهو غير كلمة مرور الأدمن، ويُفرّق بين الأحرف الكبيرة والصغيرة). إن نسيته فعيّن رمزاً جديداً من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمز-جديد');",
   NO_CODE: "لم يُعيَّن رمز التصفير بعد. عيّنه من Supabase ← SQL Editor بالأمر: select public.set_reset_code('رمزك');",
@@ -2594,11 +2649,12 @@ function SeasonArchiveCard({ secret, rows, reload }) {
     const parts = await fetchSeasonParts(secret, seasonRows, season);
     const fileNums = new Set(book.complaints.map(c => c.complaint_number));
     const same = book.complaints.length === seasonRows.length && seasonRows.every(c => fileNums.has(c.complaint_number))
-      && book.sessions.length === parts.sessions.length && (book.decisions || []).length === parts.decisions.length;
+      && book.sessions.length === parts.sessions.length
+      && (book.decisions || []).length + (book.admindecisions || []).length === parts.decisions.length + parts.admindecisions.length;
     const count = (c, s, d) => `${c} شكوى و${s} جلسة و${d} قرار`;
     setCheck(same
-      ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}.` }
-      : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${count(book.complaints.length, book.sessions.length, (book.decisions || []).length)}، والقاعدة فيها ${count(seasonRows.length, parts.sessions.length, parts.decisions.length)}. نزّل الملف من جديد وارفعه.` });
+      ? { ok: true, text: `✅ المنصة تقرأ الملف، وهو مطابق للقاعدة: ${count(seasonRows.length, parts.sessions.length, parts.decisions.length + parts.admindecisions.length)}.` }
+      : { ok: false, text: `⚠️ الملف لا يطابق القاعدة: فيه ${count(book.complaints.length, book.sessions.length, (book.decisions || []).length + (book.admindecisions || []).length)}، والقاعدة فيها ${count(seasonRows.length, parts.sessions.length, parts.decisions.length + parts.admindecisions.length)}. نزّل الملف من جديد وارفعه.` });
   });
 
   // تنبيه فوري لرابط ليس ملف Google Sheets (ملف Excel لم يُحوَّل، أو رابط من نوع آخر)
@@ -2634,6 +2690,25 @@ function SeasonArchiveCard({ secret, rows, reload }) {
     setMsg({ type: "ok", text: `✅ أُرشف موسم ${season}: حُذفت ${String(data).slice(3)} شكوى من القاعدة، والموسم معروض من ملفه في «📚 المواسم السابقة».` });
   });
 
+  // إدخال ملف موسم في القاعدة (فتح موسم مؤرشف للتعديل، أو موسم سابق من ملف على الجهاز)
+  async function restore(target, buf) {
+    const { data: ready, errors } = prepareSeason(await readSeasonBook(buf), target);
+    if (errors.length) throw new Error(`في الملف ${errors.length} خطأ؛ صحّحه ثم أعد المحاولة:\n• ${errors.slice(0, 8).join("\n• ")}${errors.length > 8 ? "\n…" : ""}`);
+    if (!window.confirm(`إدخال موسم ${target} في القاعدة: ${ready.complaints.length} شكوى و${ready.sessions.length} جلسة و${ready.decisions.length} قرار؟`)) return false;
+    const { data, error } = await sb.rpc("admin_restore_season", { p_secret: secret, p_season: target,
+      p_complaints: ready.complaints, p_sessions: ready.sessions, p_referrals: ready.referrals, p_decisions: ready.decisions });
+    if (error) throw new Error(`تعذّر الإدخال (نفّذ القسم 42 من schema.sql). ${error.message || ""}`);
+    if (!String(data).startsWith("OK")) throw new Error(RESTORE_MSG[data] || data);
+    await refreshAll();
+    return true;
+  }
+
+  // فتح موسم مؤرشف للتعديل: من ملفه على Google إلى القاعدة
+  const reopen = x => run(`open-${x.season}`, async () => {
+    if (await restore(x.season, await fetchSheetFile(x.url)))
+      setMsg({ type: "ok", text: `🔓 موسم ${x.season} مفتوح للتعديل في «الشكاوى» (اختر الموسم ${x.season} في التصفية). ولإضافة شكوى إليه: «📋 الشكاوى» ← موسم ${x.season} ← «➕ إضافة شكوى». بعد الانتهاء أعد أرشفته من «أرشفة موسم» أعلاه.` });
+  });
+
   // إضافة موسم سابق برابط ملفه مباشرة (موسم قديم أُدخل في Google Sheets): يُفحص أن المنصة تقرأ الملف ثم يُحفظ
   const addByLink = () => run("add", async () => {
     const target = localSeason.trim(), link = addUrl.trim();
@@ -2664,8 +2739,8 @@ function SeasonArchiveCard({ secret, rows, reload }) {
     <div className="card">
       <h2>📚 أرشفة المواسم (Google Drive)</h2>
       <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>Supabase يحفظ الموسم الحالي فقط. كل موسم ينتهي يُحفظ في ملف Google Sheets، ويُحذف من القاعدة،
-        ويبقى معروضاً للجميع في «📚 المواسم السابقة» وفي صفحة التقارير. <b>تعديل المواسم السابقة في ملف Google Sheets نفسه</b> (لمن له دور «محرّر»)،
-        والمنصة تعرض الملف محدّثاً كلما فُتح.</p>
+        ويبقى معروضاً للجميع في «📚 المواسم السابقة» وفي صفحة التقارير. <b>لتعديل موسم سابق أو إضافة شكاوى إليه</b>: «🔓 فتح للتعديل في المنصة» ثم أعد أرشفته بعد الانتهاء
+        (أو عدّل في ملف Google Sheets مباشرة لمن له دور «محرّر»)؛ والمنصة تعرض الملف محدّثاً كلما فُتح.</p>
       {listError && <Alert type="error">{listError}</Alert>}
       {msg && <Alert type={msg.type}><span style={{ whiteSpace: "pre-line" }}>{msg.text}</span></Alert>}
 
@@ -2685,7 +2760,7 @@ function SeasonArchiveCard({ secret, rows, reload }) {
         <>
           <select value={season} onChange={e => pick(e.target.value)} style={{ width: "auto", minWidth: 200 }} aria-label="الموسم">
             <option value="">— اختر الموسم —</option>
-            {candidates.map(x => <option key={x.season} value={x.season}>موسم {x.season} ({x.total} شكوى){archived[x.season] ? " · له ملف سابق" : ""}</option>)}
+            {candidates.map(x => <option key={x.season} value={x.season}>موسم {x.season} ({x.total} شكوى){archived[x.season] ? " · مفتوح للتعديل" : ""}</option>)}
           </select>
           {season && (
             <ol className="past-steps" style={{ marginTop: 12 }}>
@@ -2723,10 +2798,13 @@ function SeasonArchiveCard({ secret, rows, reload }) {
         <ul className="list-items">
           {bySeasonDesc(list).map(x => (
             <li key={x.season}>
-              <span><b>موسم {x.season}</b>{inDb.has(x.season) && <span className="readonly-tag" style={{ marginInlineStart: 6 }}>ما زال في القاعدة</span>}</span>
+              <span><b>موسم {x.season}</b>{inDb.has(x.season) && <span className="readonly-tag" style={{ marginInlineStart: 6 }}>🔓 مفتوح للتعديل</span>}</span>
               <span className="row" style={{ gap: 6 }}>
                 <button type="button" className="btn secondary sm" onClick={() => setViewing(x)}>👁️ عرض</button>
-                <a className="btn secondary sm" href={x.url} target="_blank" rel="noopener">✏️ تعديل في Google Sheets</a>
+                {!inDb.has(x.season) && (
+                  <button type="button" className="btn secondary sm" disabled={!!busy} onClick={() => reopen(x)}>{busy === `open-${x.season}` ? "جارٍ الفتح…" : "🔓 فتح للتعديل في المنصة"}</button>
+                )}
+                <a className="btn secondary sm" href={x.url} target="_blank" rel="noopener">✏️ Google Sheets</a>
                 <button type="button" className="btn danger-text" disabled={!!busy} onClick={() => removeLink(x)}>حذف الرابط</button>
               </span>
             </li>
@@ -2771,7 +2849,7 @@ function ExportCard({ secret, rows }) {
   return (
     <div className="card">
       <h2>💾 التصدير والنسخ المحفوظة</h2>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بأربع أوراق: الشكاوى، الجلسات، الإحالات، القرارات الإدارية — مقفول للعرض فقط. احفظ نسخة أسبوعياً.</p>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بأربع أوراق: الشكاوى، الجلسات، الإحالات، قرارات الشكاوى — مقفول للعرض فقط. احفظ نسخة أسبوعياً.</p>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <div className="row">
         <select value={season} onChange={e => setSeason(e.target.value)} style={{ width: "auto", minWidth: 150 }} aria-label="الموسم">
@@ -3047,6 +3125,67 @@ function ExcelViewer({ onClose, source }) {
   );
 }
 
+// نافذة «➕ إضافة شكوى» إلى موسم سابق مفتوح للتعديل: بيانات الشكوى وتاريخها، برقم من تسلسل ذلك الموسم
+function AddSeasonComplaint({ secret, season, onDone, onClose }) {
+  const [f, setF] = useState({ at: toDateTimeInput(new Date()), name: "", crole: "", phone: "", contact: "", accused: "", arole: "", aphone: "",
+                               title: "", subject: "", classification: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const set = k => e => setF(x => ({ ...x, [k]: e.target.value }));
+  const setPhone = k => e => setF(x => ({ ...x, [k]: cleanPhone(e.target.value) }));
+
+  // الحفظ عبر admin_add_season_complaint
+  async function save(e) {
+    e.preventDefault();
+    if (!f.name.trim() || !f.accused.trim() || !f.subject.trim()) return setErr("اسم المشتكي واسم المشتكى عليه ونص الشكوى إلزامية.");
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_add_season_complaint", {
+      p_secret: secret, p_season: season, p_received_at: dateTimeInputToIso(f.at),
+      p_complainant_name: f.name, p_complainant_role: f.crole, p_phone_number: f.phone, p_contact_number: f.contact,
+      p_accused_name: f.accused, p_accused_role: f.arole, p_accused_phone: f.aphone, p_title: f.title, p_subject: f.subject, p_classification: f.classification,
+    });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّرت الإضافة (نفّذ القسم 42 من schema.sql في Supabase، وتأكد أن الموسم مفتوح للتعديل).");
+    onDone(data[0]);
+  }
+
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
+        <form className="card" onSubmit={save}>
+          <h2 style={{ marginTop: 0 }}>➕ إضافة شكوى إلى موسم {season}</h2>
+          <div className="grid">
+            <Field label="تاريخ الشكوى" required><input type="datetime-local" value={f.at} onChange={set("at")} /></Field>
+            <Field label="التصنيف">
+              <select value={f.classification} onChange={set("classification")}>
+                <option value="">— اختر —</option>
+                {CLASSIFICATIONS.map(x => <option key={x}>{x}</option>)}
+              </select>
+            </Field>
+            <Field label="اسم المشتكي" required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
+            <Field label="صفة المشتكي"><input type="text" value={f.crole} onChange={set("crole")} maxLength={100} list="roles-list" /></Field>
+            <Field label="هاتف المشتكي"><input type="tel" dir="ltr" value={f.phone} onChange={setPhone("phone")} maxLength={15} /></Field>
+            <Field label="واتس / تلغرام"><input type="tel" dir="ltr" value={f.contact} onChange={setPhone("contact")} maxLength={15} /></Field>
+            <Field label="اسم المشتكى عليه" required><input type="text" value={f.accused} onChange={set("accused")} maxLength={200} /></Field>
+            <Field label="صفة المشتكى عليه"><input type="text" value={f.arole} onChange={set("arole")} maxLength={100} list="roles-list" /></Field>
+            <Field label="هاتف المشتكى عليه"><input type="tel" dir="ltr" value={f.aphone} onChange={setPhone("aphone")} maxLength={15} /></Field>
+            <Field label="عنوان الشكوى"><input type="text" value={f.title} onChange={set("title")} maxLength={150} /></Field>
+            <Field label="نص الشكوى" required full><textarea style={{ minHeight: 140 }} value={f.subject} onChange={set("subject")} maxLength={5000} /></Field>
+          </div>
+          <datalist id="roles-list">{ROLES.map(r => <option key={r} value={r} />)}</datalist>
+          {err && <Alert type="error">{err}</Alert>}
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+            <button className="btn" disabled={busy}>{busy ? "جارٍ الإضافة…" : "💾 إضافة الشكوى"}</button>
+            <button type="button" className="btn secondary" onClick={onClose}>إلغاء</button>
+          </div>
+          <small className="hint" style={{ display: "block", marginTop: 6 }}>تُرقَّم من تسلسل موسم {season}، وحالتها «جديد»؛ ثم تُتابع بالجلسات كالمعتاد. لا تنسَ إعادة أرشفة الموسم بعد الانتهاء.</small>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // تبويب الشكاوى: تصفية بالحالة وبحث، ثم جدول الشكاوى
 function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch = "", initialFilter = "الكل" }) {
   // التصفية والبحث (قد يبدآن بقيمة من الرئيسية)، وحالة التصدير الكامل
@@ -3071,6 +3210,9 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
     (filter === "الكل" || c.status === filter) &&
     (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
+  // موسم سابق مفتوح للتعديل (ليس الحالي، وله شكاوى في القاعدة): زر «➕ إضافة شكوى» إليه
+  const pastOpen = season && current && season !== current && (rows || []).some(c => c.season === season);
+  const [adding, setAdding] = useState(false);
 
   // العرض: أزرار التصفية مع الأعداد، البحث، ثم الجدول
   return (
@@ -3095,8 +3237,12 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="grow" type="text" placeholder="بحث بالرقم أو الاسم أو الهاتف أو الموضوع أو الجهة…" value={search} onChange={e => setSearch(e.target.value)} />
         <button className="btn secondary" onClick={reload}>🔄 تحديث</button>
+        {pastOpen && <button className="btn gold" onClick={() => setAdding(true)}>➕ إضافة شكوى إلى موسم {season}</button>}
       </div>
+      {pastOpen && <p className="muted" style={{ fontSize: 13.5, marginTop: -6 }}>🔓 موسم {season} مفتوح للتعديل. بعد الانتهاء أعد أرشفته من «الإعدادات ← 📚 أرشفة المواسم».</p>}
       {rows === null ? <Loading /> : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
+      {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
+        onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
     </div>
   );
 }
@@ -3263,6 +3409,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
           </div>
           <ReferralsLine secret={secret} id={c.id} version={c.updated_at} />
           {saveBtn}
+          <ChangesBox text={c.changes} />
         </div>
       )}
 
@@ -3746,7 +3893,12 @@ const DECISION_SORTS = {
   classification: { label: "التصنيف", get: d => d.classification || "" },
 };
 
-function AdminDecisions({ secret, isManager }) {
+// درجات السرية المتاحة للقرار
+const SECRECY = ["عادي", "محدود", "سري", "سري للغاية"];
+
+// kind: «complaints» (قرارات الشكاوى) أو «admin» (قرارات الإدارة) — القسم نفسه بقائمتين منفصلتين
+function AdminDecisions({ secret, isManager, kind = "complaints" }) {
+  const KIND = kind === "admin" ? "قرارات الإدارة" : "قرارات الشكاوى";
   // القرارات، أدوات البحث والتصفية والفرز، القرار المعروض، نموذج الإضافة/التعديل، والرسائل
   const [list, setList] = useState(null);
   const [q, setQ] = useState("");
@@ -3765,7 +3917,7 @@ function AdminDecisions({ secret, isManager }) {
   const load = useCallback(async () => {
     const { data, error } = await sb.rpc("admin_list_decisions", { p_secret: secret });
     if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر جلب القرارات (نفّذ القسم 27 من schema.sql في Supabase)." }); }
-    setList(data || []);
+    setList((data || []).filter(d => (d.kind || "complaints") === kind));
   }, [secret]);
   useEffect(() => { load(); }, [load]);
 
@@ -3790,8 +3942,13 @@ function AdminDecisions({ secret, isManager }) {
   const arrow = key => sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "";
 
   // نموذج فارغ، أو تعبئته من قرار للتعديل
-  const blank = () => ({ id: null, number: "", date: toDateInput(new Date()), title: "", subject: "", url: "", classification: "" });
-  const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "", classification: d.classification || "" });
+  const blank = () => ({ id: null, number: "", date: toDateInput(new Date()), title: "", subject: "", url: "", classification: "", secrecy: "عادي" });
+  const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "",
+                         classification: d.classification || "", secrecy: d.secrecy || "عادي" });
+  // الرقم التالي في تصنيف: أكبر رقم في بداية أرقام قراراته + 1 (يُقترح عند اختيار التصنيف ويمكن تعديله)
+  const nextNumber = k => String(Math.max(0, ...(list || []).filter(d => d.classification === k)
+    .map(d => parseInt(String(d.decision_number).match(/\d+/) || "0", 10) || 0)) + 1);
+  const pickClass = e => { const k = e.target.value; setForm(f => ({ ...f, classification: k, number: !f.id && k ? nextNumber(k) : f.number })); };
   const setF = key => e => setForm(f => ({ ...f, [key]: e.target.value }));
 
   // الحفظ عبر admin_save_decision (إضافة أو تعديل)
@@ -3800,10 +3957,14 @@ function AdminDecisions({ secret, isManager }) {
     if (!form.number.trim() || !form.title.trim()) return setMsg({ type: "error", text: "رقم القرار وعنوانه إلزاميان." });
     if (form.url.trim() && !/^https?:\/\//i.test(form.url.trim())) return setMsg({ type: "error", text: "الرابط يجب أن يبدأ بـ https://" });
     setBusy(true); setMsg(null);
-    const { data, error } = await sb.rpc("admin_save_decision", {
-      p_secret: secret, p_id: form.id, p_number: form.number, p_date: form.date || null, p_title: form.title,
-      p_subject: form.subject, p_url: form.url, p_classification: form.classification,
-    });
+    const base = { p_secret: secret, p_id: form.id, p_number: form.number, p_date: form.date || null, p_title: form.title,
+      p_subject: form.subject, p_url: form.url, p_classification: form.classification };
+    let { data, error } = await sb.rpc("admin_save_decision", { ...base, p_kind: kind, p_secrecy: form.secrecy });
+    // قاعدة لم يُنفَّذ فيها القسم 43 بعد: قرارات الشكاوى تُحفظ بالنسخة القديمة؛ وقرارات الإدارة تحتاج القسم
+    if (error && /function|schema cache/i.test(error.message || "")) {
+      if (kind === "admin") { setBusy(false); return setMsg({ type: "error", text: "قرارات الإدارة تحتاج تنفيذ القسم 43 من schema.sql في Supabase." }); }
+      ({ data, error } = await sb.rpc("admin_save_decision", base));
+    }
     setBusy(false);
     if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الحفظ، يرجى المحاولة مرة أخرى." });
     setMsg({ type: "ok", text: form.id ? "✅ تم تعديل القرار." : "✅ أُضيف القرار." });
@@ -3820,9 +3981,9 @@ function AdminDecisions({ secret, isManager }) {
 
   // تصدير القرارات الظاهرة إلى Excel (مقفول للعرض فقط)
   function exportXl() {
-    saveWorkbook([{ name: "القرارات الإدارية", headers: ["رقم القرار", "التاريخ", "العنوان", "التصنيف", "الموضوع", "الرابط"],
-      rows: visible.map(d => [d.decision_number, d.decision_date, d.title, d.classification, d.subject, d.url]) }],
-      `القرارات-الإدارية-${toDateInput(new Date())}.xlsx`).catch(e => setMsg({ type: "error", text: e.message || NET_ERR }));
+    saveWorkbook([{ name: KIND, headers: ["رقم القرار", "التاريخ", "العنوان", "التصنيف", "درجة السرية", "الموضوع", "الرابط"],
+      rows: visible.map(d => [d.decision_number, d.decision_date, d.title, d.classification, d.secrecy, d.subject, d.url]) }],
+      `${KIND.replace(/ /g, "-")}-${toDateInput(new Date())}.xlsx`).catch(e => setMsg({ type: "error", text: e.message || NET_ERR }));
   }
 
   // العرض: أزرار الإضافة والتصدير، البحث والبحث المتقدم، شرائح التصنيفات، الجدول، ثم نافذتا التفاصيل والنموذج
@@ -3889,7 +4050,7 @@ function AdminDecisions({ secret, isManager }) {
             <table className="sheet">
               <thead><tr>
                 {Object.keys(DECISION_SORTS).map(k => <th key={k} className="sortable" onClick={() => toggleSort(k)}>{DECISION_SORTS[k].label}{arrow(k)}</th>)}
-                <th>الموضوع</th><th>الرابط</th>
+                <th>السرية</th><th>الموضوع</th><th>الرابط</th>
               </tr></thead>
               <tbody>
                 {visible.map(d => (
@@ -3898,6 +4059,7 @@ function AdminDecisions({ secret, isManager }) {
                     <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
                     <td><b>{d.title}</b></td>
                     <td>{d.classification ? <span className="badge dec-tag">{d.classification}</span> : "—"}</td>
+                    <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
                     <td className="wrap"><span className="clip">{d.subject || "—"}</span></td>
                     <td>{d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—"}</td>
                   </tr>
@@ -3916,7 +4078,8 @@ function AdminDecisions({ secret, isManager }) {
             <div className="card">
               <div className="c-head">
                 <div><div className="c-no">📑 قرار رقم {shown.decision_number}</div>
-                  <div className="meta"><span>📅 {shown.decision_date ? fmtDate(shown.decision_date) : "بلا تاريخ"}</span></div></div>
+                  <div className="meta"><span>📅 {shown.decision_date ? fmtDate(shown.decision_date) : "بلا تاريخ"}</span>
+                    {shown.secrecy && <span>🔒 درجة السرية: {shown.secrecy}</span>}</div></div>
                 {shown.classification && <span className="badge dec-tag">{shown.classification}</span>}
               </div>
               <div className="c-title" style={{ marginTop: 0 }}>{shown.title}</div>
@@ -3939,22 +4102,27 @@ function AdminDecisions({ secret, isManager }) {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-close"><button className="btn secondary sm" onClick={() => setForm(null)}>✕ إغلاق</button></div>
             <form className="card" onSubmit={save}>
-              <h2>{form.id ? "✏️ تعديل قرار" : "➕ قرار إداري جديد"}</h2>
+              <h2>{form.id ? "✏️ تعديل قرار" : `➕ قرار جديد — ${KIND}`}</h2>
               {msg && msg.type === "error" && <Alert type="error">{msg.text}</Alert>}
               <div className="grid">
-                <Field label="رقم القرار الإداري" required><input type="text" dir="ltr" value={form.number} onChange={setF("number")} maxLength={60} /></Field>
-                <Field label="تاريخ القرار"><input type="date" value={form.date} onChange={setF("date")} /></Field>
-                <Field label="عنوان القرار" required full><input type="text" value={form.title} onChange={setF("title")} maxLength={300} /></Field>
-                <Field label="التصنيف">
-                  <select value={form.classification} onChange={setF("classification")}>
+                <Field label="التصنيف" hint={form.id ? "" : "يُقترح الرقم التالي في التصنيف تلقائياً"}>
+                  <select value={form.classification} onChange={pickClass}>
                     <option value="">— اختر —</option>
                     {classes.map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
                 </Field>
+                <Field label="رقم القرار" required hint="يمكن تعديله"><input type="text" dir="ltr" value={form.number} onChange={setF("number")} maxLength={60} /></Field>
+                <Field label="تاريخ القرار"><input type="date" value={form.date} onChange={setF("date")} /></Field>
+                <Field label="درجة السرية">
+                  <select value={form.secrecy} onChange={setF("secrecy")}>{SECRECY.map(x => <option key={x} value={x}>{x}</option>)}</select>
+                </Field>
+                <Field label="عنوان القرار" required full><input type="text" value={form.title} onChange={setF("title")} maxLength={300} /></Field>
                 <Field label="رابط القرار" hint="رابط ملف القرار على Drive أو غيره">
                   <input type="url" dir="ltr" value={form.url} onChange={setF("url")} maxLength={1000} placeholder="https://" />
                 </Field>
-                <Field label="موضوع القرار" full><textarea style={{ minHeight: 100 }} value={form.subject} onChange={setF("subject")} maxLength={5000} /></Field>
+                <VoiceArea label="موضوع القرار" hint={`${form.subject.length} / 5000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={120} maxLength={5000}
+                  value={form.subject} onChange={v => setForm(f => ({ ...f, subject: v }))}
+                  onAppend={t => setForm(f => ({ ...f, subject: appendText(f.subject, t) }))} onError={t => t && setMsg({ type: "error", text: t })} />
               </div>
               <button className="btn block" style={{ marginTop: 14 }} disabled={busy}>{busy ? "جارٍ الحفظ…" : "💾 حفظ القرار"}</button>
             </form>
@@ -4128,7 +4296,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="📋 الشكاوى">تصفية بالموسم والحالة والتصنيف، بحث وفرز، وتفاصيل كل شكوى بجلساتها وإحالاتها واعتراضها.</GuideItem>
           <GuideItem name="🗓️ الجلسات">جلسات اليوم والقادمة والسابقة؛ لكل جلسة عنوان وموضوع وإحالة ونتيجة.</GuideItem>
           <GuideItem name="🔗 إرسال رابط">رسالة جاهزة للنسخ: رابط التقديم مع كلمة مرور تُولّد بضغطة.</GuideItem>
-          <GuideItem name="📑 القرارات الإدارية">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز.</GuideItem>
+          <GuideItem name="📑 قرارات الشكاوى و🏛️ قرارات الإدارة">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز.</GuideItem>
           <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، المسؤولون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
         </ul>
       </div>
@@ -5011,6 +5179,7 @@ function ComplaintView({ c, sessions }) {
             <div><dt>ترحيل / مُحالة إلى</dt><dd>{c.referred_to || none}</dd></div>
             <div><dt>تاريخ الإغلاق</dt><dd>{c.closed_date ? fmtDate(c.closed_date) : none}</dd></div>
           </dl>
+          <ChangesBox text={c.changes} />
         </div>
       )}
     </div>
@@ -5065,7 +5234,7 @@ function SeasonViewer({ source, onClose }) {
     .filter(c => (!st || c.status === st) &&
       (!term || [c.complaint_number, c.title, c.complainant_name, c.accused_name, c.subject, c.result].some(v => (v || "").includes(term))))
     .sort((a, b) => String(b.complaint_number).localeCompare(String(a.complaint_number), "ar", { numeric: true }));
-  const decisions = book ? book.decisions || [] : [];
+  const decisions = book ? (tab === "admindecisions" ? book.admindecisions : book.decisions) || [] : [];
 
   // العرض: نافذة فيها العنوان ورابط Google، ثم تبويبا الشكاوى والقرارات، ثم بطاقة الشكوى المفتوحة
   return (
@@ -5078,7 +5247,8 @@ function SeasonViewer({ source, onClose }) {
           <>
             <div className="tabs">
               <button className={tab === "complaints" ? "active" : ""} onClick={() => setTab("complaints")}>📋 الشكاوى ({book.complaints.length})</button>
-              <button className={tab === "decisions" ? "active" : ""} onClick={() => setTab("decisions")}>📑 القرارات الإدارية ({decisions.length})</button>
+              <button className={tab === "decisions" ? "active" : ""} onClick={() => setTab("decisions")}>📑 قرارات الشكاوى ({(book.decisions || []).length})</button>
+              <button className={tab === "admindecisions" ? "active" : ""} onClick={() => setTab("admindecisions")}>🏛️ قرارات الإدارة ({(book.admindecisions || []).length})</button>
             </div>
             {tab === "complaints" ? (
               <>
