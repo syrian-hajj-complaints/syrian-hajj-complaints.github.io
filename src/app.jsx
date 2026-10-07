@@ -80,6 +80,7 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  عارض المواسم السابقة: رابط «فتح في Google Sheets» للمدير فقط (لا للمسؤول ولا لصفحة التقارير).
 //    2026-10-07  الصلاحيات (القسم 47): التعديل والحذف للمدير؛ «المسؤول» يطّلع، ويحدد التنبيه والمطلوب عنده، ويُدخل شكوى، ويصدّر Word،
 //                ويضيف روابط الشكوى ورابط الدراسة المنقّحة؛ الجلسات للاطلاع له؛ الملاحظات والروابط السريعة في قسم المدير.
 //    2026-10-07  «🔗 روابط سريعة» (القسم 46): يحفظها المدير من الإعدادات (اسم ورابط، وترتيب)، وتظهر في القائمة الجانبية للجميع.
@@ -2608,7 +2609,7 @@ function AdminPastSeasons({ secret, isManager, rows }) {
           ))}
         </div>
       )}
-      {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
+      {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} sheetLink={isManager} />}
     </div>
   );
 }
@@ -5266,7 +5267,7 @@ function ReportsPage({ code, viewerName }) {
           {bySeasonDesc(past).map(x => <button type="button" key={x.season} className="btn secondary sm" onClick={() => setPastView(x)}>موسم {x.season}</button>)}
         </div>
       )}
-      {pastView && <SeasonViewer source={{ title: `موسم ${pastView.season}`, url: pastView.url }} onClose={() => setPastView(null)} />}
+      {pastView && <SeasonViewer source={{ title: `موسم ${pastView.season}`, url: pastView.url }} onClose={() => setPastView(null)} sheetLink={false} />}
       {error && <Alert type="error">{error}</Alert>}
       {rows === null ? (!error && <Loading />) : (
         <>
@@ -5420,7 +5421,8 @@ function ComplaintsBrief({ rows, onOpen }) {
 
 // عارض موسم سابق من ملفه على Google (للاطلاع فقط) بشكل لوحة الإدارة: الشكاوى بالأعمدة المهمة مع بحث وتصفية
 // بالحالة، والضغط على شكوى يفتح بطاقتها بجلساتها؛ وتبويب للقرارات الإدارية
-function SeasonViewer({ source, onClose }) {
+// sheetLink: إظهار رابط «فتح في Google Sheets» (لا يظهر للمسؤول في لوحة الإدارة)
+function SeasonViewer({ source, onClose, sheetLink = true }) {
   const [book, setBook] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("complaints");
@@ -5452,7 +5454,7 @@ function SeasonViewer({ source, onClose }) {
       <div className="modal xl-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <h2 style={{ marginTop: 0 }}>📚 {source.title} <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
-        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>نسخة الأرشيف على Google Drive · <a href={source.url} target="_blank" rel="noopener">فتح في Google Sheets ↗</a></p>
+        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>نسخة الأرشيف على Google Drive{sheetLink && <> · <a href={source.url} target="_blank" rel="noopener">فتح في Google Sheets ↗</a></>}</p>
         {error ? <Alert type="error">{error}</Alert> : !book ? <Loading /> : (
           <>
             <div className="tabs">
