@@ -96,6 +96,7 @@
 --    2026-10-07  القسم 47: التعديل والحذف للمدير فقط (أحدث نسخ دوال التعديل بكلمة المدير)، و«المسؤول» يحدد التنبيه
 --                (admin_set_reminder)؛ الملاحظات والروابط السريعة للمدير؛ كلمة مرور الأدمن الأولى صارت القسم 48.
 --    2026-10-07  القسم 48: حذف مسؤول أو كلمة مرور إدارة نهائياً (admin_delete_access، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 49.
+--    2026-10-07  القسم 49: القرارات في صفحة التقارير للاطلاع (viewer_list_decisions)؛ كلمة مرور الأدمن الأولى صارت القسم 50.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -246,6 +247,7 @@ drop function if exists public.admin_get_quick_links(text);
 drop function if exists public.admin_set_quick_links(text, json);
 drop function if exists public.admin_set_reminder(text, uuid, timestamptz, text);
 drop function if exists public.admin_delete_access(text, uuid);
+drop function if exists public.viewer_list_decisions(text);
 drop function if exists public.admin_add_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.admin_update_session(text, uuid, timestamptz, text, text, text, text, text, text);
 drop function if exists public.submit_complaint(text, text, text, text, text, text, text, text, text);
@@ -5372,7 +5374,24 @@ end $$;
 grant execute on function public.admin_delete_access(text, uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 49) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 49) القرارات في صفحة التقارير (للإدارة العليا، للاطلاع فقط): قرارات الشكاوى وقرارات الإدارة
+--     يحتاج القسمين 27 و43 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+create or replace function public.viewer_list_decisions(p_code text)
+returns setof public.decisions
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('إدارة', p_code) is null then
+    return;
+  end if;
+  return query select * from public.decisions order by decision_date desc nulls last, created_at desc;
+end $$;
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.viewer_list_decisions(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 50) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

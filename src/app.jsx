@@ -80,6 +80,7 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  صفحة التقارير: تبويبا «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» للاطلاع (القسم 49)، وبلا زر «لوحة الإدارة».
 //    2026-10-07  «🗑️ حذف» نهائي في «👥 المسؤولون» و«📊 كلمات مرور الإدارة» (القسم 48، للمدير).
 //    2026-10-07  عارض المواسم السابقة: رابط «فتح في Google Sheets» للمدير فقط (لا للمسؤول ولا لصفحة التقارير).
 //    2026-10-07  الصلاحيات (القسم 47): التعديل والحذف للمدير؛ «المسؤول» يطّلع، ويحدد التنبيه والمطلوب عنده، ويُدخل شكوى، ويصدّر Word،
@@ -4066,7 +4067,8 @@ const SECRECY = ["عادي", "محدود", "سري", "سري للغاية"];
 const classesOf = d => String((d && d.classification) || "").split(/[،,]/).map(x => x.trim()).filter(Boolean);
 
 // kind: «complaints» (قرارات الشكاوى) أو «admin» (قرارات الإدارة) — القسم نفسه بقائمتين منفصلتين
-function AdminDecisions({ secret, isManager, kind = "complaints" }) {
+// viewer: صفحة التقارير (secret = كلمة مرور الإدارة) — اطلاع فقط بلا تصدير
+function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false }) {
   const KIND = kind === "admin" ? "قرارات الإدارة" : "قرارات الشكاوى";
   // القرارات، أدوات البحث والتصفية والفرز، القرار المعروض، نموذج الإضافة/التعديل، والرسائل
   const [list, setList] = useState(null);
@@ -4086,8 +4088,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
 
   // جلب القرارات
   const load = useCallback(async () => {
-    const { data, error } = await sb.rpc("admin_list_decisions", { p_secret: secret });
-    if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر جلب القرارات (نفّذ القسم 27 من schema.sql في Supabase)." }); }
+    const { data, error } = viewer ? await sb.rpc("viewer_list_decisions", { p_code: secret }) : await sb.rpc("admin_list_decisions", { p_secret: secret });
+    if (error) { setList([]); return setMsg({ type: "error", text: `تعذّر جلب القرارات (نفّذ القسم ${viewer ? 49 : 27} من schema.sql في Supabase).` }); }
     setAll(data || []);
     setList((data || []).filter(d => (d.kind || "complaints") === kind));
   }, [secret]);
@@ -4180,7 +4182,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <div className="row" style={{ marginBottom: 10 }}>
         {isManager && <button type="button" className="btn" onClick={() => { setForm(blank()); setMsg(null); }}>➕ إضافة قرار</button>}
-        <button type="button" className="btn secondary" disabled={!visible.length} onClick={exportXl}>⬇ تصدير Excel</button>
+        {!viewer && <button type="button" className="btn secondary" disabled={!visible.length} onClick={exportXl}>⬇ تصدير Excel</button>}
       </div>
       <div className="row" style={{ flexWrap: "nowrap", marginBottom: 8 }}>
         {seasons.length > 1 && (
@@ -5210,6 +5212,8 @@ function ReportsPage({ code, viewerName }) {
   const [error, setError] = useState("");
 
   // بطاقة الشكوى: هل سمح الأدمن بعرضها؟ ورقم الشكوى المفتوحة
+  // التبويب: الشكاوى، أو قرارات الشكاوى، أو قرارات الإدارة (للاطلاع)
+  const [view, setView] = useState("complaints");
   // المواسم السابقة (روابط ملفاتها على Google) والموسم المعروض منها داخل المنصة
   const [past, setPast] = useState([]);
   const [pastView, setPastView] = useState(null);
@@ -5256,6 +5260,11 @@ function ReportsPage({ code, viewerName }) {
         <h1>تقارير الشكاوى</h1>
         <p>أهلاً {viewerName}</p>
       </div>
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {[["complaints", "📋 الشكاوى"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
+          <button key={k} className={view === k ? "active" : ""} onClick={() => setView(k)}>{t}</button>)}
+      </div>
+      {view !== "complaints" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer /> : (<>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="filters">
           {seasonInfo && (
@@ -5299,6 +5308,7 @@ function ReportsPage({ code, viewerName }) {
           {cardOn && rows.length > 0 && <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي شكوى لعرض بطاقتها (للاطلاع فقط)</p>}
         </>
       )}
+      </>)}
       {openNum && <ReportCard code={code} number={openNum} onClose={() => setOpenNum(null)} />}
     </div>
   );
@@ -5620,7 +5630,7 @@ function App() {
   return (
     <>
       {!(hash === "#/admin" && adminSecret) && <Header label={label} onLogout={logout}
-        adminLink={hash !== "#/admin" && (isStandalone() || !!adminSecret || storeGet(localStorage, ADMIN_DEVICE) === "1")} />}
+        adminLink={hash !== "#/admin" && hash !== "#/reports" && (isStandalone() || !!adminSecret || storeGet(localStorage, ADMIN_DEVICE) === "1")} />}
       <main className={`container${hash === "#/admin" && adminSecret ? " admin-wide" : ""}`}>{page}</main>
     </>
   );
