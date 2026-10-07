@@ -1,0 +1,28 @@
+<!doctype html>
+<!--
+=======================================================================
+  الملف: reports.html
+  الوصف: مدخل تطبيق التقارير (للإدارة العليا): يعلن ملف تعريف التقارير (manifest-reports.webmanifest) لأيقونة
+         «تقارير الشكاوى» على الجوال والحاسوب، ثم ينقل مباشرة إلى صفحة التقارير main.html#/reports.
+  سجل التعديلات:
+    2026-10-07  الإصدار الأول.
+=======================================================================
+-->
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تقارير الشكاوى — إدارة الحج والعمرة</title>
+<!-- ملف تعريف تطبيق التقارير، والأيقونات، ولون الشريط -->
+<link rel="manifest" href="manifest-reports.webmanifest">
+<link rel="icon" href="logo.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#00594f">
+<!-- الانتقال إلى صفحة التقارير (مع تسجيل عامل الخدمة قبله) -->
+<script>
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
+  location.replace("main.html#/reports");
+</script>
+</head>
+<body style="background:#00594f"></body>
+</html>

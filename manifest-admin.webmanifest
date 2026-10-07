@@ -27,7 +27,7 @@
     {
       "name": "التقارير",
       "short_name": "التقارير",
-      "url": "main.html#/reports",
+      "url": "reports.html",
       "icons": [
         {
           "src": "icon-192.png",

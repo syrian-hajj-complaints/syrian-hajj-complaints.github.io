@@ -80,6 +80,7 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  أيقونة «تقارير الشكاوى» (reports.html و manifest-reports.webmanifest) وزر «📲 تثبيت» في صفحة التقارير.
 //    2026-10-07  صفحة التقارير: تبويبا «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» للاطلاع (القسم 49)، وبلا زر «لوحة الإدارة».
 //    2026-10-07  «🗑️ حذف» نهائي في «👥 المسؤولون» و«📊 كلمات مرور الإدارة» (القسم 48، للمدير).
 //    2026-10-07  عارض المواسم السابقة: رابط «فتح في Google Sheets» للمدير فقط (لا للمسؤول ولا لصفحة التقارير).
@@ -5259,6 +5260,8 @@ function ReportsPage({ code, viewerName }) {
       <div className="page-head">
         <h1>تقارير الشكاوى</h1>
         <p>أهلاً {viewerName}</p>
+        {/* أيقونة «تقارير الشكاوى» على الجوال أو الحاسوب */}
+        <div className="center" style={{ marginTop: 6 }}><InstallButton /></div>
       </div>
       <div className="tabs" style={{ marginBottom: 12 }}>
         {[["complaints", "📋 الشكاوى"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
@@ -5606,7 +5609,7 @@ function App() {
   // ملف التثبيت حسب الصفحة: صفحة الأدمن تُثبَّت لتفتح على ‎#/admin، وغيرها على صفحة تقديم الشكوى
   useEffect(() => {
     const link = document.getElementById("app-manifest");
-    if (link) link.href = hash === "#/admin" ? "manifest-admin.webmanifest" : "manifest.webmanifest";
+    if (link) link.href = hash === "#/admin" ? "manifest-admin.webmanifest" : hash === "#/reports" ? "manifest-reports.webmanifest" : "manifest.webmanifest";
   }, [hash]);
 
   // اختيار الصفحة والشريط العلوي
