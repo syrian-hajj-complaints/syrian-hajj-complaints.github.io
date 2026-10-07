@@ -80,6 +80,9 @@
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
 //    2026-10-07  نموذج الشكوى: زر Enter في خانة سطر واحد بالخطوة الأخيرة لا يرسل الشكوى (كانت تُرسل قبل الضغط على «إرسال»).
+//    2026-10-07  «🔗 روابط سريعة» (القسم 46): يحفظها المدير من الإعدادات (اسم ورابط، وترتيب)، وتظهر في القائمة الجانبية للجميع.
+//    2026-10-07  القرارات: تصنيفات متعددة (يظهر القرار في تبويب كل تصنيف)، والمصادقة على قرارات الشكاوى بربط داخلي بقرار الإدارة
+//                («تمت المصادقة» + رقم قرار المصادقة من قائمة) يظهر في القرارين، وتصفية «مصادَق / بانتظار المصادقة» (القسم 45).
 //    2026-10-07  «🗂️ تسجيل اعتراض سابق» في تبويب الاعتراض للشكوى المغلقة (للمدير): النص والتاريخ الأصلي والروابط (القسم 44).
 //    2026-10-07  «📑 قرارات الشكاوى» (كانت «القرارات الإدارية») وقسم جديد «🏛️ قرارات الإدارة» (القسم 43): درجة السرية، رقم مقترح
 //                (آخر رقم في التصنيف + 1، قابل للتعديل)، و🎤 لموضوع القرار؛ النوعان مع الموسم: ورقتان في ملفه، ويُحذفان ويُستعادان معه.
@@ -579,10 +582,10 @@ const XL_SHEETS = [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
   { name: "قرارات الشكاوى", key: "decisions", marker: "رقم القرار", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
-    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"]] },
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"]] },
   { name: "قرارات الإدارة", key: "admindecisions", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
-    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"]] },
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"]] },
 ];
 
 // جلب جلسات وإحالات مجموعة شكاوى من القاعدة، وقرارات موسمها (season فارغ = كل القرارات)
@@ -608,7 +611,8 @@ async function exportAllToExcel(secret, complaints, filename, opts = {}) {
   await saveWorkbook(XL_SHEETS.map(sh => ({
     name: sh.name, headers: sh.cols.map(c => c[1]),
     // الروابط (قائمة) ← سطر لكل رابط في الخلية
-    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f]) : Array.isArray(x[f]) ? x[f].join("\n") : x[f])),
+    rows: data[sh.key].map(x => sh.cols.map(([f, , isDate]) => isDate === "day" ? x[f] : isDate ? xlDate(x[f])
+      : Array.isArray(x[f]) ? x[f].join("\n") : typeof x[f] === "boolean" ? (x[f] ? "نعم" : "") : x[f])),
   })), filename || `قسم-الشكاوى-${toDateInput(new Date())}.xlsx`, opts);
   return { complaints: complaints.length, sessions: parts.sessions.length, decisions: parts.decisions.length + parts.admindecisions.length };
 }
@@ -1721,6 +1725,14 @@ function AdminPage({ secret, onLogout }) {
     });
   }, [secret]);
 
+  // الروابط السريعة للقائمة الجانبية (تُحدَّث عند حفظها من الإعدادات)
+  const [quickLinks, setQuickLinks] = useState([]);
+  const loadLinks = useCallback(() => {
+    sb.rpc("admin_get_quick_links", { p_secret: secret }).then(({ data }) => setQuickLinks(Array.isArray(data) ? data : []));
+  }, [secret]);
+  useEffect(() => { loadLinks(); }, [loadLinks]);
+  ADMIN_CTX.reloadLinks = loadLinks;
+
   // كلمة مرور قفل ملفات Excel (من الإعدادات) لتُستخدم في كل تصدير
   useEffect(() => {
     sb.rpc("admin_get_excel_lock", { p_secret: secret }).then(({ data }) => { excelLock.password = data || ""; });
@@ -1774,7 +1786,7 @@ function AdminPage({ secret, onLogout }) {
   return (
     <div className="admin-shell">
       {menuOpen && <div className="side-backdrop" onClick={() => setMenuOpen(false)} />}
-      <SideNav me={me} isManager={isManager} current={current} counts={counts} open={menuOpen} onPick={pick} onClose={() => setMenuOpen(false)} />
+      <SideNav me={me} isManager={isManager} current={current} counts={counts} open={menuOpen} onPick={pick} onClose={() => setMenuOpen(false)} links={quickLinks} />
       <div className="admin-main">
         <div className="admin-top">
           <button type="button" className="btn secondary menu-btn" onClick={() => setMenuOpen(true)} aria-label="فتح القائمة">☰</button>
@@ -1881,7 +1893,7 @@ function InstallButton() {
 
 // القائمة الجانبية: الترويسة (الشعار واسم الإدارة) في أعلاها، ثم الأقسام بأعدادها، واسم المستخدم ودوره في أسفلها؛
 // على الجوال تنزلق من اليمين
-function SideNav({ me, isManager, current, counts, open, onPick, onClose }) {
+function SideNav({ me, isManager, current, counts, open, onPick, onClose, links = [] }) {
   // عنصر واحد: أيقونة، اسم، وعدد (إن وُجد)
   const item = ([key, icon, label]) => (
     <button key={key} type="button" className={`side-item ${current === key ? "active" : ""}`} onClick={() => onPick(key)}
@@ -1903,6 +1915,19 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose }) {
         <>
           <div className="side-group">للمدير</div>
           <nav className="side-nav">{NAV_MANAGER.map(item)}</nav>
+        </>
+      )}
+      {links.length > 0 && (
+        <>
+          <div className="side-group">🔗 روابط سريعة</div>
+          <nav className="side-nav">
+            {links.map((l, i) => (
+              <a key={i} className="side-item" href={l.url} target="_blank" rel="noopener" title={l.url}>
+                <span className="side-icon">{/drive\.google|docs\.google/i.test(l.url) ? "📁" : "🔗"}</span>
+                <span className="side-label">{l.name}</span><span className="side-ext">↗</span>
+              </a>
+            ))}
+          </nav>
         </>
       )}
       <div className="side-user">
@@ -2383,6 +2408,7 @@ function AdminSettings({ secret, rows, reload }) {
     <div>
     <ExportCard secret={secret} rows={rows} />
     <SeasonArchiveCard secret={secret} rows={rows} reload={reload} />
+    <QuickLinksCard secret={secret} />
     <SeasonCard secret={secret} reload={reload} />
     <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
       hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
@@ -2828,6 +2854,67 @@ function SeasonArchiveCard({ secret, rows, reload }) {
         <button type="button" className="btn sm" disabled={!!busy || !localSeason.trim() || !addUrl.trim()} onClick={addByLink}>{busy === "add" ? "جارٍ الفحص…" : "➕ إضافة"}</button>
       </div>
       {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+// بطاقة الإعدادات «🔗 روابط سريعة»: اسم ورابط لكل عنصر (مثل مجلد Drive)؛ تظهر في القائمة الجانبية للمدير والمسؤول
+function QuickLinksCard({ secret }) {
+  const [list, setList] = useState(null);
+  const [f, setF] = useState({ name: "", url: "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    sb.rpc("admin_get_quick_links", { p_secret: secret }).then(({ data, error }) => {
+      if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 46 من schema.sql في Supabase)." }); }
+      setList(Array.isArray(data) ? data : []);
+    });
+  }, [secret]);
+
+  // حفظ القائمة كاملة، ثم تحديث القائمة الجانبية
+  async function persist(next, okText) {
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_quick_links", { p_secret: secret, p_items: next });
+    setBusy(false);
+    if (error || data !== "OK") return setMsg({ type: "error", text: "تعذّر الحفظ. الاسم إلزامي، والرابط يجب أن يبدأ بـ https://" });
+    setList(next); setMsg({ type: "ok", text: okText });
+    ADMIN_CTX.reloadLinks && ADMIN_CTX.reloadLinks();
+  }
+  function add(e) {
+    e.preventDefault();
+    const name = f.name.trim(), url = f.url.trim();
+    if (!name) return setMsg({ type: "error", text: "اكتب اسماً للرابط، مثل: مجلد Drive." });
+    if (!/^https?:\/\/\S+$/i.test(url)) return setMsg({ type: "error", text: BAD_LINK });
+    setF({ name: "", url: "" });
+    persist([...(list || []), { name, url }], `✅ أُضيف «${name}» إلى القائمة الجانبية.`);
+  }
+  const remove = i => { if (window.confirm(`حذف الرابط «${list[i].name}»؟`)) persist(list.filter((x, k) => k !== i), "حُذف الرابط."); };
+  const move = (i, d) => { const n = [...list]; const j = i + d; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; persist(n, "تم الترتيب."); };
+
+  return (
+    <div className="card">
+      <h2>🔗 روابط سريعة</h2>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>روابط تظهر في القائمة الجانبية للوحة (للمدير والمسؤول)، مثل مجلد Drive للملفات. الرابط يفتح في نافذة جديدة.</p>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <form className="row" onSubmit={add}>
+        <input type="text" placeholder="الاسم (مثال: مجلد Drive)" value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} maxLength={60} style={{ flex: "1 1 160px" }} />
+        <input type="url" dir="ltr" placeholder="https://drive.google.com/…" value={f.url} onChange={e => setF(x => ({ ...x, url: e.target.value }))} maxLength={1000} style={{ flex: "2 1 240px" }} />
+        <button className="btn" disabled={busy}>➕ إضافة</button>
+      </form>
+      {list && list.length > 0 && (
+        <ul className="list-items">
+          {list.map((l, i) => (
+            <li key={i}>
+              <span><b>{l.name}</b> · <a href={l.url} target="_blank" rel="noopener">فتح ↗</a></span>
+              <span className="row" style={{ gap: 4 }}>
+                <button type="button" className="btn secondary sm" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="إلى الأعلى">▲</button>
+                <button type="button" className="btn secondary sm" disabled={busy || i === list.length - 1} onClick={() => move(i, 1)} aria-label="إلى الأسفل">▼</button>
+                <button type="button" className="btn danger-text" disabled={busy} onClick={() => remove(i)}>حذف</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -3944,6 +4031,8 @@ const DECISION_SORTS = {
 
 // درجات السرية المتاحة للقرار
 const SECRECY = ["عادي", "محدود", "سري", "سري للغاية"];
+// تصنيفات القرار (قد تكون متعددة، مفصولة بـ «، » في الحقل نفسه)
+const classesOf = d => String((d && d.classification) || "").split(/[،,]/).map(x => x.trim()).filter(Boolean);
 
 // kind: «complaints» (قرارات الشكاوى) أو «admin» (قرارات الإدارة) — القسم نفسه بقائمتين منفصلتين
 function AdminDecisions({ secret, isManager, kind = "complaints" }) {
@@ -3961,11 +4050,14 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [season, setSeason] = useState("");                    // موسم القرارات ("" = الكل)
+  const [all, setAll] = useState([]);                          // كل القرارات بنوعيها (لربط المصادقة)
+  const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
 
   // جلب القرارات
   const load = useCallback(async () => {
     const { data, error } = await sb.rpc("admin_list_decisions", { p_secret: secret });
     if (error) { setList([]); return setMsg({ type: "error", text: "تعذّر جلب القرارات (نفّذ القسم 27 من schema.sql في Supabase)." }); }
+    setAll(data || []);
     setList((data || []).filter(d => (d.kind || "complaints") === kind));
   }, [secret]);
   useEffect(() => { load(); }, [load]);
@@ -3973,31 +4065,44 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
   // البحث (في كل الحقول أو حقل محدد) ← التصنيف ← الفترة ← الفرز (الأرقام تُفرز كأرقام)
   const term = q.trim();
   const inField = d => field === "number" ? [d.decision_number] : field === "title" ? [d.title] : field === "subject" ? [d.subject]
-    : [d.decision_number, d.title, d.subject, d.classification];
+    : [d.decision_number, d.title, d.subject, d.classification, d.approval_ref];
   // المواسم الموجودة في القرارات (تظهر القائمة إن كان هناك أكثر من موسم، مثل موسم مفتوح للتعديل)
   const seasons = [...new Set((list || []).map(d => d.season).filter(Boolean))].sort().reverse();
   const base = (list || []).filter(d =>
     (!season || d.season === season) &&
     (!term || inField(d).some(v => (v || "").includes(term))) &&
     (!range.from || (d.decision_date || "") >= range.from) &&
-    (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)));
-  const count = k => base.filter(d => !k || d.classification === k).length;
-  const visible = base.filter(d => !klass || d.classification === klass).sort((a, b) =>
+    (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)) &&
+    (!appr || (appr === "yes" ? d.approved : !d.approved)));
+  // القرار يُحسب في كل تصنيف من تصنيفاته
+  const count = k => base.filter(d => !k || classesOf(d).includes(k)).length;
+  const visible = base.filter(d => !klass || classesOf(d).includes(klass)).sort((a, b) =>
     DECISION_SORTS[sort.key].get(a).localeCompare(DECISION_SORTS[sort.key].get(b), "ar", { numeric: true }) * sort.dir);
-  const classes = [...new Set([...DECISION_CLASSES, ...(list || []).map(d => d.classification)].filter(Boolean))];
+  const classes = [...new Set([...DECISION_CLASSES, ...(list || []).flatMap(classesOf)].filter(Boolean))];
+  // ربط المصادقة: قرار الإدارة برقمه (من الموسم نفسه أولاً)، وقرارات الشكاوى التي يصادق عليها قرار إدارة
+  const adminDecs = all.filter(d => d.kind === "admin");
+  const approverOf = d => d.approval_ref && (adminDecs.find(a => a.decision_number === d.approval_ref && a.season === d.season)
+    || adminDecs.find(a => a.decision_number === d.approval_ref));
+  const approvedBy = a => all.filter(d => (d.kind || "complaints") === "complaints" && d.approval_ref && d.approval_ref === a.decision_number && (!a.season || d.season === a.season));
 
   // الضغط على عنوان عمود: فرز تصاعدي ← تنازلي
   const toggleSort = key => setSort(s => ({ key, dir: s.key === key ? -s.dir : 1 }));
   const arrow = key => sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "";
 
   // نموذج فارغ، أو تعبئته من قرار للتعديل
-  const blank = () => ({ id: null, number: "", date: toDateInput(new Date()), title: "", subject: "", url: "", classification: "", secrecy: "عادي" });
+  const blank = () => ({ id: null, number: "", date: toDateInput(new Date()), title: "", subject: "", url: "", classes: [], secrecy: "عادي",
+                         approved: false, approval_ref: "" });
   const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "",
-                         classification: d.classification || "", secrecy: d.secrecy || "عادي" });
+                         classes: classesOf(d), secrecy: d.secrecy || "عادي", approved: !!d.approved, approval_ref: d.approval_ref || "" });
   // الرقم التالي في تصنيف: أكبر رقم في بداية أرقام قراراته + 1 (يُقترح عند اختيار التصنيف ويمكن تعديله)
-  const nextNumber = k => String(Math.max(0, ...(list || []).filter(d => d.classification === k)
+  const nextNumber = k => String(Math.max(0, ...(list || []).filter(d => classesOf(d).includes(k))
     .map(d => parseInt(String(d.decision_number).match(/\d+/) || "0", 10) || 0)) + 1);
-  const pickClass = e => { const k = e.target.value; setForm(f => ({ ...f, classification: k, number: !f.id && k ? nextNumber(k) : f.number })); };
+  // اختيار تصنيف أو إلغاؤه (متعدد)؛ أول تصنيف في قرار جديد يقترح الرقم التالي فيه
+  const toggleClass = k => setForm(f => {
+    const classes = f.classes.includes(k) ? f.classes.filter(x => x !== k) : [...f.classes, k];
+    return { ...f, classes, number: !f.id && classes.length && (!f.number || f.autoNumber) ? nextNumber(classes[0]) : f.number,
+             autoNumber: !f.id && classes.length && (!f.number || f.autoNumber) ? true : f.autoNumber };
+  });
   const setF = key => e => setForm(f => ({ ...f, [key]: e.target.value }));
 
   // الحفظ عبر admin_save_decision (إضافة أو تعديل)
@@ -4007,10 +4112,13 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
     if (form.url.trim() && !/^https?:\/\//i.test(form.url.trim())) return setMsg({ type: "error", text: "الرابط يجب أن يبدأ بـ https://" });
     setBusy(true); setMsg(null);
     const base = { p_secret: secret, p_id: form.id, p_number: form.number, p_date: form.date || null, p_title: form.title,
-      p_subject: form.subject, p_url: form.url, p_classification: form.classification };
-    let { data, error } = await sb.rpc("admin_save_decision", { ...base, p_kind: kind, p_secrecy: form.secrecy });
-    // قاعدة لم يُنفَّذ فيها القسم 43 بعد: قرارات الشكاوى تُحفظ بالنسخة القديمة؛ وقرارات الإدارة تحتاج القسم
-    if (error && /function|schema cache/i.test(error.message || "")) {
+      p_subject: form.subject, p_url: form.url, p_classification: form.classes.join("، ") };
+    const full = { ...base, p_kind: kind, p_secrecy: form.secrecy };
+    const missing = err => err && /function|schema cache/i.test(err.message || "");
+    let { data, error } = await sb.rpc("admin_save_decision", { ...full, p_approved: kind === "complaints" && form.approved, p_approval_ref: kind === "complaints" ? form.approval_ref : "" });
+    // قاعدة لم يُنفَّذ فيها القسم 45 ثم 43 بعد: بلا المصادقة، ثم النسخة القديمة (قرارات الإدارة تحتاج القسم 43)
+    if (missing(error)) ({ data, error } = await sb.rpc("admin_save_decision", full));
+    if (missing(error)) {
       if (kind === "admin") { setBusy(false); return setMsg({ type: "error", text: "قرارات الإدارة تحتاج تنفيذ القسم 43 من schema.sql في Supabase." }); }
       ({ data, error } = await sb.rpc("admin_save_decision", base));
     }
@@ -4088,6 +4196,12 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
             onClick={() => { setQ(""); setField("all"); setKlass(""); setRange({ from: "", to: "" }); setSort({ key: "date", dir: -1 }); }}>مسح كل التصفيات</button>
         </div>
       )}
+      {kind === "complaints" && (
+        <div className="chips">
+          {[["", "كل القرارات"], ["yes", "✅ مصادَق عليها"], ["no", "⏳ بانتظار المصادقة"]].map(([k, t]) =>
+            <button key={k} className={appr === k ? "active" : ""} onClick={() => setAppr(k)}>{t}</button>)}
+        </div>
+      )}
       <div className="chips">
         <button className={!klass ? "active" : ""} onClick={() => setKlass("")}>الكل ({count("")})</button>
         {classes.map(k => <button key={k} className={klass === k ? "active" : ""} onClick={() => setKlass(k)}>{k} ({count(k)})</button>)}
@@ -4099,7 +4213,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
             <table className="sheet">
               <thead><tr>
                 {Object.keys(DECISION_SORTS).map(k => <th key={k} className="sortable" onClick={() => toggleSort(k)}>{DECISION_SORTS[k].label}{arrow(k)}</th>)}
-                <th>السرية</th><th>الموضوع</th><th>الرابط</th>
+                <th>السرية</th>{kind === "complaints" && <th>المصادقة</th>}<th>الموضوع</th><th>الرابط</th>
               </tr></thead>
               <tbody>
                 {visible.map(d => (
@@ -4107,8 +4221,9 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
                     <td><b dir="ltr">{d.decision_number}</b></td>
                     <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
                     <td><b>{d.title}</b></td>
-                    <td>{d.classification ? <span className="badge dec-tag">{d.classification}</span> : "—"}</td>
+                    <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
                     <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
+                    {kind === "complaints" && <td>{d.approved ? `✅${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"}</td>}
                     <td className="wrap"><span className="clip">{d.subject || "—"}</span></td>
                     <td>{d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—"}</td>
                   </tr>
@@ -4129,11 +4244,27 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
                 <div><div className="c-no">📑 قرار رقم {shown.decision_number}</div>
                   <div className="meta"><span>📅 {shown.decision_date ? fmtDate(shown.decision_date) : "بلا تاريخ"}</span>
                     {shown.secrecy && <span>🔒 درجة السرية: {shown.secrecy}</span>}</div></div>
-                {shown.classification && <span className="badge dec-tag">{shown.classification}</span>}
+                <span>{classesOf(shown).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>)}</span>
               </div>
               <div className="c-title" style={{ marginTop: 0 }}>{shown.title}</div>
               <div className="field-label" style={{ marginTop: 10 }}>موضوع القرار</div>
               <div className="subject">{shown.subject || <span className="muted">—</span>}</div>
+              {kind === "complaints" && (() => {
+                const a = approverOf(shown);
+                return (
+                  <div className={`approval-box ${shown.approved ? "ok" : ""}`}>
+                    {shown.approved ? <b>✅ تمت المصادقة{shown.approval_ref ? ` بقرار الإدارة رقم ${shown.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
+                    {a && <div>{a.title}{a.decision_date ? ` (${fmtDate(a.decision_date)})` : ""} {a.url && <a href={a.url} target="_blank" rel="noopener">🔗 فتح قرار المصادقة</a>}</div>}
+                    {shown.approved && shown.approval_ref && !a && <div className="muted">لم يُعثر على قرار إدارة بهذا الرقم.</div>}
+                  </div>
+                );
+              })()}
+              {kind === "admin" && approvedBy(shown).length > 0 && (
+                <div className="approval-box ok">
+                  <b>✅ يصادق على قرارات الشكاوى:</b>
+                  {approvedBy(shown).map(d => <div key={d.id}>رقم {d.decision_number} — {d.title}</div>)}
+                </div>
+              )}
               {shown.url && <a className="btn block" href={shown.url} target="_blank" rel="noopener" style={{ marginTop: 12 }}>🔗 فتح القرار</a>}
               {isManager && (
                 <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 10 }}>
@@ -4154,18 +4285,30 @@ function AdminDecisions({ secret, isManager, kind = "complaints" }) {
               <h2>{form.id ? "✏️ تعديل قرار" : `➕ قرار جديد — ${KIND}`}</h2>
               {msg && msg.type === "error" && <Alert type="error">{msg.text}</Alert>}
               <div className="grid">
-                <Field label="التصنيف" hint={form.id ? "" : "يُقترح الرقم التالي في التصنيف تلقائياً"}>
-                  <select value={form.classification} onChange={pickClass}>
-                    <option value="">— اختر —</option>
-                    {classes.map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
+                <Field label="التصنيفات" hint={form.id ? "اختر تصنيفاً أو أكثر" : "اختر تصنيفاً أو أكثر؛ أول تصنيف يقترح الرقم التالي فيه"} full>
+                  <div className="chips" style={{ margin: 0 }}>
+                    {classes.map(k => <button key={k} type="button" className={form.classes.includes(k) ? "active" : ""} onClick={() => toggleClass(k)}>{form.classes.includes(k) ? "✓ " : ""}{k}</button>)}
+                  </div>
                 </Field>
-                <Field label="رقم القرار" required hint="يمكن تعديله"><input type="text" dir="ltr" value={form.number} onChange={setF("number")} maxLength={60} /></Field>
+                <Field label="رقم القرار" required hint="يمكن تعديله"><input type="text" dir="ltr" value={form.number} onChange={e => setForm(f => ({ ...f, number: e.target.value, autoNumber: false }))} maxLength={60} /></Field>
                 <Field label="تاريخ القرار"><input type="date" value={form.date} onChange={setF("date")} /></Field>
                 <Field label="درجة السرية">
                   <select value={form.secrecy} onChange={setF("secrecy")}>{SECRECY.map(x => <option key={x} value={x}>{x}</option>)}</select>
                 </Field>
                 <Field label="عنوان القرار" required full><input type="text" value={form.title} onChange={setF("title")} maxLength={300} /></Field>
+                {kind === "complaints" && (
+                  <>
+                    <Field label="المصادقة">
+                      <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={form.approved}
+                        onChange={e => setForm(f => ({ ...f, approved: e.target.checked }))} style={{ width: "auto" }} /> ✅ تمت المصادقة</label>
+                    </Field>
+                    <Field label="قرار المصادقة (من قرارات الإدارة)" hint="اختر من القائمة أو اكتب الرقم">
+                      <input type="text" dir="ltr" list="admin-dec-list" value={form.approval_ref} maxLength={60} placeholder="رقم قرار الإدارة"
+                        onChange={e => setForm(f => ({ ...f, approval_ref: e.target.value, approved: f.approved || !!e.target.value }))} />
+                      <datalist id="admin-dec-list">{adminDecs.map(a => <option key={a.id} value={a.decision_number}>{a.title}</option>)}</datalist>
+                    </Field>
+                  </>
+                )}
                 <Field label="رابط القرار" hint="رابط ملف القرار على Drive أو غيره">
                   <input type="url" dir="ltr" value={form.url} onChange={setF("url")} maxLength={1000} placeholder="https://" />
                 </Field>
