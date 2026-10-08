@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  «🔁 تحويل إلى اعتراض على قرار إداري / إلى شكوى» في أسفل البطاقة (للمدير، القسم 55): الرقم والجلسات كما هي.
 //    2026-10-08  مربع «حدّد موعد التنبيه القادم» (من «المطلوب»): «مسح» ثم الحفظ يلغي التنبيه (كان يُظهر خطأ)، وزر «🔕 إلغاء التنبيه».
 //    2026-10-08  «🗑️ حذف الشكوى / الاعتراض نهائياً» في أسفل البطاقة (للمدير، القسم 54) بكتابة الرقم للتأكيد؛ إن كان آخر رقم
 //                في موسمه يأخذه الطلب التالي.
@@ -3855,6 +3856,20 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
     onDeleted && onDeleted(c.id);
   }
 
+  // تحويل النوع (للمدير): شكوى ↔ اعتراض على قرار إداري، برقمه وجلساته (admin_set_kind)
+  async function convert() {
+    const to = isDecObj(c) ? "شكوى" : DEC_OBJ;
+    if (!window.confirm(`تحويل ${c.complaint_number} إلى «${to}»؟\nيبقى رقمه وجلساته وكل بياناته، وتتغيّر التسميات وملف Word.`)) return;
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_kind", { p_secret: secret, p_id: c.id, p_kind: to });
+    setBusy(false);
+    if (error && /HAS_OBJECTION/.test(error.message || ""))
+      return setMsg({ type: "error", text: "لا تُحوَّل إلى اعتراض على قرار: على هذه الشكوى «اعتراض على النتيجة» من المشتكى عليه." });
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التحويل (نفّذ القسم 55 من schema.sql في Supabase)." });
+    onSaved(data[0]); setCardTab("follow");   // (تبويب «الاعتراض» قد يختفي بعد التحويل)
+    setMsg({ type: "ok", text: to === DEC_OBJ ? "✅ تحوّلت إلى اعتراض على قرار إداري. أكمل بيانات القرار المعترض عليه من «✏️ تعديل بيانات القرار المعترض عليه»." : "✅ تحوّلت إلى شكوى." });
+  }
+
   // هل أُغلقت نهائياً بعد الاعتراض؟ (تُقفل ولا يبقى إلا تعديل الجلسات)
   const finalClosed = c.status === CLOSED_OBJ;
 
@@ -3990,7 +4005,9 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       {finalClosed && <div className="locked-note">🔒 أُغلقت الشكوى نهائياً بعد الاعتراض — يمكن تعديل الجلسات فقط.</div>}
       {/* حذف نهائي (للمدير فقط) */}
       {ADMIN_CTX.manager && onDeleted && (
-        <div style={{ marginTop: 16, textAlign: "left" }}>
+        <div className="row" style={{ marginTop: 16, justifyContent: "space-between" }}>
+          <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} disabled={busy} onClick={convert}>
+            🔁 تحويل إلى {isDecObj(c) ? "شكوى" : "اعتراض على قرار إداري"}</button>
           <button type="button" className="btn danger-text" disabled={busy} onClick={remove}>🗑️ حذف {partyLabels(c).noun} نهائياً</button>
         </div>
       )}

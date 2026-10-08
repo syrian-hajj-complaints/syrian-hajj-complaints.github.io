@@ -104,6 +104,7 @@
 --                (decision_objection_days، الافتراضي 3)، وعبارات «دراسة اعتراض»؛ كلمة مرور الأدمن الأولى صارت القسم 54.
 --    2026-10-08  القسم 54: حذف شكوى أو اعتراض نهائياً (admin_delete_complaint، للمدير) مع إعادة عدّاد الموسم إلى أكبر رقم باقٍ؛
 --                كلمة مرور الأدمن الأولى صارت القسم 55.
+--    2026-10-08  القسم 55: تحويل نوع الطلب شكوى ↔ اعتراض على قرار إداري (admin_set_kind، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 56.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -6110,7 +6111,34 @@ end $$;
 grant execute on function public.admin_delete_complaint(text, uuid, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 55) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 55) تحويل نوع الطلب (للمدير فقط): «شكوى» ↔ «اعتراض على قرار إداري»، برقمه وجلساته وكل بياناته؛
+--     لا يُحوَّل إلى اعتراض على قرار طلبٌ عليه «اعتراض على النتيجة» (حتى لا يختفي تبويبه)
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة
+-- ---------------------------------------------------------------------
+create or replace function public.admin_set_kind(p_secret text, p_id uuid, p_kind text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  c public.complaints;
+begin
+  if public.verify_password('مدير', p_secret) is null or p_kind not in ('شكوى', 'اعتراض على قرار إداري') then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null then
+    return;
+  end if;
+  if p_kind = 'اعتراض على قرار إداري' and c.objection_at is not null then
+    raise exception 'HAS_OBJECTION';
+  end if;
+  update public.complaints set kind = p_kind where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+grant execute on function public.admin_set_kind(text, uuid, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 56) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
