@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  جدول الشكاوى: تغيير عرض كل عمود بسحب حافة عنوانه اليسرى (50–800 بكسل، يحفظه الجهاز)، وضغطتان على الحافة
+//                للعرض التلقائي، و«↔ العرض التلقائي لكل الأعمدة» في قائمة «⚙ الأعمدة».
+//    2026-10-08  «📘 دليل المنصة»: بطاقة «⚖️ الاعتراض على قرار إداري» بخطواته، والحذف، وملفات Word وعباراتها، وتصفية النوع.
 //    2026-10-08  مربع الحكم: «✔️ الحكم الظاهر محفوظ» أو «تغيير غير محفوظ» بجانب الزر (كان الزر المعطّل يوحي بعدم الحفظ).
 //    2026-10-08  الحكم في الاعتراض على قرار إداري (القسم 56، VerdictBox): شكلاً (قبول / رد، ويُقترح «رد» خارج المدة) وموضوعاً
 //                (تصديق / إلغاء / تعديل)؛ تُولَّد منه بنود القرار في «دراسة اعتراض» و«📜 القرار» (عباراتها في الإعدادات، مع
@@ -2371,6 +2374,27 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
   const [hidden, setHidden] = usePref("hajj_cols_hidden", DEFAULT_HIDDEN);
   const [fontSize, setFontSize] = usePref("hajj_font_size", 14);
   const [pageSize, setPageSize] = usePref("hajj_page_size", 50);
+  // عرض الأعمدة بالبكسل (يُسحب من حافة العنوان، ويحفظه الجهاز)؛ live: العمود أثناء السحب
+  const [widths, setWidths] = usePref("hajj_col_widths", {});
+  const [live, setLive] = useState(null);   // { key, w }
+  const widthOf = key => live && live.key === key ? live.w : widths[key];
+  // بدء السحب: الحافة على يسار العنوان (الاتجاه من اليمين لليسار)، فالسحب يساراً يوسّع العمود؛ بين 50 و800 بكسل
+  function startResize(e, key) {
+    e.preventDefault(); e.stopPropagation();
+    const th = e.currentTarget.parentElement;
+    const x0 = e.clientX, w0 = th.getBoundingClientRect().width;
+    let w = w0;
+    const move = ev => { w = Math.round(Math.min(800, Math.max(50, w0 + (x0 - ev.clientX)))); setLive({ key, w }); };
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      setLive(null); if (Math.abs(w - w0) > 1) setWidths({ ...widths, [key]: w });
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+  // إعادة عمود إلى عرضه التلقائي (ضغط مزدوج على الحافة)
+  const resetWidth = key => { const n = { ...widths }; delete n[key]; setWidths(n); };
+  // محتوى خلية بعرض محدد (إن حُدّد للعمود)
+  const sized = (key, content) => widthOf(key) ? <div className="cw" style={{ width: widthOf(key) }}>{content}</div> : content;
 
   // الفرز (العمود والاتجاه)، الصفحة الحالية، قائمة الأعمدة، الاختيار، والتغيير الجماعي
   const [sort, setSort] = useState({ key: null, dir: 1 });
@@ -2471,6 +2495,8 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
                   <label key={c.key}><input type="checkbox" checked={!hidden.includes(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}</label>
                 ))}
                 <button className="btn secondary sm block" style={{ marginTop: 6 }} onClick={() => setHidden(DEFAULT_HIDDEN)}>الافتراضي</button>
+                <button className="btn secondary sm block" style={{ marginTop: 6 }} disabled={!Object.keys(widths).length} onClick={() => setWidths({})}>↔ العرض التلقائي لكل الأعمدة</button>
+                <small className="muted" style={{ display: "block", marginTop: 6 }}>لتغيير عرض عمود: اسحب حافة عنوانه اليسرى.</small>
               </div>
             </>
           )}
@@ -2490,7 +2516,14 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
                 <tr>
                   <th className="chk"><input type="checkbox" checked={pageAllOn} onChange={togglePage} title="تحديد كل صفوف الصفحة" /></th>
                   {alertsFor && <th>التنبيه</th>}
-                  {cols.map(c => <th key={c.key} className="sortable" onClick={() => onSort(c.key)}>{c.label} {arrow(c.key)}</th>)}
+                  {cols.map(c => (
+                    <th key={c.key} className="sortable" onClick={() => onSort(c.key)}>
+                      {sized(c.key, <>{c.label} {arrow(c.key)}</>)}
+                      <span className={`col-resizer ${live && live.key === c.key ? "on" : ""}`} onPointerDown={e => startResize(e, c.key)}
+                        onClick={e => e.stopPropagation()} onDoubleClick={e => { e.stopPropagation(); resetWidth(c.key); }}
+                        title="اسحب لتغيير عرض العمود — ضغطتان للعرض التلقائي" />
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -2498,7 +2531,7 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
                   <tr key={r.id} className={`status-row ${stClass(r.status)} ${selected.has(r.id) ? "selected" : ""}`} onClick={() => onOpen(r)}>
                     <td className="chk" onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
                     {alertsFor && <td className="wrap">{alertsFor(r).map((a, i) => <span key={i} className={`alert-tag ${a.level}`}>{a.text}</span>)}</td>}
-                    {cols.map(c => <td key={c.key} className={c.wrap ? "wrap" : ""}>{c.cell(r)}</td>)}
+                    {cols.map(c => <td key={c.key} className={c.wrap ? "wrap" : ""}>{sized(c.key, c.cell(r))}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -5018,7 +5051,7 @@ function AdminGuide({ isManager }) {
           <StatusBadge value="جديد" /><FlowStep label="فتح البطاقة" /><StatusBadge value="قيد المراجعة" />
           <FlowStep label="أول جلسة" /><StatusBadge value="جاري المتابعة" /><FlowStep label="جلسة إغلاق" /><StatusBadge value="مغلقة" />
         </div>
-        <div className="flow-label">↓ عند الاعتراض (مرة واحدة، بعد الإغلاق فقط)</div>
+        <div className="flow-label">↓ عند اعتراض المشتكى عليه على النتيجة (مرة واحدة، بعد الإغلاق فقط)</div>
         <div className="flow">
           <StatusBadge value="قيد مراجعة الاعتراض" /><FlowStep label="جلسة" /><StatusBadge value="جاري متابعة الاعتراض" />
           <FlowStep label="جلسة إغلاق" /><StatusBadge value="مغلقة بعد الاعتراض" />
@@ -5027,6 +5060,22 @@ function AdminGuide({ isManager }) {
           <GuideItem name="آخر جلسة تحدد الحالة والنتيجة">لا تُكتب الحالة ولا نتيجة الشكوى يدوياً، والجلسات تُعدَّل ولا تُحذف.</GuideItem>
           <GuideItem name="جلسة الإغلاق">يُكتب فيها إلزامياً النص الذي يراه المشتكي في صفحة النتيجة.</GuideItem>
           <GuideItem name="بعد الإغلاق النهائي">تُقفل الشكوى، ولا يبقى إلا تعديل الجلسات.</GuideItem>
+        </ul>
+      </div>
+
+      <div className="card">
+        <h2>⚖️ الاعتراض على قرار إداري</h2>
+        <p style={{ marginTop: 0 }}>نوع طلب ثانٍ بجانب الشكوى، في السجل نفسه وبالترقيم نفسه، ولا يظهر في الصفحات العامة. يختلف عن «اعتراض المشتكى عليه على نتيجة شكوى».</p>
+        <ul className="list">
+          <GuideItem name="1. الإدخال">من «📝 إدخال شكوى» (المدير أو المسؤول) كأي شكوى.</GuideItem>
+          <GuideItem name="2. التحويل (للمدير)">في أسفل البطاقة: «🔁 تحويل إلى اعتراض على قرار إداري»؛ يبقى الرقم والجلسات، وتصير التسميات «المعترض» و«المعترض عليه». والعكس «🔁 تحويل إلى شكوى».</GuideItem>
+          <GuideItem name="3. بيانات القرار (للمدير)">«✏️ تعديل بيانات القرار المعترض عليه»: رقم القرار (يُختار من «🏛️ قرارات الإدارة» فيُملأ تاريخه، أو يُكتب يدوياً)، والجهة المحيلة، و<b>تاريخ تقديم الاعتراض الفعلي</b>.</GuideItem>
+          <GuideItem name="4. المهلة القانونية">تُحسب من تاريخ القرار إلى تاريخ تقديم الاعتراض، ويظهر «✅ ضمن المدة» أو «⚠️ خارج المدة القانونية». عدد الأيام في الإعدادات (الافتراضي 3).</GuideItem>
+          <GuideItem name="5. الجلسات">كالشكوى: رد الطرف المعني، والتواصل مع مصدر القرار، ومناقشة المعترض، ورأي اللجنة.</GuideItem>
+          <GuideItem name="6. الحكم (للمدير)">مربع «⚖️ الحكم في الاعتراض»: شكلاً (قبول / رد) وموضوعاً (تصديق القرار / إلغاؤه / تعديله). تُولَّد منه بنود القرار تلقائياً.</GuideItem>
+          <GuideItem name="7. الملفات">«📄 Word» يولّد «دراسة اعتراض»، وتبويب «📜 القرار»: رأي اللجنة أولاً، ثم بنود الحكم، ثم التبليغ.</GuideItem>
+          <GuideItem name="على القرار نفسه">في «🏛️ قرارات الإدارة» شارة «⚖️ معترض عليه» ثم «✅ صُدّق» أو «❌ أُلغي» أو «✏️ عُدّل بعد الاعتراض»، وتصفية «عليها اعتراض»، ومربع بالاعتراضات يفتح كل اعتراض.</GuideItem>
+          <GuideItem name="من يراه">المدير والمسؤول والإدارة العليا (في التقارير للاطلاع).</GuideItem>
         </ul>
       </div>
 
@@ -5045,11 +5094,11 @@ function AdminGuide({ isManager }) {
         <h2>أقسام لوحة الإدارة</h2>
         <ul className="list">
           <GuideItem name="📅 المطلوب اليوم">تنبيهات ذكية: شكوى جديدة لم تُراجع خلال 24 ساعة، إحالة بلا تحديث منذ يومين، شكوى مفتوحة منذ 7 أيام، ومواعيد المتابعة.</GuideItem>
-          <GuideItem name="📋 الشكاوى">تصفية بالموسم والحالة والتصنيف، بحث وفرز، وتفاصيل كل شكوى بجلساتها وإحالاتها واعتراضها.</GuideItem>
+          <GuideItem name="📋 الشكاوى">تصفية بالموسم والتصنيف والنوع (الشكاوى / الاعتراضات على قرارات) والحالة، و«⚠️ بلا دراسة شكوى» و«⚠️ بلا ملف قرار»، بحث وفرز، وتفاصيل كل طلب بجلساته وإحالاته.</GuideItem>
           <GuideItem name="🗓️ الجلسات">جلسات اليوم والقادمة والسابقة؛ لكل جلسة عنوان وموضوع وإحالة ونتيجة.</GuideItem>
           <GuideItem name="🔗 إرسال رابط">رسالة جاهزة للنسخ: رابط التقديم مع كلمة مرور تُولّد بضغطة.</GuideItem>
-          <GuideItem name="📑 قرارات الشكاوى و🏛️ قرارات الإدارة">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز.</GuideItem>
-          <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، المسؤولون، والإعدادات (الموسم، القوائم، قفل Excel، التصفير).</GuideItem>
+          <GuideItem name="📑 قرارات الشكاوى و🏛️ قرارات الإدارة">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز؛ والمصادقة، والاعتراضات على قرارات الإدارة.</GuideItem>
+          <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، المسؤولون، والإعدادات (الموسم، القوائم، «📝 عبارات ملفات Word ومهلة الاعتراض»، قفل Excel، التصفير).</GuideItem>
         </ul>
       </div>
 
@@ -5060,13 +5109,16 @@ function AdminGuide({ isManager }) {
           <GuideItem name="ثلاث نتائج منفصلة">نتيجة داخلية للقسم والإدارة، ونص للمشتكي، ونص للمعترض.</GuideItem>
           <GuideItem name="خصوصية المشتكي">المعترض لا يرى اسم المشتكي ولا رقمه.</GuideItem>
           <GuideItem name="التصفير">يحتاج كلمة المدير ورمز تصفير خاصاً وكتابة كلمة «تصفير».</GuideItem>
+          <GuideItem name="🗑️ حذف شكوى أو اعتراض (للمدير)">من أسفل البطاقة، بكتابة رقمه للتأكيد؛ تُحذف معه جلساته وإحالاته. إن كان آخر رقم في الموسم يأخذه الطلب التالي، وإلا يبقى مكانه فارغاً.</GuideItem>
         </ul>
       </div>
 
       <div className="card">
         <h2>التصدير</h2>
         <ul className="list">
-          <GuideItem name="📄 ملف الشكوى (Word)">من تفاصيل أي شكوى: بالترويسة الرسمية، قابل للتعديل.</GuideItem>
+          <GuideItem name="📄 دراسة شكوى / دراسة اعتراض (Word)">زر «📄 Word» في البطاقة: بالترويسة الرسمية، قابل للتعديل، واسمه «دراسة شكوى - اسم المشتكي - الرقم».</GuideItem>
+          <GuideItem name="📜 القرار (Word)">تبويب «📜 القرار»: رأي لجنة الشكاوى والصلح أولاً، ثم القرار، ثم التبليغ؛ يمكن تعديل البنود قبل التوليد.</GuideItem>
+          <GuideItem name="📝 عبارات الملفات">العبارات الثابتة في الدراسة والقرار (العنوان، المقدمات، الخلاصة، بنود الحكم، التبليغ) تُعدَّل من الإعدادات، والفارغة لا تظهر.</GuideItem>
           <GuideItem name="📥 الجداول (Excel)">الشكاوى والجلسات والإحالات للموسم المختار، مقفولة للعرض فقط.</GuideItem>
           <GuideItem name="📂 استعراض نسخة محفوظة">فتح أي ملف Excel سابق داخل المنصة للاطلاع، مع فرز وتصفية.</GuideItem>
         </ul>

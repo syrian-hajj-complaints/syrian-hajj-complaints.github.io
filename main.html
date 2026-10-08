@@ -94,6 +94,7 @@
     2026-10-07  حاوية تعطيل نموذج الجلسة (.plain-fieldset).
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
+    2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -292,6 +293,10 @@
   .sort-arrow { font-size: 11px; color: var(--brand); margin-inline-start: 2px; }
   .sort-arrow.off { color: #c4bba6; }
   table.sheet th { font-size: .9em; }
+  /* عرض الأعمدة: حافة السحب على يسار العنوان، ومحتوى العمود المحدد العرض يُقصّ بنقاط */
+  .col-resizer { position: absolute; top: 0; bottom: 0; inset-inline-end: -4px; width: 9px; cursor: col-resize; touch-action: none; z-index: 2; }
+  .col-resizer:hover, .col-resizer.on { background: rgba(0, 89, 79, .28); }
+  .cw { overflow: hidden; text-overflow: ellipsis; }
 
   /* شريط أدوات الجدول: عدد الأسطر، الأعمدة، حجم الخط، التصدير */
   .table-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
@@ -736,6 +741,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=7b720fa30a"></script>
+<script src="app.js?v=7e62f61a75"></script>
 </body>
 </html>
