@@ -79,6 +79,13 @@
 //                جدول بعناوين خضراء (المشتكي والمشتكى عليه بالصفة والهاتف، موضوع الشكوى وتصنيفها)، ثم «تقدم المشتكي… بتاريخ …م مفادها نصاً:».
 //    2026-10-06  القرار: الترويسة بعرض الصفحة كاملاً، العنوان ممدود وأكبر، البنود موزّعة على عرض السطر بتباعد سطر ونصف،
 //                والتوقيع في أسفل الصفحة: «لجنة الشكاوى والصلح» يساراً والتاريخ يميناً.
+//    2026-10-08  دراسة الشكوى: العنوان «دراسة شكوى - موسم حج …هـ»، و«تقدّم المشتكي بشكوى إلى لجنة الشكاوى والصلح ضد المشتكى
+//                عليه بتاريخ …م، مفادها ما يلي:»، وعبارة الخلاصة (STUDY_FINDING) قبل «لذلك ولكل ما تقدم»؛ القرار: أولاً رأي لجنة
+//                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
+//    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
+//                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  بطاقة «📝 عبارات ملفات Word» في الإعدادات (القسم 52، DocTextsCard): يعدّل المدير العبارات الثابتة في الدراسة والقرار
+//                (العنوان، المقدمات، الخلاصة، التبليغ) مع {الموسم} و{التاريخ}، و«↩️ النص الأصلي»؛ الفارغة لا تظهر.
 //    2026-10-07  أزرار الروابط باسم نوعها (📁 مجلد، 📝 مستند، 📊 جدول، 📄 PDF، 🖼️ صورة، 🎬 فيديو، 📎 ملف Drive) بدل «رابط 1».
 //    2026-10-07  روابط الجلسة في نموذجها كأزرار «🔗 رابط 1» مع «✏️ تعديل الروابط» (الخانتان تظهران عند التعديل فقط)؛
 //                اسم ملفَي Word: «دراسة شكوى - اسم المشتكي - الرقم» و«قرار - اسم المشتكي - الرقم».
@@ -245,9 +252,36 @@ function loadDocx() {
   return docxPromise;
 }
 
+// عبارات ملفات Word الثابتة: [المفتاح، الوصف في الإعدادات، النص الأصلي]؛ يعدّلها المدير من «📝 عبارات ملفات Word»
+// (القسم 52: doc_texts)، والمفتاح الغائب = النص الأصلي، والنص الفارغ = لا تظهر العبارة؛ {الموسم} و{التاريخ} تُستبدل بقيم الشكوى
+const DOC_TEXT_FIELDS = [
+  ["study_title",         "عنوان دراسة الشكوى", "دراسة شكوى - موسم حج {الموسم}هـ"],
+  ["study_intro",         "مقدمة نص الشكوى (قبل نصها)", "تقدّم المشتكي بشكوى إلى لجنة الشكاوى والصلح ضد المشتكى عليه بتاريخ {التاريخ}م، مفادها ما يلي:"],
+  ["study_after_subject", "بعد نص الشكوى (قبل الجلسات)", "بعد اطلاع اللجنة على الشكوى، اتصلت بالمشتكي لمناقشة مضمونها."],
+  ["opinion_intro",       "مقدمة رأي لجنة الشكاوى والصلح (في الدراسة، وفي البند الأول من القرار)", "بعد اطلاع اللجنة على الشكاوى المقدمة، ودراسة رد المشتكى عليه، والتواصل معه ومناقشته حول ملابسات الشكاوى، تبيّن للجنة ما يلي:"],
+  ["study_finding",       "خلاصة اللجنة (بعد الجلسات، قبل «لذلك ولكل ما تقدم»)", "وبناءً على ما تقدم، وبعد دراسة الشكاوى وأقوال المشتكى عليه والوقائع المرتبطة بها، خلصت اللجنة إلى ثبوت التقصير في متابعة إجراءات تسجيل الحجاج أصحاب الشكاوى محل البحث."],
+  ["study_conclusion",    "مقدمة بنود القرار في الدراسة", "لذلك ولكل ما تقدم، قررت لجنة الشكاوى والصلح ما يلي:"],
+  ["notify",              "بند التبليغ (آخر بند في الدراسة والقرار)", "يُبلَّغ هذا القرار من يلزم لتنفيذه."],
+];
+
+// نص عبارة من العبارات المحفوظة T (أو الأصلي)، مع استبدال {الموسم} و{التاريخ}؛ "" = لا تظهر
+function docText(T, key, vars = {}) {
+  const def = (DOC_TEXT_FIELDS.find(x => x[0] === key) || [])[2] || "";
+  const t = T && typeof T[key] === "string" ? T[key] : def;
+  return t.replace(/\{(الموسم|التاريخ)\}/g, (m, k) => vars[k] == null ? "" : vars[k]).trim();
+}
+
+// جلب العبارات المحفوظة (كائن فارغ = النصوص الأصلية، مثلاً قبل تنفيذ القسم 52)
+async function getDocTexts(secret) {
+  try {
+    const { data, error } = await sb.rpc("admin_get_doc_texts", { p_secret: secret });
+    return !error && data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch { return {}; }
+}
+
 // بناء مستند Word للشكوى (sess: جلساتها، logo: صورة الشعار، letterhead: صورة الترويسة الرسمية — أو null)
-// images: صور الروابط المجلوبة {الرابط: {data, w, h}} — تُدمج تحت رابطها
-function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
+// images: صور الروابط المجلوبة {الرابط: {data, w, h}} — تُدمج تحت رابطها؛ T: عبارات الملف المحفوظة (docText)
+function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
   const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, BorderStyle, ShadingType, Header,
           HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
   // ألوان الهوية والخط
@@ -258,6 +292,8 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
     .map(part => new TextRun({ text: part, font: FONT, size: o.size || 24, bold: !!o.bold, color: o.color || INK, rightToLeft: !/^\d/.test(part) }));
   const para = (text, o = {}) => new Paragraph({ bidirectional: true, spacing: { before: o.before || 0, after: o.after == null ? 80 : o.after }, children: runs(text, o) });
   const heading = text => para(text, { bold: true, size: 28, color: GREEN2, before: 280, after: 120 });
+  // فقرة عبارة قابلة للتعديل: لا شيء إن كانت فارغة
+  const opt = (text, o) => text ? [para(text, o)] : [];
   // نص طويل في مربع رملي فاتح (كل سطر فقرة)
   const box = text => String(text || "—").split("\n").map(line => new Paragraph({
     bidirectional: true, spacing: { after: 0 }, shading: { type: ShadingType.CLEAR, fill: SAND, color: "auto" }, children: runs(line || " "),
@@ -296,7 +332,7 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
     para(`الجلسة ${sess.indexOf(s) + 1}${s.title ? " — " + s.title : ""} (${xlDate(s.session_at)})`, { bold: true, size: 26, color: GREEN2, before: 160 }),
     ...(s.location ? [para(`المكان: ${s.location}`, { color: MUTED, after: 60 })] : []),
     para("موضوع الجلسة:", { bold: true, after: 40 }), ...box(s.topic),
-    ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...box(s.opinion)] : []),
+    ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...opt(docText(T, "opinion_intro"), { after: 40 }), ...box(s.opinion)] : []),
     para("نتيجة الجلسة:", { bold: true, before: 80, after: 40 }), ...box(s.result),
     ...linkParas("روابط الجلسة:", s.links),
   ]);
@@ -337,27 +373,30 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}) {
 
   // المحتوى بالترتيب المعتمد: الرقم، العنوان، الجدول، نص الشكوى، ثم الجلسات والنتائج والاعتراض
   const closedBefore = objAt !== null || isClosed(c.status);
+  const vars = { "الموسم": c.season || "", "التاريخ": received };   // قيم {الموسم} و{التاريخ} في العبارات
   const body = [
     para(`الرقم: ${complaintRef(c)}`, { bold: true, size: 26, after: 200 }),
-    new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 120, after: 280 },
-      children: runs(`دراسة شكوى في موسم حج ${c.season || ""}هـ`, { bold: true, size: 32 }) }),
+    ...(docText(T, "study_title", vars) ? [new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 120, after: 280 },
+      children: runs(docText(T, "study_title", vars), { bold: true, size: 32 }) })] : []),
     info,
-    para(`تقدم المشتكي ضد المشتكى عليه إلى لجنة الشكاوى والصلح بتاريخ ${received}م مفادها نصاً:`, { bold: true, size: 26, before: 360, after: 120 }),
+    ...opt(docText(T, "study_intro", vars), { bold: true, size: 26, before: 360, after: 120 }),
     ...box(c.subject), ...linkParas("روابط الشكوى:", c.links),
-    para("بعد اطلاع اللجنة على الشكوى، اتصلت بالمشتكي لمناقشة مضمونها.", { size: 26, before: 240, after: 120 }),
+    ...opt(docText(T, "study_after_subject", vars), { size: 26, before: 240, after: 120 }),
     heading(objAt !== null ? "الجلسات قبل الاعتراض" : "الجلسات"), ...sessionsBlock(before),
   ];
   // الخاتمة: «لذلك ولكل ما تقدم…» ثم بنود القرار مرقّمة (سطر لكل بند من النتيجة، وآخرها التبليغ)،
   // ثم «دمشق في: …هـ – الموافق: …م» في الوسط، و«لجنة الشكاوى والصلح» يساراً
   const conclusion = (result, at) => {
     const lines = String(result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).filter(Boolean);
-    const items = [...lines, "يُبلَّغ هذا القرار من يلزم لتنفيذه."];
+    const items = [...lines, docText(T, "notify", vars)].filter(Boolean);
     const d = at ? new Date(at) : new Date();
     // التاريخ بمسافات حول الشرطات: في السطر العربي يعرض Word أجزاء الأرقام المفصولة بمسافات من اليمين لليسار،
     // فتُكتب بترتيب معكوس لتظهر «28 / 05 / 1447»
     const spaced = t => String(t).split("/").reverse().join(" / ");
     return [
-      para("لذلك ولكل ما تقدم، قررت لجنة الشكاوى والصلح ما يلي:", { bold: true, size: 26, before: 360, after: 160 }),
+      // خلاصة اللجنة بعد الجلسات ورأيها، ثم مقدمة البنود (عبارتان من الإعدادات)
+      ...opt(docText(T, "study_finding", vars), { size: 26, before: 360, after: 120 }),
+      ...opt(docText(T, "study_conclusion", vars), { bold: true, size: 26, before: 360, after: 160 }),
       ...items.map((x, i) => new Paragraph({ bidirectional: true, alignment: "both", spacing: { after: 160, line: 360 },
         children: runs(`${i + 1}- ${x}`, { size: 26 }) })),
       new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 480, after: 360 }, children: [
@@ -456,16 +495,26 @@ function complaintRef(c) {
   return serial ? `${String(Number(serial)).padStart(2, "0")}/${String(season).slice(-2)}/ ق.ش` : "";
 }
 
-// القيم الأولى للقرار من الشكوى
-function decisionDefaults(c) {
+// القيم الأولى للقرار من الشكوى؛ البنود: رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) أولاً إن وُجد،
+// ثم قرار اللجنة (نتيجة الشكوى)، ثم التبليغ
+const ORDINALS = ["أولاً", "ثانياً", "ثالثاً", "رابعاً"];
+// (T: عبارات الملف المحفوظة — مقدمة الرأي وبند التبليغ)
+function decisionDefaults(c, opinion = "", T = {}) {
   const d = c.closed_date ? new Date(c.closed_date) : new Date();
+  const intro = docText(T, "opinion_intro");
+  const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), (c.result || c.complainant_result || "").trim(), docText(T, "notify")]
+    .filter((x, i) => x || i === 1);
   return {
     number: complaintRef(c),
     hijri: hijriDate(d),
     greg: gregDate(d),
-    items: [`أولاً: ${(c.result || c.complainant_result || "").trim()}`, "ثانياً: يُبلَّغ هذا القرار من يلزم لتنفيذه."].join("\n"),
+    items: items.map((x, i) => `${ORDINALS[i]}: ${x}`).join("\n"),
   };
 }
+
+// رأي اللجنة في آخر جلسة فيها رأي (للقرار)
+const lastOpinion = sess => ((sess || []).filter(s => (s.opinion || "").trim())
+  .sort((a, b) => new Date(b.session_at) - new Date(a.session_at))[0] || {}).opinion || "";
 
 // بناء مستند القرار (f: {number, hijri, greg, items}، letterhead: صورة الترويسة أو null)
 function buildDecisionDoc(D, f, letterhead) {
@@ -506,12 +555,24 @@ function buildDecisionDoc(D, f, letterhead) {
 }
 
 // تبويب «📜 القرار» في بطاقة الشكوى: معاينة القرار بقيمه المولَّدة، وتعديلها اختيارياً، ثم توليده Word
-function DecisionTab({ c }) {
+function DecisionTab({ secret, c }) {
   const [f, setF] = useState(() => decisionDefaults(c));
   const [edit, setEdit] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);   // حتى جلب رأي اللجنة من الجلسات
   const [err, setErr] = useState("");
-  const set = key => e => setF(x => ({ ...x, [key]: e.target.value }));
+  const touched = React.useRef(false);           // عدّل المستخدم القيم؟ فلا تُستبدل بعد الجلب
+  const set = key => e => { touched.current = true; setF(x => ({ ...x, [key]: e.target.value })); };
+
+  // جلب الجلسات لأخذ رأي اللجنة (البند الأول)، وعبارات الملف من الإعدادات
+  useEffect(() => {
+    let live = true;
+    Promise.all([sb.rpc("admin_list_sessions", { p_secret: secret, p_complaint_id: c.id }), getDocTexts(secret)]).then(([{ data }, T]) => {
+      if (!live) return;
+      if (!touched.current) setF(decisionDefaults(c, lastOpinion(data), T));
+      setBusy(false);
+    });
+    return () => { live = false; };
+  }, [secret, c.id]);
 
   // التوليد والتنزيل
   async function generate() {
@@ -553,7 +614,7 @@ function DecisionTab({ c }) {
           : <button type="button" className="btn secondary" onClick={() => setEdit(true)}>✏️ تعديل قبل التوليد</button>}
       </div>
       <small className="hint" style={{ display: "block", marginTop: 6 }}>
-        القيم تُولَّد من الشكوى: الرقم من تسلسلها وموسمها، والتاريخ من تاريخ إغلاقها (أو اليوم)، والبند الأول من نتيجتها. التعديل لا يُحفظ في الشكوى، والملف قابل للتعديل في Word.
+        القيم تُولَّد من الشكوى: الرقم من تسلسلها وموسمها، والتاريخ من تاريخ إغلاقها (أو اليوم)، والبند الأول رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) ثم قرار اللجنة من نتيجتها. التعديل لا يُحفظ في الشكوى، والملف قابل للتعديل في Word.
       </small>
     </div>
   );
@@ -572,9 +633,9 @@ async function exportComplaintWord(secret, c) {
   // صورتا الترويسة والشعار من موقع المنصة، وصور روابط الشكوى والاعتراض والجلسات
   const urls = [...new Set([...cleanLinks(c.links), ...cleanLinks(c.objection_links), ...sess.flatMap(x => cleanLinks(x.links))])];
   const images = {};
-  const [letterhead, logo] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png"),
+  const [letterhead, logo, T] = await Promise.all([fetchBytes("letterhead.jpg"), fetchBytes("logo.png"), getDocTexts(secret),
     ...urls.map(async u => { const im = await fetchLinkImage(u); if (im) images[u] = im; })]);
-  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images)), wordName("دراسة شكوى", c));
+  downloadBlob(await D.Packer.toBlob(buildComplaintDoc(D, c, sess, logo, letterhead, images, T)), wordName("دراسة شكوى", c));
   return { images: Object.keys(images).length, links: urls.length };
 }
 
@@ -2483,6 +2544,7 @@ function AdminSettings({ secret, rows, reload }) {
     <ExportCard secret={secret} rows={rows} />
     <SeasonArchiveCard secret={secret} rows={rows} reload={reload} />
     <QuickLinksCard secret={secret} />
+    <DocTextsCard secret={secret} />
     <SeasonCard secret={secret} reload={reload} />
     <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
       hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
@@ -2928,6 +2990,54 @@ function SeasonArchiveCard({ secret, rows, reload }) {
         <button type="button" className="btn sm" disabled={!!busy || !localSeason.trim() || !addUrl.trim()} onClick={addByLink}>{busy === "add" ? "جارٍ الفحص…" : "➕ إضافة"}</button>
       </div>
       {viewing && <SeasonViewer source={{ title: `موسم ${viewing.season}`, url: viewing.url }} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+// بطاقة الإعدادات «📝 عبارات ملفات Word»: العبارات الثابتة في «دراسة شكوى» و«القرار» (DOC_TEXT_FIELDS)؛
+// خانة لكل عبارة، و«↩️ النص الأصلي» لإعادتها، والفارغة لا تظهر في الملف؛ الحفظ مرة واحدة لكل العبارات
+function DocTextsCard({ secret }) {
+  const [t, setT] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const full = T => Object.fromEntries(DOC_TEXT_FIELDS.map(([k, , def]) => [k, typeof T[k] === "string" ? T[k] : def]));
+  useEffect(() => {
+    sb.rpc("admin_get_doc_texts", { p_secret: secret }).then(({ data, error }) => {
+      if (error) setMsg({ type: "error", text: "تعذّر الجلب (نفّذ القسم 52 من schema.sql في Supabase). تظهر النصوص الأصلية." });
+      setT(full(!error && data && typeof data === "object" ? data : {}));
+    });
+  }, [secret]);
+
+  // الحفظ: كل العبارات (بلا مسافات زائدة في طرفيها)
+  async function save() {
+    setBusy(true); setMsg(null);
+    const next = Object.fromEntries(Object.entries(t).map(([k, v]) => [k, String(v || "").trim()]));
+    const { data, error } = await sb.rpc("admin_set_doc_texts", { p_secret: secret, p_texts: next });
+    setBusy(false);
+    if (error || data !== "OK") return setMsg({ type: "error", text: "تعذّر الحفظ (نفّذ القسم 52 من schema.sql في Supabase)." });
+    setT(next); setMsg({ type: "ok", text: "✅ حُفظت العبارات، وتظهر في ملفات Word التي تُولَّد من الآن." });
+  }
+
+  return (
+    <div className="card">
+      <h2>📝 عبارات ملفات Word</h2>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>
+        العبارات الثابتة في «دراسة شكوى» و«القرار». <b>{"{الموسم}"}</b> و<b>{"{التاريخ}"}</b> تُستبدلان بموسم الشكوى وتاريخ ورودها.
+        العبارة الفارغة لا تظهر في الملف.
+      </p>
+      {t === null ? <Loading /> : (
+        <div className="grid">
+          {DOC_TEXT_FIELDS.map(([k, label, def]) => (
+            <Field key={k} label={label} full hint={t[k] !== def ? "معدّلة عن النص الأصلي" : undefined}>
+              <textarea style={{ minHeight: 64 }} value={t[k]} maxLength={2000} onChange={e => { const v = e.target.value; setT(x => ({ ...x, [k]: v })); setMsg(null); }} />
+              {t[k] !== def && <button type="button" className="btn danger-text" style={{ color: "var(--brand)", alignSelf: "flex-start" }}
+                onClick={e => { e.preventDefault(); setT(x => ({ ...x, [k]: def })); }}>↩️ النص الأصلي</button>}
+            </Field>
+          ))}
+        </div>
+      )}
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <button type="button" className="btn" style={{ marginTop: 10 }} disabled={busy || t === null} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 حفظ العبارات"}</button>
     </div>
   );
 }
@@ -3616,7 +3726,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       )}
 
       {cardTab === "objection" && <ObjectionSection secret={secret} complaint={c} onSaved={onSaved} />}
-      {cardTab === "decision" && <DecisionTab key={c.updated_at} c={c} />}
+      {cardTab === "decision" && <DecisionTab key={c.updated_at} secret={secret} c={c} />}
 
       {finalClosed && <div className="locked-note">🔒 أُغلقت الشكوى نهائياً بعد الاعتراض — يمكن تعديل الجلسات فقط.</div>}
     </div>

@@ -99,6 +99,7 @@
 --    2026-10-07  القسم 49: القرارات في صفحة التقارير للاطلاع (viewer_list_decisions)؛ كلمة مرور الأدمن الأولى صارت القسم 50.
 --    2026-10-07  القسم 50: رابط «ملف القرار» لكل شكوى (complaints.decision_url)؛ كلمة مرور الأدمن الأولى صارت القسم 51.
 --    2026-10-07  القسم 51: إلغاء «التغييرات» كلياً (المشغّلان والحقل)؛ كلمة مرور الأدمن الأولى صارت القسم 52.
+--    2026-10-08  القسم 52: «📝 عبارات ملفات Word» يعدّلها المدير من الإعدادات (doc_texts)؛ كلمة مرور الأدمن الأولى صارت القسم 53.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -5769,7 +5770,50 @@ grant execute on function public.admin_add_season_complaint(text, text, timestam
 grant execute on function public.admin_record_objection(text, uuid, text, timestamptz, text[]) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 52) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 52) «📝 عبارات ملفات Word»: العبارات الثابتة في «دراسة شكوى» و«القرار» يعدّلها المدير من الإعدادات
+--     app_settings: doc_texts = {"study_title": "…", "study_intro": "…", …} (المفتاح الغائب = النص الأصلي في المنصة)
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+insert into public.app_settings (key, value) values ('doc_texts', '{}') on conflict (key) do nothing;
+
+-- قراءة العبارات (للمدير والمسؤول — كلاهما يصدّر Word)
+create or replace function public.admin_get_doc_texts(p_secret text)
+returns json
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return null;
+  end if;
+  return coalesce(public.setting('doc_texts'), '{}')::json;
+end $$;
+
+-- حفظ العبارات (للمدير فقط): كائن بمفاتيح معروفة، وكل نص حتى 2000 حرف؛ تُرجع 'OK' أو 'INVALID'
+create or replace function public.admin_set_doc_texts(p_secret text, p_texts json)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_bad int;
+begin
+  if public.verify_password('مدير', p_secret) is null or json_typeof(coalesce(p_texts, '{}'::json)) <> 'object' then
+    return 'INVALID';
+  end if;
+  select count(*) into v_bad from json_each_text(coalesce(p_texts, '{}'::json)) e
+   where e.key not in ('study_title', 'study_intro', 'study_after_subject', 'opinion_intro', 'study_finding', 'study_conclusion', 'notify')
+      or length(coalesce(e.value, '')) > 2000;
+  if v_bad > 0 then
+    return 'INVALID';
+  end if;
+  insert into public.app_settings (key, value) values ('doc_texts', coalesce(p_texts, '{}'::json)::text)
+    on conflict (key) do update set value = excluded.value;
+  return 'OK';
+end $$;
+
+-- السماح للموقع باستدعاء الدالتين
+grant execute on function public.admin_get_doc_texts(text)       to anon, authenticated;
+grant execute on function public.admin_set_doc_texts(text, json) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 53) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
