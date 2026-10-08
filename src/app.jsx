@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  الحكم في الاعتراض على قرار إداري (القسم 56، VerdictBox): شكلاً (قبول / رد، ويُقترح «رد» خارج المدة) وموضوعاً
+//                (تصديق / إلغاء / تعديل)؛ تُولَّد منه بنود القرار في «دراسة اعتراض» و«📜 القرار» (عباراتها في الإعدادات، مع
+//                {النتيجة})، ويظهر على قرار الإدارة (✅ صُدّق / ❌ أُلغي / ✏️ عُدّل بعد الاعتراض)؛ وعمودان في ملف الموسم.
 //    2026-10-08  ربط الاعتراض على قرار إداري بـ«🏛️ قرارات الإدارة» برقم القرار (كالمصادقة، بلا تغيير في القاعدة): اختياره من
 //                قائمة في «تعديل بيانات القرار المعترض عليه» يملأ تاريخه، وعنوانه ورابطه في البطاقة؛ وفي قرارات الإدارة شارة
 //                «⚖️ معترض عليه» وتصفية «عليها اعتراض» ومربع «اعتراضات على هذا القرار» (يفتح الاعتراض) — وفي صفحة التقارير.
@@ -299,19 +302,42 @@ const DOC_TEXT_FIELDS = [
   ["obj_after_subject",   "بعد نص الاعتراض (قبل الجلسات)", "بعد أن اطلعت اللجنة على الاعتراض، تواصلت مع الجهات المعنية ومع المعترض لمناقشة مضمونه."],
   ["obj_opinion_intro",   "مقدمة رأي لجنة الشكاوى والصلح في الاعتراض (في الدراسة، وفي البند الأول من القرار)", "بعد اطلاع اللجنة على الاعتراض والردود عليه، ومناقشة المعترض حول ملابساته، تبيّن للجنة ما يلي:"],
   ["obj_finding",         "خلاصة اللجنة في الاعتراض (فارغة افتراضياً)", ""],
+  // بنود الحكم في الاعتراض (تُولَّد من «شكلاً» و«موضوعاً» في بطاقة الاعتراض)؛ {النتيجة} = نتيجة الاعتراض من آخر جلسة
+  ["v_form_accept",       "قبول الاعتراض شكلاً", "قبول الاعتراض شكلاً لتقديمه ضمن المدة القانونية."],
+  ["v_form_reject",       "رد الاعتراض شكلاً", "رد اعتراض المعترض شكلاً لتقديمه خارج المدة القانونية."],
+  ["v_merit_confirm",     "موضوعاً: تصديق القرار", "رد الاعتراض موضوعاً، والتصديق على القرار رقم {رقم القرار} الصادر بحق المعترض."],
+  ["v_merit_cancel",      "موضوعاً: إلغاء القرار", "قبول الاعتراض موضوعاً، وإلغاء القرار رقم {رقم القرار} الصادر بحق المعترض."],
+  ["v_merit_amend",       "موضوعاً: تعديل القرار", "قبول الاعتراض جزئياً، وتعديل القرار رقم {رقم القرار} الصادر بحق المعترض على النحو الآتي: {النتيجة}"],
 ];
+
+// الحكم في الاعتراض على قرار إداري: الخيارات، ومفتاح عبارة كل خيار، وما يظهر على قرار الإدارة
+const VERDICT_FORM = { "قبول": "v_form_accept", "رد": "v_form_reject" };
+const VERDICT_MERIT = { "تصديق": "v_merit_confirm", "إلغاء": "v_merit_cancel", "تعديل": "v_merit_amend" };
+const MERIT_TAG = { "تصديق": "✅ صُدّق بعد الاعتراض", "إلغاء": "❌ أُلغي بعد الاعتراض", "تعديل": "✏️ عُدّل بعد الاعتراض" };
+
+// قيم المتغيرات في العبارات لطلب: الموسم، تاريخ وروده، ورقم القرار المعترض عليه وتاريخه والجهة المحيلة، والنتيجة
+function docVars(c) {
+  const ymd = d => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+  return { "الموسم": c.season || "", "التاريخ": c.received_date ? ymd(new Date(c.received_date)) : "", "رقم القرار": c.decision_ref || "",
+           "الجهة المحيلة": c.referred_by || "", "النتيجة": String(c.result || "").trim(),
+           "تاريخ القرار": c.decision_date ? ymd(new Date(`${String(c.decision_date).slice(0, 10)}T00:00:00`)) : "" };
+}
+
+// بنود الحكم (شكلاً ثم موضوعاً) من العبارات؛ [] إن لم يُحدَّد حكم
+const verdictItems = (c, T) => !isDecObj(c) ? [] : [VERDICT_FORM[c.obj_form], VERDICT_MERIT[c.obj_merit]]
+  .filter(Boolean).map(k => docText(T, k, docVars(c))).filter(Boolean);
 // مفتاح العبارة في «دراسة اعتراض» بدل مفتاحها في «دراسة شكوى»
 const OBJ_TEXT_KEY = { study_title: "obj_title", study_intro: "obj_intro", study_after_subject: "obj_after_subject",
                        opinion_intro: "obj_opinion_intro", study_finding: "obj_finding" };
 // عناوين مجموعات العبارات في الإعدادات (أول مفتاح في كل مجموعة)
-const DOC_TEXT_GROUPS = { study_title: "📄 دراسة شكوى", obj_title: "⚖️ دراسة اعتراض على قرار إداري" };
+const DOC_TEXT_GROUPS = { study_title: "📄 دراسة شكوى", obj_title: "⚖️ دراسة اعتراض على قرار إداري", v_form_accept: "📜 بنود الحكم في الاعتراض (شكلاً وموضوعاً)" };
 
 // نص عبارة من العبارات المحفوظة T (أو الأصلي)، مع استبدال المتغيرات؛ "" = لا تظهر
 // (المتغير الفارغ يُحذف، وتُزال المسافة الزائدة قبل الفاصلة)
 function docText(T, key, vars = {}) {
   const def = (DOC_TEXT_FIELDS.find(x => x[0] === key) || [])[2] || "";
   const t = T && typeof T[key] === "string" ? T[key] : def;
-  return t.replace(/\{(الموسم|التاريخ|رقم القرار|تاريخ القرار|الجهة المحيلة)\}/g, (m, k) => vars[k] == null ? "" : vars[k])
+  return t.replace(/\{(الموسم|التاريخ|رقم القرار|تاريخ القرار|الجهة المحيلة|النتيجة)\}/g, (m, k) => vars[k] == null ? "" : vars[k])
     .replace(/ {2,}/g, " ").replace(/ +([،,.])/g, "$1").trim();
 }
 
@@ -417,14 +443,10 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
       ...(c.accused_note ? [wide(`ملاحظة عن ${L.against}`, c.accused_note)] : []),
     ],
   });
-  const ymd = d => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
-  const received = ymd(new Date(c.received_date));
-
   // المحتوى بالترتيب المعتمد: الرقم، العنوان، الجدول، نص الشكوى، ثم الجلسات والنتائج والاعتراض
   const closedBefore = objAt !== null || isClosed(c.status);
   // قيم المتغيرات في العبارات
-  const vars = { "الموسم": c.season || "", "التاريخ": received, "رقم القرار": c.decision_ref || "", "الجهة المحيلة": c.referred_by || "",
-                 "تاريخ القرار": c.decision_date ? ymd(new Date(`${String(c.decision_date).slice(0, 10)}T00:00:00`)) : "" };
+  const vars = docVars(c);
   const body = [
     para(`الرقم: ${complaintRef(c)}`, { bold: true, size: 26, after: 200 }),
     ...(docText(T, K("study_title"), vars) ? [new Paragraph({ bidirectional: true, alignment: "center", spacing: { before: 120, after: 280 },
@@ -436,10 +458,11 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
     ...opt(docText(T, K("study_after_subject"), vars), { size: 26, before: 240, after: 120 }),
     heading(objAt !== null ? "الجلسات قبل الاعتراض" : "الجلسات"), ...sessionsBlock(before),
   ];
-  // الخاتمة: «لذلك ولكل ما تقدم…» ثم بنود القرار مرقّمة (سطر لكل بند من النتيجة، وآخرها التبليغ)،
-  // ثم «دمشق في: …هـ – الموافق: …م» في الوسط، و«لجنة الشكاوى والصلح» يساراً
+  // الخاتمة: «لذلك ولكل ما تقدم…» ثم بنود القرار مرقّمة (سطر لكل بند من النتيجة — أو بنود الحكم شكلاً وموضوعاً في الاعتراض
+  // على قرار إن حُدّد —، وآخرها التبليغ)، ثم «دمشق في: …هـ – الموافق: …م» في الوسط، و«لجنة الشكاوى والصلح» يساراً
   const conclusion = (result, at) => {
-    const lines = String(result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).filter(Boolean);
+    const verdict = verdictItems(c, T);
+    const lines = verdict.length ? verdict : String(result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).filter(Boolean);
     const items = [...lines, docText(T, "notify", vars)].filter(Boolean);
     const d = at ? new Date(at) : new Date();
     // التاريخ بمسافات حول الشرطات: في السطر العربي يعرض Word أجزاء الأرقام المفصولة بمسافات من اليمين لليسار،
@@ -549,13 +572,16 @@ function complaintRef(c) {
 
 // القيم الأولى للقرار من الشكوى؛ البنود: رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) أولاً إن وُجد،
 // ثم قرار اللجنة (نتيجة الشكوى)، ثم التبليغ
-const ORDINALS = ["أولاً", "ثانياً", "ثالثاً", "رابعاً"];
+const ORDINALS = ["أولاً", "ثانياً", "ثالثاً", "رابعاً", "خامساً", "سادساً"];
 // (T: عبارات الملف المحفوظة — مقدمة الرأي وبند التبليغ)
 function decisionDefaults(c, opinion = "", T = {}) {
   const d = c.closed_date ? new Date(c.closed_date) : new Date();
   const intro = docText(T, isDecObj(c) ? "obj_opinion_intro" : "opinion_intro");
-  const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), (c.result || c.complainant_result || "").trim(), docText(T, "notify")]
-    .filter((x, i) => x || i === 1);
+  // الاعتراض على قرار بحكم محدد: بنود الحكم (شكلاً ثم موضوعاً) بدل النتيجة
+  const verdict = verdictItems(c, T);
+  const middle = verdict.length ? verdict : [(c.result || c.complainant_result || "").trim()];
+  const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), ...middle, docText(T, "notify")]
+    .filter((x, i) => x || (i === 1 && !verdict.length));
   return {
     number: complaintRef(c),
     hijri: hijriDate(d),
@@ -704,8 +730,9 @@ const XL_SHEETS = [
     ["reminder_at", "تنبيه المتابعة", true], ["reminder_note", "المطلوب عند التنبيه"], ["objection_summary", "ملخص للمشتكى عليه"],
     ["objection_deadline", "آخر موعد للاعتراض", true], ["objection_extension_reason", "سبب التمديد الاستثنائي"], ["objection_text", "نص الاعتراض"], ["objection_links", "روابط الاعتراض"],
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["updated_at", "آخر تعديل", true],
-    // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»
-    ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"]] },
+    // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
+    ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
+    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -3710,7 +3737,62 @@ function DecObjInfo({ secret, c, onSaved }) {
           ✏️ تعديل بيانات القرار المعترض عليه
         </button>
       )}
+      <VerdictBox secret={secret} c={c} onSaved={onSaved} late={!!(delay && delay.late)} />
     </>
+  );
+}
+
+// الحكم في الاعتراض على قرار إداري: شكلاً (قبول / رد) وموضوعاً (تصديق / إلغاء / تعديل)؛ يحدده المدير
+// (admin_set_decobj_verdict)، وتُولَّد منه بنود القرار في «دراسة اعتراض» و«📜 القرار»، ويظهر على قرار الإدارة.
+// late: خارج المدة القانونية ← اقتراح «رد» شكلاً؛ onSaved غائب = للاطلاع فقط
+function VerdictBox({ secret, c, onSaved, late }) {
+  const [v, setV] = useState({ form: c.obj_form || "", merit: c.obj_merit || "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const canEdit = !!onSaved && ADMIN_CTX.manager;
+  const changed = v.form !== (c.obj_form || "") || v.merit !== (c.obj_merit || "");
+
+  async function save() {
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_decobj_verdict", { p_secret: secret, p_id: c.id, p_form: v.form, p_merit: v.merit });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الحفظ (نفّذ القسم 56 من schema.sql في Supabase)." });
+    onSaved(data[0]); setMsg({ type: "ok", text: "✅ حُفظ الحكم، وتُولَّد منه بنود القرار في ملفَي Word." });
+  }
+
+  // للاطلاع: الحكم نصاً (إن حُدّد)
+  if (!canEdit) return (c.obj_form || c.obj_merit) ? (
+    <div className="approval-box ok">
+      <b>⚖️ الحكم في الاعتراض: </b>
+      {c.obj_form && <span>شكلاً: {c.obj_form}</span>}{c.obj_form && c.obj_merit && " · "}
+      {c.obj_merit && <span>موضوعاً: {MERIT_TAG[c.obj_merit] || c.obj_merit}</span>}
+    </div>
+  ) : null;
+
+  return (
+    <div className="due-prompt">
+      <b>⚖️ الحكم في الاعتراض</b>
+      <small className="muted" style={{ display: "block", marginBottom: 8 }}>تُولَّد منه بنود القرار (عباراتها في الإعدادات ← «📝 عبارات ملفات Word»)، ويظهر على القرار في «🏛️ قرارات الإدارة».</small>
+      <div className="grid">
+        <Field label="شكلاً" hint={late && v.form !== "رد" ? "⚠️ قُدّم خارج المدة القانونية — المقترح: رد" : undefined}>
+          <select value={v.form} onChange={e => { setV(x => ({ ...x, form: e.target.value })); setMsg(null); }}>
+            <option value="">— لم يُحدَّد —</option>
+            <option value="قبول">قبول الاعتراض شكلاً</option>
+            <option value="رد">رد الاعتراض شكلاً</option>
+          </select>
+        </Field>
+        <Field label="موضوعاً">
+          <select value={v.merit} onChange={e => { setV(x => ({ ...x, merit: e.target.value })); setMsg(null); }}>
+            <option value="">— لم يُحدَّد —</option>
+            <option value="تصديق">رد الاعتراض والتصديق على القرار</option>
+            <option value="إلغاء">قبول الاعتراض وإلغاء القرار</option>
+            <option value="تعديل">قبول الاعتراض جزئياً وتعديل القرار</option>
+          </select>
+        </Field>
+      </div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <button type="button" className="btn sm" style={{ marginTop: 8 }} disabled={busy || !changed} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 حفظ الحكم"}</button>
+    </div>
   );
 }
 
@@ -4498,6 +4580,11 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   // الاعتراضات على قرار إدارة: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف)
   const objectionsOf = a => (requests || []).filter(r => isDecObj(r) && String(r.decision_ref || "").trim() === a.decision_number
     && (!a.season || !r.season || r.season === a.season));
+  // شارة القرار: الحكم موضوعاً في أحدث اعتراض محكوم (صُدّق / أُلغي / عُدّل)، وإلا «⚖️ معترض عليه»
+  const objTag = a => {
+    const judged = objectionsOf(a).filter(r => MERIT_TAG[r.obj_merit]).sort((x, y) => new Date(y.received_date) - new Date(x.received_date));
+    return judged.length ? MERIT_TAG[judged[0].obj_merit] : "⚖️ معترض عليه";
+  };
 
   // جلب القرارات
   const load = useCallback(async () => {
@@ -4673,7 +4760,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   <tr key={d.id} className="clickable" onClick={() => setShown(d)}>
                     <td><b dir="ltr">{d.decision_number}</b></td>
                     <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
-                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">⚖️ معترض عليه</span></>}</td>
+                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}</td>
                     <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
                     <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
                     {kind === "complaints" && <td>{d.approved ? `✅${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"}</td>}
@@ -4726,6 +4813,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                     <div key={r.complaint_number} className={onOpenRequest ? "clickable" : ""} style={{ marginTop: 6 }}
                       onClick={onOpenRequest ? () => { setShown(null); onOpenRequest(r); } : undefined} title={onOpenRequest ? "اضغط لفتح الاعتراض" : undefined}>
                       <b dir="ltr">{r.complaint_number}</b> — {r.complainant_name} <StatusBadge value={r.status} />
+                      {(r.obj_form || r.obj_merit) && <div><b>{r.obj_form ? `شكلاً: ${r.obj_form}` : ""}{r.obj_form && r.obj_merit ? " · " : ""}{r.obj_merit ? MERIT_TAG[r.obj_merit] : ""}</b></div>}
                       {r.result && <div className="muted" style={{ fontSize: 13.5 }}>النتيجة: {r.result}</div>}
                     </div>
                   ))}
