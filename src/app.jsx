@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  مربع الحكم: «✔️ الحكم الظاهر محفوظ» أو «تغيير غير محفوظ» بجانب الزر (كان الزر المعطّل يوحي بعدم الحفظ).
 //    2026-10-08  الحكم في الاعتراض على قرار إداري (القسم 56، VerdictBox): شكلاً (قبول / رد، ويُقترح «رد» خارج المدة) وموضوعاً
 //                (تصديق / إلغاء / تعديل)؛ تُولَّد منه بنود القرار في «دراسة اعتراض» و«📜 القرار» (عباراتها في الإعدادات، مع
 //                {النتيجة})، ويظهر على قرار الإدارة (✅ صُدّق / ❌ أُلغي / ✏️ عُدّل بعد الاعتراض)؛ وعمودان في ملف الموسم.
@@ -3774,7 +3775,7 @@ function VerdictBox({ secret, c, onSaved, late }) {
       <b>⚖️ الحكم في الاعتراض</b>
       <small className="muted" style={{ display: "block", marginBottom: 8 }}>تُولَّد منه بنود القرار (عباراتها في الإعدادات ← «📝 عبارات ملفات Word»)، ويظهر على القرار في «🏛️ قرارات الإدارة».</small>
       <div className="grid">
-        <Field label="شكلاً" hint={late && v.form !== "رد" ? "⚠️ قُدّم خارج المدة القانونية — المقترح: رد" : undefined}>
+        <Field label="شكلاً" hint={late && !v.form ? "⚠️ قُدّم خارج المدة القانونية — المقترح: رد" : late && v.form === "قبول" ? "⚠️ قُدّم خارج المدة القانونية، واخترت «قبول»" : undefined}>
           <select value={v.form} onChange={e => { setV(x => ({ ...x, form: e.target.value })); setMsg(null); }}>
             <option value="">— لم يُحدَّد —</option>
             <option value="قبول">قبول الاعتراض شكلاً</option>
@@ -3791,7 +3792,12 @@ function VerdictBox({ secret, c, onSaved, late }) {
         </Field>
       </div>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
-      <button type="button" className="btn sm" style={{ marginTop: 8 }} disabled={busy || !changed} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 حفظ الحكم"}</button>
+      {/* الزر يعمل عند تغيير الاختيار؛ وإلا يبيّن أن الحكم الظاهر هو المحفوظ */}
+      <div className="row" style={{ marginTop: 8 }}>
+        <button type="button" className="btn sm" disabled={busy || !changed} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 حفظ الحكم"}</button>
+        {!changed && (c.obj_form || c.obj_merit) && <span style={{ color: "var(--brand)", fontWeight: 700, fontSize: 13.5 }}>✔️ الحكم الظاهر محفوظ</span>}
+        {changed && <span className="muted" style={{ fontSize: 13.5 }}>تغيير غير محفوظ — اضغط «حفظ الحكم»</span>}
+      </div>
     </div>
   );
 }
