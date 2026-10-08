@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  «🗑️ حذف الشكوى / الاعتراض نهائياً» في أسفل البطاقة (للمدير، القسم 54) بكتابة الرقم للتأكيد؛ إن كان آخر رقم
+//                في موسمه يأخذه الطلب التالي.
 //    2026-10-08  «⚖️ اعتراض على قرار إداري» (القسم 53): زر في الشريط العلوي للوحة (للمدير والمسؤول؛ لا يظهر في الصفحات العامة)
 //                يفتح نافذة الإدخال (AddDecisionObjection)؛ يُرقَّم مع الشكاوى؛ شارة النوع وتسميات «المعترض / المعترض عليه»
 //                في البطاقة وبطاقة الاطلاع والجداول؛ رقم القرار وتاريخه والجهة المحيلة وفحص المهلة القانونية (DecObjInfo)؛
@@ -1994,7 +1996,8 @@ function AdminPage({ secret, onLogout }) {
         <div className="modal-back" onClick={() => setOpenId(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-close"><button className="btn sm" onClick={() => setOpenId(null)}>✕ إغلاق</button></div>
-            <ComplaintCard key={opened.id} secret={secret} complaint={opened} onSaved={onSaved} onSessionsChanged={() => setSessVer(n => n + 1)} fromDue={openFromDue} />
+            <ComplaintCard key={opened.id} secret={secret} complaint={opened} onSaved={onSaved} onSessionsChanged={() => setSessVer(n => n + 1)} fromDue={openFromDue}
+              onDeleted={id => { setOpenId(null); setRows(r => (r || []).filter(x => x.id !== id)); setSessVer(n => n + 1); }} />
           </div>
         </div>, document.body
       )}
@@ -3765,7 +3768,7 @@ function DecObjInfo({ secret, c, onSaved }) {
 
 // تفاصيل شكوى واحدة (في النافذة): البيانات + التصنيف، الترحيل، الحالة، النتائج الثلاث، الإغلاق، التنبيه،
 // والاعتراض والجلسات والسجل. fromDue: فُتحت من «المطلوب» فيظهر في أعلاها طلب تحديد التنبيه القادم
-function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromDue }) {
+function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromDue, onDeleted }) {
   // القيم القابلة للتعديل وحالة الحفظ
   // (الحالة والنتيجة والإغلاق للعرض فقط: تأتي من آخر جلسة)
   const [vState, setV] = useState({
@@ -3832,6 +3835,22 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
     }
     catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
     setWordBusy(false);
+  }
+
+  // حذف الطلب نهائياً (للمدير): كتابة رقمه للتأكيد، ثم admin_delete_complaint (يحذف جلساته وإحالاته،
+  // ويعيد رقمه للطلب التالي إن كان آخر رقم في موسمه)
+  async function remove() {
+    const L = partyLabels(c);
+    const typed = window.prompt(`حذف ${L.noun} ${c.complaint_number} نهائياً مع جلساتها وإحالاتها؟ لا يمكن التراجع.\n\nللتأكيد اكتب رقمها:`, "");
+    if (typed === null) return;
+    if (typed.trim() !== c.complaint_number) return setMsg({ type: "error", text: "الرقم المكتوب لا يطابق — لم يُحذف شيء." });
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_delete_complaint", { p_secret: secret, p_id: c.id, p_number: typed.trim() });
+    setBusy(false);
+    if (error || !data || !data.ok) return setMsg({ type: "error", text: "تعذّر الحذف (نفّذ القسم 54 من schema.sql في Supabase)." });
+    window.alert(data.freed ? `حُذف ${c.complaint_number}، ورقمه يأخذه الطلب التالي.`
+                            : `حُذف ${c.complaint_number}. رقمه ليس الأخير في الموسم، فيبقى مكانه فارغاً في التسلسل.`);
+    onDeleted && onDeleted(c.id);
   }
 
   // هل أُغلقت نهائياً بعد الاعتراض؟ (تُقفل ولا يبقى إلا تعديل الجلسات)
@@ -3962,6 +3981,12 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       {cardTab === "decision" && <DecisionTab key={c.updated_at} secret={secret} c={c} />}
 
       {finalClosed && <div className="locked-note">🔒 أُغلقت الشكوى نهائياً بعد الاعتراض — يمكن تعديل الجلسات فقط.</div>}
+      {/* حذف نهائي (للمدير فقط) */}
+      {ADMIN_CTX.manager && onDeleted && (
+        <div style={{ marginTop: 16, textAlign: "left" }}>
+          <button type="button" className="btn danger-text" disabled={busy} onClick={remove}>🗑️ حذف {partyLabels(c).noun} نهائياً</button>
+        </div>
+      )}
     </div>
   );
 }

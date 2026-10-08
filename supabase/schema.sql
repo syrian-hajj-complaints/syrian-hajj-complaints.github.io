@@ -102,6 +102,8 @@
 --    2026-10-08  القسم 52: «📝 عبارات ملفات Word» يعدّلها المدير من الإعدادات (doc_texts)؛ كلمة مرور الأدمن الأولى صارت القسم 53.
 --    2026-10-08  القسم 53: «⚖️ اعتراض على قرار إداري» (complaints.kind، decision_ref، decision_date، referred_by)، والمهلة القانونية
 --                (decision_objection_days، الافتراضي 3)، وعبارات «دراسة اعتراض»؛ كلمة مرور الأدمن الأولى صارت القسم 54.
+--    2026-10-08  القسم 54: حذف شكوى أو اعتراض نهائياً (admin_delete_complaint، للمدير) مع إعادة عدّاد الموسم إلى أكبر رقم باقٍ؛
+--                كلمة مرور الأدمن الأولى صارت القسم 55.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -6078,7 +6080,37 @@ grant execute on function public.viewer_complaint_card(text, text)            to
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 54) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 54) حذف شكوى أو اعتراض نهائياً (للمدير فقط، بكتابة رقمه للتأكيد): تُحذف معه جلساته وإحالاته؛
+--     ويعود عدّاد موسمه إلى أكبر رقم باقٍ فيه، فإن كان المحذوف آخر رقم يأخذه الطلب التالي (لا يبقى رقم فارغ)
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة
+-- ---------------------------------------------------------------------
+create or replace function public.admin_delete_complaint(p_secret text, p_id uuid, p_number text)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  c     public.complaints;
+  v_max int;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return json_build_object('ok', false, 'error', 'INVALID');
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null or btrim(coalesce(p_number, '')) <> c.complaint_number then
+    return json_build_object('ok', false, 'error', 'NUMBER');
+  end if;
+  delete from public.complaints where id = p_id;
+  -- العدّاد = أكبر رقم باقٍ في الموسم (أو صفر)
+  select coalesce(max(nullif(substring(x.complaint_number from '-(\d+)$'), '')::int), 0) into v_max
+    from public.complaints x where x.season = c.season;
+  update public.season_counters set last_number = v_max where season = c.season;
+  return json_build_object('ok', true, 'number', c.complaint_number,
+    'freed', coalesce(nullif(substring(c.complaint_number from '-(\d+)$'), '')::int, 0) > v_max);
+end $$;
+
+grant execute on function public.admin_delete_complaint(text, uuid, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 55) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
