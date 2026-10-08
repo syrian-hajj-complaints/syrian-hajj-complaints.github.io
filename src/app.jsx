@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  ربط الاعتراض على قرار إداري بـ«🏛️ قرارات الإدارة» برقم القرار (كالمصادقة، بلا تغيير في القاعدة): اختياره من
+//                قائمة في «تعديل بيانات القرار المعترض عليه» يملأ تاريخه، وعنوانه ورابطه في البطاقة؛ وفي قرارات الإدارة شارة
+//                «⚖️ معترض عليه» وتصفية «عليها اعتراض» ومربع «اعتراضات على هذا القرار» (يفتح الاعتراض) — وفي صفحة التقارير.
 //    2026-10-08  حذف زر «⚖️ اعتراض على قرار» ونافذته من الشريط العلوي: الاعتراض يُدخل كشكوى ثم يُحوَّل بزر «🔁 تحويل».
 //    2026-10-08  «🔁 تحويل إلى اعتراض على قرار إداري / إلى شكوى» في أسفل البطاقة (للمدير، القسم 55): الرقم والجلسات كما هي.
 //    2026-10-08  مربع «حدّد موعد التنبيه القادم» (من «المطلوب»): «مسح» ثم الحفظ يلغي التنبيه (كان يُظهر خطأ)، وزر «🔕 إلغاء التنبيه».
@@ -1978,7 +1981,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "today" && <AdminDue secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c, true)} />}
         {current === "links" && <AdminLinks secret={secret} isManager={isManager} />}
         {current === "decisions" && <AdminDecisions key="complaints" secret={secret} isManager={isManager} kind="complaints" />}
-        {current === "admindec" && <AdminDecisions key="admin" secret={secret} isManager={isManager} kind="admin" />}
+        {current === "admindec" && <AdminDecisions key="admin" secret={secret} isManager={isManager} kind="admin" requests={rows || []} onOpenRequest={c => openComplaint(c)} />}
         {current === "notes" && <AdminNotes secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
@@ -3630,12 +3633,23 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
 
 // معلومات الاعتراض على قرار إداري في البطاقة: رقم القرار وتاريخه والجهة المحيلة، وفحص المهلة القانونية؛
 // المدير يعدّلها (مع تاريخ تقديم الاعتراض) عبر admin_set_decision_objection؛ onSaved غائب = للاطلاع فقط
+// الربط بـ«🏛️ قرارات الإدارة» برقم القرار (كالمصادقة): اختيار القرار من القائمة يملأ تاريخه، ويظهر عنوانه ورابطه
 function DecObjInfo({ secret, c, onSaved }) {
   const [edit, setEdit] = useState(null);   // null = عرض فقط
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const delay = decObjDelay(c, ADMIN_CTX.objDays);
   const dateOnly = d => d ? String(d).slice(0, 10) : "";
+  // قرارات الإدارة (للوحة الإدارة فقط)، والقرار المرتبط برقمه (من موسم الاعتراض أولاً)
+  const [adminDecs, setAdminDecs] = useState([]);
+  useEffect(() => {
+    if (!secret) return;
+    sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setAdminDecs((data || []).filter(d => d.kind === "admin")));
+  }, [secret]);
+  const findDec = ref => { const r = String(ref || "").trim(); return r && (adminDecs.find(a => a.decision_number === r && a.season === c.season) || adminDecs.find(a => a.decision_number === r)); };
+  const linked = findDec(c.decision_ref);
+  // اختيار رقم من القائمة: تاريخ القرار من سجله
+  const pickRef = v => setEdit(x => { const a = findDec(v); return { ...x, ref: v, date: a && a.decision_date ? dateOnly(a.decision_date) : x.date }; });
 
   async function save() {
     if (!edit.at) return setErr("حدّد تاريخ تقديم الاعتراض.");
@@ -3651,7 +3665,10 @@ function DecObjInfo({ secret, c, onSaved }) {
   if (edit) return (
     <div className="due-prompt">
       <div className="grid">
-        <Field label="رقم القرار المعترض عليه"><input type="text" value={edit.ref} onChange={e => setEdit(x => ({ ...x, ref: e.target.value }))} maxLength={60} /></Field>
+        <Field label="رقم القرار المعترض عليه" hint={findDec(edit.ref) ? `🏛️ ${findDec(edit.ref).title}` : "اختر من «قرارات الإدارة» أو اكتب الرقم"}>
+          <input type="text" dir="ltr" list="decobj-dec-list" value={edit.ref} onChange={e => pickRef(e.target.value)} maxLength={60} />
+          <datalist id="decobj-dec-list">{adminDecs.map(a => <option key={a.id} value={a.decision_number}>{a.title}</option>)}</datalist>
+        </Field>
         <Field label="تاريخ صدور القرار"><input type="date" value={edit.date} onChange={e => setEdit(x => ({ ...x, date: e.target.value }))} /></Field>
         <Field label="الجهة المحيلة"><input type="text" value={edit.by} onChange={e => setEdit(x => ({ ...x, by: e.target.value }))} maxLength={200} /></Field>
         <Field label="تاريخ تقديم الاعتراض" required><input type="datetime-local" value={edit.at} onChange={e => setEdit(x => ({ ...x, at: e.target.value }))} /></Field>
@@ -3668,10 +3685,18 @@ function DecObjInfo({ secret, c, onSaved }) {
   return (
     <>
       <dl className="detail-grid info-grid">
-        <div><dt>📜 رقم القرار المعترض عليه</dt><dd>{c.decision_ref || "—"}</dd></div>
+        <div><dt>📜 رقم القرار المعترض عليه</dt><dd><span dir="ltr">{c.decision_ref || "—"}</span></dd></div>
         <div><dt>📅 تاريخ صدور القرار</dt><dd dir="ltr" style={{ textAlign: "right" }}>{c.decision_date ? fmtDate(`${dateOnly(c.decision_date)}T00:00:00`) : "—"}</dd></div>
         <div><dt>↪️ الجهة المحيلة</dt><dd>{c.referred_by || "—"}</dd></div>
       </dl>
+      {/* القرار المرتبط في «🏛️ قرارات الإدارة» */}
+      {linked && (
+        <div className="approval-box ok">
+          <b>🏛️ القرار المعترض عليه: </b>{linked.title}{linked.decision_date ? ` (${fmtDate(linked.decision_date)})` : ""}
+          {linked.url && <> · <a href={linked.url} target="_blank" rel="noopener">🔗 فتح القرار</a></>}
+        </div>
+      )}
+      {secret && c.decision_ref && !linked && adminDecs.length > 0 && <small className="muted">لا يوجد في «🏛️ قرارات الإدارة» قرار بهذا الرقم (مكتوب يدوياً).</small>}
       {delay && onSaved && (
         <div className={`reminder-bar ${delay.late ? "" : "later"}`}>
           {delay.late
@@ -4451,7 +4476,8 @@ const classesOf = d => String((d && d.classification) || "").split(/[،,]/).map(
 
 // kind: «complaints» (قرارات الشكاوى) أو «admin» (قرارات الإدارة) — القسم نفسه بقائمتين منفصلتين
 // viewer: صفحة التقارير (secret = كلمة مرور الإدارة) — اطلاع فقط بلا تصدير
-function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false }) {
+// requests: الشكاوى والاعتراضات (لربط «اعتراض على قرار إداري» بقرار الإدارة برقمه)؛ onOpenRequest: فتح الاعتراض من بطاقة القرار
+function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false, requests = [], onOpenRequest }) {
   const KIND = kind === "admin" ? "قرارات الإدارة" : "قرارات الشكاوى";
   // القرارات، أدوات البحث والتصفية والفرز، القرار المعروض، نموذج الإضافة/التعديل، والرسائل
   const [list, setList] = useState(null);
@@ -4468,6 +4494,10 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const [season, setSeason] = useState("");                    // موسم القرارات ("" = الكل)
   const [all, setAll] = useState([]);                          // كل القرارات بنوعيها (لربط المصادقة)
   const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
+  const [objF, setObjF] = useState("");                        // تصفية «⚖️ عليها اعتراض»: "" / yes (قرارات الإدارة)
+  // الاعتراضات على قرار إدارة: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف)
+  const objectionsOf = a => (requests || []).filter(r => isDecObj(r) && String(r.decision_ref || "").trim() === a.decision_number
+    && (!a.season || !r.season || r.season === a.season));
 
   // جلب القرارات
   const load = useCallback(async () => {
@@ -4489,7 +4519,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
     (!term || inField(d).some(v => (v || "").includes(term))) &&
     (!range.from || (d.decision_date || "") >= range.from) &&
     (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)) &&
-    (!appr || (appr === "yes" ? d.approved : !d.approved)));
+    (!appr || (appr === "yes" ? d.approved : !d.approved)) &&
+    (!objF || objectionsOf(d).length > 0));
   // القرار يُحسب في كل تصنيف من تصنيفاته
   const count = k => base.filter(d => !k || classesOf(d).includes(k)).length;
   const visible = base.filter(d => !klass || classesOf(d).includes(klass)).sort((a, b) =>
@@ -4618,6 +4649,12 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
             <button key={k} className={appr === k ? "active" : ""} onClick={() => setAppr(k)}>{t}</button>)}
         </div>
       )}
+      {kind === "admin" && (list || []).some(d => objectionsOf(d).length) && (
+        <div className="chips">
+          {[["", "كل القرارات"], ["yes", `⚖️ عليها اعتراض (${(list || []).filter(d => objectionsOf(d).length).length})`]].map(([k, t]) =>
+            <button key={k} className={objF === k ? "active" : ""} onClick={() => setObjF(k)}>{t}</button>)}
+        </div>
+      )}
       <div className="chips">
         <button className={!klass ? "active" : ""} onClick={() => setKlass("")}>الكل ({count("")})</button>
         {classes.map(k => <button key={k} className={klass === k ? "active" : ""} onClick={() => setKlass(k)}>{k} ({count(k)})</button>)}
@@ -4636,7 +4673,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   <tr key={d.id} className="clickable" onClick={() => setShown(d)}>
                     <td><b dir="ltr">{d.decision_number}</b></td>
                     <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
-                    <td><b>{d.title}</b></td>
+                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">⚖️ معترض عليه</span></>}</td>
                     <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
                     <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
                     {kind === "complaints" && <td>{d.approved ? `✅${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"}</td>}
@@ -4679,6 +4716,19 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                 <div className="approval-box ok">
                   <b>✅ يصادق على قرارات الشكاوى:</b>
                   {approvedBy(shown).map(d => <div key={d.id}>رقم {d.decision_number} — {d.title}</div>)}
+                </div>
+              )}
+              {/* الاعتراضات على هذا القرار (اعتراض على قرار إداري برقمه): الرقم والحالة والنتيجة، والضغط يفتح الاعتراض */}
+              {kind === "admin" && objectionsOf(shown).length > 0 && (
+                <div className="approval-box">
+                  <b>⚖️ اعتراضات على هذا القرار:</b>
+                  {objectionsOf(shown).map(r => (
+                    <div key={r.complaint_number} className={onOpenRequest ? "clickable" : ""} style={{ marginTop: 6 }}
+                      onClick={onOpenRequest ? () => { setShown(null); onOpenRequest(r); } : undefined} title={onOpenRequest ? "اضغط لفتح الاعتراض" : undefined}>
+                      <b dir="ltr">{r.complaint_number}</b> — {r.complainant_name} <StatusBadge value={r.status} />
+                      {r.result && <div className="muted" style={{ fontSize: 13.5 }}>النتيجة: {r.result}</div>}
+                    </div>
+                  ))}
                 </div>
               )}
               {shown.url && <a className="btn block" href={shown.url} target="_blank" rel="noopener" style={{ marginTop: 12 }}>🔗 فتح القرار</a>}
@@ -5649,7 +5699,8 @@ function ReportsPage({ code, viewerName }) {
         {[["complaints", "📋 الشكاوى"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
           <button key={k} className={view === k ? "active" : ""} onClick={() => setView(k)}>{t}</button>)}
       </div>
-      {view !== "complaints" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer /> : (<>
+      {view !== "complaints" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer
+        requests={rows || []} onOpenRequest={cardOn ? r => setOpenNum(r.complaint_number) : null} /> : (<>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="filters">
           {seasonInfo && (
