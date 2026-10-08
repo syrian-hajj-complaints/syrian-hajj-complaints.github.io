@@ -107,6 +107,8 @@
 --    2026-10-08  القسم 55: تحويل نوع الطلب شكوى ↔ اعتراض على قرار إداري (admin_set_kind، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 56.
 --    2026-10-08  القسم 56: الحكم في الاعتراض على قرار إداري شكلاً وموضوعاً (obj_form، obj_merit، admin_set_decobj_verdict)
 --                وعبارات بنوده؛ كلمة مرور الأدمن الأولى صارت القسم 57.
+--    2026-10-08  القسم 57: صفحتا «نتيجة الشكوى» والاعتراض للشكاوى فقط (لا تقبلان رقم اعتراض على قرار إداري)؛
+--                كلمة مرور الأدمن الأولى صارت القسم 58.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -6340,7 +6342,39 @@ grant execute on function public.viewer_complaint_card(text, text)              
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 57) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 57) الاعتراض على قرار إداري لا يظهر في الصفحات العامة: صفحة «نتيجة الشكوى» وصفحة الاعتراض للشكاوى فقط
+--     يحتاج القسم 53 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة
+-- ---------------------------------------------------------------------
+-- معرفة النتيجة (للشكاوى فقط)
+create or replace function public.track_complaint(p_number text, p_code text)
+returns table (complaint_number text, title text, status text, result text, received_date timestamptz, closed_date timestamptz)
+language sql stable security definer set search_path = public as $$
+  select c.complaint_number, c.title, c.status, c.complainant_result, c.received_date, c.closed_date
+  from public.complaints c
+  where c.complaint_number = public.normalize_number(p_number)
+    and c.kind = 'شكوى'
+    and c.tracking_code = regexp_replace(translate(coalesce(p_code, ''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\D', '', 'g');
+$$;
+
+-- ما يراه المعترض على النتيجة (للشكاوى فقط)
+create or replace function public.objection_view(p_number text, p_code text)
+returns table (complaint_number text, received_date timestamptz, summary text, objection_text text,
+               objection_at timestamptz, deadline timestamptz, result text)
+language sql stable security definer set search_path = public as $$
+  select c.complaint_number, c.received_date, c.objection_summary, c.objection_text, c.objection_at,
+         c.objection_deadline, c.accused_result
+  from public.complaints c
+  where c.complaint_number = public.normalize_number(p_number)
+    and c.kind = 'شكوى'
+    and c.objection_code is not null
+    and c.objection_code = regexp_replace(translate(coalesce(p_code, ''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '\D', '', 'g');
+$$;
+
+grant execute on function public.track_complaint(text, text) to anon, authenticated;
+grant execute on function public.objection_view(text, text)  to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 58) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

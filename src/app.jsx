@@ -84,6 +84,11 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  عارض المواسم السابقة: في «🏛️ قرارات الإدارة» شارة «⚖️ معترض عليه / صُدّق / أُلغي / عُدّل» من شكاوى الملف نفسه،
+//                وأرقام الاعتراضات تفتح بطاقاتها (objectionsFor / objectionTag مشتركتان مع اللوحة والتقارير).
+//    2026-10-08  الاعتراض على قرار: جلسة الإغلاق بلا «النص الذي يظهر للمشتكي» وبتسمية «حالة الاعتراض»؛ لا يظهر في صفحتي
+//                النتيجة والاعتراض العامتين (القسم 57)؛ «إجمالي الطلبات» مع «منها اعتراضات على قرارات» في المؤشرات والتقارير؛
+//                تنبيه «📜 القرار» لا يظهر بعد تحديد الحكم.
 //    2026-10-08  جدول الشكاوى: تغيير عرض كل عمود بسحب حافة عنوانه اليسرى (50–800 بكسل، يحفظه الجهاز)، وضغطتان على الحافة
 //                للعرض التلقائي، و«↔ العرض التلقائي لكل الأعمدة» في قائمة «⚙ الأعمدة».
 //    2026-10-08  «📘 دليل المنصة»: بطاقة «⚖️ الاعتراض على قرار إداري» بخطواته، والحذف، وملفات Word وعباراتها، وتصفية النوع.
@@ -670,7 +675,12 @@ function DecisionTab({ secret, c }) {
   // العرض: معاينة بالقيم (أو خانات التعديل)، ثم زر التوليد
   return (
     <div className="card-pane">
-      {!c.result && !c.complainant_result && <Alert type="error">لم تصدر نتيجة للشكوى بعد؛ البند الأول فارغ — أضف جلسة إغلاق أو اكتبه بالتعديل.</Alert>}
+      {/* تنبيه البند الفارغ: لا نتيجة، ولا حكم (في الاعتراض على قرار) */}
+      {!c.result && !c.complainant_result && !(isDecObj(c) && (c.obj_form || c.obj_merit)) && (
+        <Alert type="error">{isDecObj(c)
+          ? "لم يُحدَّد الحكم في الاعتراض ولم تصدر نتيجة بعد — حدّد «⚖️ الحكم في الاعتراض» في البطاقة، أو اكتب البنود بالتعديل."
+          : "لم تصدر نتيجة للشكوى بعد؛ البند الأول فارغ — أضف جلسة إغلاق أو اكتبه بالتعديل."}</Alert>
+      )}
       {edit ? (
         <div className="grid">
           <Field label="الرقم"><input type="text" value={f.number} onChange={set("number")} maxLength={40} /></Field>
@@ -4380,7 +4390,8 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     e.preventDefault();
     if (!form.at) return setMsg({ type: "error", text: "حدّد تاريخ ووقت الجلسة." });
     const closing = isClosed(form.status);
-    if (closing && !form.cresult.trim()) return setMsg({ type: "error", text: "اكتب النص الذي يظهر للمشتكي في صفحة «نتيجة الشكوى» قبل الإغلاق." });
+    // (الاعتراض على قرار إداري لا يظهر في الصفحات العامة: لا نص للمشتكي)
+    if (closing && !isDecObj(complaint) && !form.cresult.trim()) return setMsg({ type: "error", text: "اكتب النص الذي يظهر للمشتكي في صفحة «نتيجة الشكوى» قبل الإغلاق." });
     if (closing && complaint.objection_at && !form.aresult.trim()) return setMsg({ type: "error", text: "اكتب الرد الذي يظهر للمعترض في صفحة الاعتراض قبل الإغلاق." });
     if (badLink(form.links)) return setMsg({ type: "error", text: BAD_LINK });
     if (saving.current) return;
@@ -4466,7 +4477,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <Field label="عنوان الجلسة"><input type="text" value={form.title} onChange={set("title")} maxLength={200} placeholder="مثال: جلسة استماع للطرفين" /></Field>
           <Field label="📍 المكان / الوصف"><input type="text" value={form.location} onChange={set("location")} maxLength={300} placeholder="مثال: مكتب البعثة — مكة، أو اتصال مرئي" /></Field>
           <Field label="ترحيل / مُحالة إلى"><ReferralSelect value={form.referred_to} onChange={val => setForm(f => ({ ...f, referred_to: val }))} /></Field>
-          <Field label="حالة الشكوى بعد الجلسة" required hint="«مغلقة» تغلق الشكوى بتاريخ الجلسة">
+          <Field label={`حالة ${partyLabels(complaint).noun} بعد الجلسة`} required hint={`«مغلقة» تغلق ${partyLabels(complaint).noun} بتاريخ الجلسة`}>
             <select value={form.status} onChange={set("status")}>{sessionStatuses(complaint, editId ? form.at : null).map(x => <option key={x}>{x}</option>)}</select>
           </Field>
           <VoiceArea label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={180} placeholder="ما الذي نوقش في الجلسة… أو اضغط 🎤 وتحدّث"
@@ -4476,7 +4487,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <VoiceArea mic={false} label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
-          {isClosed(form.status) && (
+          {isClosed(form.status) && !isDecObj(complaint) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
               <textarea style={{ minHeight: 70 }} value={form.cresult} onChange={set("cresult")} maxLength={2000} />
             </Field>
@@ -4597,6 +4608,15 @@ const classesOf = d => String((d && d.classification) || "").split(/[،,]/).map(
 
 // kind: «complaints» (قرارات الشكاوى) أو «admin» (قرارات الإدارة) — القسم نفسه بقائمتين منفصلتين
 // viewer: صفحة التقارير (secret = كلمة مرور الإدارة) — اطلاع فقط بلا تصدير
+// الاعتراضات على قرار إدارة من قائمة طلبات: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف) — في اللوحة والتقارير والمواسم السابقة
+const objectionsFor = (requests, a) => (requests || []).filter(r => isDecObj(r) && String(r.decision_ref || "").trim() === String(a.decision_number || "").trim()
+  && (!a.season || !r.season || r.season === a.season));
+// شارة القرار: الحكم موضوعاً في أحدث اعتراض محكوم (صُدّق / أُلغي / عُدّل)، وإلا «⚖️ معترض عليه»
+function objectionTag(requests, a) {
+  const judged = objectionsFor(requests, a).filter(r => MERIT_TAG[r.obj_merit]).sort((x, y) => new Date(y.received_date) - new Date(x.received_date));
+  return judged.length ? MERIT_TAG[judged[0].obj_merit] : "⚖️ معترض عليه";
+}
+
 // requests: الشكاوى والاعتراضات (لربط «اعتراض على قرار إداري» بقرار الإدارة برقمه)؛ onOpenRequest: فتح الاعتراض من بطاقة القرار
 function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false, requests = [], onOpenRequest }) {
   const KIND = kind === "admin" ? "قرارات الإدارة" : "قرارات الشكاوى";
@@ -4617,13 +4637,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
   const [objF, setObjF] = useState("");                        // تصفية «⚖️ عليها اعتراض»: "" / yes (قرارات الإدارة)
   // الاعتراضات على قرار إدارة: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف)
-  const objectionsOf = a => (requests || []).filter(r => isDecObj(r) && String(r.decision_ref || "").trim() === a.decision_number
-    && (!a.season || !r.season || r.season === a.season));
-  // شارة القرار: الحكم موضوعاً في أحدث اعتراض محكوم (صُدّق / أُلغي / عُدّل)، وإلا «⚖️ معترض عليه»
-  const objTag = a => {
-    const judged = objectionsOf(a).filter(r => MERIT_TAG[r.obj_merit]).sort((x, y) => new Date(y.received_date) - new Date(x.received_date));
-    return judged.length ? MERIT_TAG[judged[0].obj_merit] : "⚖️ معترض عليه";
-  };
+  const objectionsOf = a => objectionsFor(requests, a);
+  const objTag = a => objectionTag(requests, a);
 
   // جلب القرارات
   const load = useCallback(async () => {
@@ -5232,15 +5247,18 @@ function AdminIndicators({ secret, rows }) {
   const objections = list.filter(c => c.objection_at).length;
   const fresh = list.filter(c => c.status === "جديد").length;
   const sess = sessions.filter(s => nums.has(s.complaint_number));
+  // الاعتراضات على قرارات إدارية (ضمن الإجمالي، وتُعرض منفصلة)
+  const decObjs = list.filter(isDecObj).length;
   const kpis = [
-    { label: "إجمالي الشكاوى", value: total },
+    { label: decObjs ? "إجمالي الطلبات" : "إجمالي الشكاوى", value: total },
+    ...(decObjs ? [{ label: "منها شكاوى", value: total - decObjs }, { label: "منها اعتراضات على قرارات", value: decObjs }] : []),
     { label: "مفتوحة", value: open, tone: "open" },
     { label: "مغلقة", value: closedList.length, tone: "closed" },
     { label: "نسبة الإغلاق", value: `${closeRate}%`, tone: "closed" },
     { label: "متوسط مدة الإغلاق", value: avgDays === "—" ? "—" : `${avgDays} يوم` },
     { label: `متأخرة (أكثر من ${RULES.LATE_DAYS} أيام)`, value: late, tone: late ? "hot" : "" },
     { label: "جديدة لم تُفتح", value: fresh, tone: fresh ? "warm" : "" },
-    { label: "اعتراضات", value: objections },
+    { label: "اعتراضات على النتائج", value: objections },
     { label: "الجلسات", value: sess.length },
   ];
 
@@ -5831,6 +5849,7 @@ function ReportsPage({ code, viewerName }) {
   // الأعداد: الإجمالي، المغلقة، والمفتوحة (كل ما لم يُغلق)
   const total = rows ? rows.length : 0;
   const closed = rows ? rows.filter(r => isClosed(r.status)).length : 0;
+  const decObjs = rows ? rows.filter(isDecObj).length : 0;   // الاعتراضات على قرارات (ضمن الإجمالي)
 
   // العرض: الفلتر، بطاقات الأعداد، ثم الجدول (يتحول لبطاقات على الجوال)
   return (
@@ -5878,7 +5897,8 @@ function ReportsPage({ code, viewerName }) {
       {rows === null ? (!error && <Loading />) : (
         <>
           <div className="kpis">
-            <div className="kpi"><div className="label">إجمالي الشكاوى</div><div className="value">{total}</div></div>
+            <div className="kpi"><div className="label">{decObjs ? "إجمالي الطلبات" : "إجمالي الشكاوى"}</div><div className="value">{total}</div></div>
+            {decObjs > 0 && <div className="kpi"><div className="label">⚖️ اعتراضات على قرارات</div><div className="value">{decObjs}</div></div>}
             <div className="kpi closed"><div className="label">المغلقة</div><div className="value">{closed}</div></div>
             <div className="kpi open"><div className="label">المفتوحة</div><div className="value">{total - closed}</div></div>
           </div>
@@ -6100,7 +6120,16 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
                         <tr key={i} style={{ cursor: "default" }}>
                           <td data-label="رقم القرار"><b dir="ltr">{d.decision_number}</b></td>
                           <td data-label="التاريخ">{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
-                          <td data-label="العنوان"><b>{d.title}</b>{d.subject && <div className="muted" style={{ fontSize: 13 }}>{d.subject}</div>}</td>
+                          <td data-label="العنوان"><b>{d.title}</b>
+                            {/* قرارات الإدارة: الاعتراضات عليه من شكاوى الملف نفسه (الشارة، وأرقامها تفتح بطاقاتها) */}
+                            {tab === "admindecisions" && objectionsFor(book.complaints, d).length > 0 && (
+                              <> <span className="kind-badge">{objectionTag(book.complaints, d)}</span>
+                                <div style={{ fontSize: 13, marginTop: 4 }}>⚖️ {objectionsFor(book.complaints, d).map((r, k) => (
+                                  <React.Fragment key={r.complaint_number}>{k > 0 && "، "}
+                                    <a href="#" dir="ltr" onClick={e => { e.preventDefault(); setOpen(r); }}>{r.complaint_number}</a></React.Fragment>))}
+                                </div></>
+                            )}
+                            {d.subject && <div className="muted" style={{ fontSize: 13 }}>{d.subject}</div>}</td>
                           <td data-label="التصنيف">{d.classification || "—"}</td>
                           <td data-label="الرابط">{d.url ? <a href={d.url} target="_blank" rel="noopener">فتح ↗</a> : "—"}</td>
                         </tr>
