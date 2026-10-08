@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  مربع «حدّد موعد التنبيه القادم» (من «المطلوب»): «مسح» ثم الحفظ يلغي التنبيه (كان يُظهر خطأ)، وزر «🔕 إلغاء التنبيه».
 //    2026-10-08  «🗑️ حذف الشكوى / الاعتراض نهائياً» في أسفل البطاقة (للمدير، القسم 54) بكتابة الرقم للتأكيد؛ إن كان آخر رقم
 //                في موسمه يأخذه الطلب التالي.
 //    2026-10-08  «⚖️ اعتراض على قرار إداري» (القسم 53): زر في الشريط العلوي للوحة (للمدير والمسؤول؛ لا يظهر في الصفحات العامة)
@@ -3808,8 +3809,9 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
     setMsg({ type: "ok", text: "تم الحفظ." });
   }
 
-  // حفظ التنبيه القادم من مربع «المطلوب»: التاريخ والمطلوب إلزاميان
+  // حفظ التنبيه القادم من مربع «المطلوب»: التاريخ والمطلوب معاً، أو كلاهما فارغ = إلغاء التنبيه (بعد «مسح»)
   function saveReminder() {
+    if (!v.reminder && !v.reminder_note.trim()) return save();
     if (!v.reminder || !v.reminder_note.trim())
       return setMsg({ type: "error", text: "حدّد تاريخ ووقت التنبيه القادم، واكتب المطلوب عنده — أو اضغط «إغلاق عبر جلسة»." });
     if (new Date(v.reminder) <= new Date())
@@ -3917,6 +3919,11 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
             <button type="button" className="btn" disabled={busy} onClick={saveReminder}>{busy ? "جارٍ الحفظ…" : "حفظ التنبيه والتعديلات"}</button>
             {ADMIN_CTX.manager && <button type="button" className="btn secondary" disabled={busy} onClick={() => setCloseReq(n => n + 1)}>🔒 إغلاق عبر جلسة</button>}
           </div>
+          {/* إلغاء التنبيه المحفوظ دون موعد جديد */}
+          {c.reminder_at && (
+            <button type="button" className="btn danger-text" style={{ marginTop: 8 }} disabled={busy}
+              onClick={() => save({ reminder: "", reminder_note: "" })}>🔕 إلغاء التنبيه دون موعد جديد</button>
+          )}
         </div>
       )}
 
