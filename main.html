@@ -93,6 +93,7 @@
     2026-10-07  «روابط سريعة» في القائمة الجانبية (.side-ext / a.side-item).
     2026-10-07  حاوية تعطيل نموذج الجلسة (.plain-fieldset).
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
+    2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -425,6 +426,9 @@
   .links-view { display: inline-flex; flex-wrap: wrap; gap: 6px; }
   .link-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #e6f2ef; color: var(--brand-dark); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
   .link-chip:hover { background: #d3e9e4; }
+  /* شارة نوع الطلب: اعتراض على قرار إداري (ذهبية، بجانب الرقم) */
+  .kind-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #f1ead7; color: #6b5d2f; border: 1px solid #d9c89e;
+                font-size: 12px; font-weight: 700; white-space: nowrap; vertical-align: middle; }
   .links-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
   .links-edit { margin: 8px 0; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; }
   /* «إعداد لمرة واحدة» في أرشفة المواسم: مربع قابل للفتح */
@@ -732,6 +736,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=2120169f96"></script>
+<script src="app.js?v=7f65687565"></script>
 </body>
 </html>
