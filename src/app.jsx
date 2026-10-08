@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  حذف زر «⚖️ اعتراض على قرار» ونافذته من الشريط العلوي: الاعتراض يُدخل كشكوى ثم يُحوَّل بزر «🔁 تحويل».
 //    2026-10-08  «🔁 تحويل إلى اعتراض على قرار إداري / إلى شكوى» في أسفل البطاقة (للمدير، القسم 55): الرقم والجلسات كما هي.
 //    2026-10-08  مربع «حدّد موعد التنبيه القادم» (من «المطلوب»): «مسح» ثم الحفظ يلغي التنبيه (كان يُظهر خطأ)، وزر «🔕 إلغاء التنبيه».
 //    2026-10-08  «🗑️ حذف الشكوى / الاعتراض نهائياً» في أسفل البطاقة (للمدير، القسم 54) بكتابة الرقم للتأكيد؛ إن كان آخر رقم
@@ -1854,7 +1855,6 @@ function AdminPage({ secret, onLogout }) {
   const [openFromDue, setOpenFromDue] = useState(false);   // فُتحت من «المطلوب» ← طلب تحديد التنبيه القادم
   const [sessVer, setSessVer] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);   // القائمة الجانبية مفتوحة على الجوال
-  const [addingObj, setAddingObj] = useState(false); // نافذة «⚖️ إدخال اعتراض على قرار إداري»
 
   // من الداخل؟ مدير أو موظف (قاعدة لم يُنفَّذ فيها القسم 24 ← مدير كما كان)
   const [me, setMe] = useState(null);
@@ -1969,9 +1969,6 @@ function AdminPage({ secret, onLogout }) {
           <div className="admin-top-actions">
             <InstallButton />
             <EnterComplaintButton secret={secret} />
-            <button type="button" className="btn secondary sm" onClick={() => setAddingObj(true)} title="إدخال اعتراض على قرار إداري (لا يظهر في الصفحات العامة)">
-              ⚖️ <span className="hide-xs">اعتراض على قرار</span>
-            </button>
             <button type="button" className={`btn secondary sm ${current === "guide" ? "is-on" : ""}`} onClick={() => pick("guide")}>📘 <span className="hide-xs">دليل المنصة</span></button>
             {onLogout && <button type="button" className="btn sm" onClick={onLogout}>خروج</button>}
           </div>
@@ -2003,82 +2000,6 @@ function AdminPage({ secret, onLogout }) {
           </div>
         </div>, document.body
       )}
-      {addingObj && ReactDOM.createPortal(
-        <AddDecisionObjection secret={secret} onClose={() => setAddingObj(false)}
-          onDone={c => { setAddingObj(false); setRows(r => [c, ...(r || [])]); openComplaint(c); }} />, document.body
-      )}
-    </div>
-  );
-}
-
-// نافذة «⚖️ إدخال اعتراض على قرار إداري» (للمدير والمسؤول؛ لا يظهر في الصفحات العامة): بيانات المعترض، والقرار المعترض عليه
-// (رقمه وتاريخه والجهة المحيلة)، وتاريخ تقديم الاعتراض مع فحص المهلة القانونية فوراً، ثم موضوعه ونصه وروابطه؛
-// يُرقَّم في الموسم الحالي مع الشكاوى (admin_add_decision_objection)
-function AddDecisionObjection({ secret, onClose, onDone }) {
-  const [f, setF] = useState({ at: toDateTimeInput(new Date()), name: "", role: "", phone: "", against: "", ref: "", date: "",
-                               by: "", title: "", subject: "", classification: "", links: [] });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const set = k => e => { setF(x => ({ ...x, [k]: e.target.value })); setErr(""); };
-  // فحص المهلة بالقيم الحالية
-  const delay = decObjDelay({ kind: DEC_OBJ, decision_date: f.date, received_date: f.at ? new Date(f.at) : null }, ADMIN_CTX.objDays);
-
-  async function save(e) {
-    e.preventDefault();
-    if (!f.at || !f.name.trim() || !f.against.trim() || !f.subject.trim()) return setErr("تاريخ تقديم الاعتراض واسم المعترض والمعترض عليه ونص الاعتراض إلزامية.");
-    if (badLink(f.links)) return setErr(BAD_LINK);
-    setBusy(true); setErr("");
-    const { data, error } = await sb.rpc("admin_add_decision_objection", {
-      p_secret: secret, p_received_at: dateTimeInputToIso(f.at), p_name: f.name, p_role: f.role, p_phone: f.phone,
-      p_against: f.against, p_decision_ref: f.ref, p_decision_date: f.date || null, p_referred_by: f.by,
-      p_title: f.title, p_subject: f.subject, p_classification: f.classification, p_links: cleanLinks(f.links),
-    });
-    setBusy(false);
-    if (error || !data || !data.length) return setErr("تعذّر الإدخال (نفّذ القسم 53 من schema.sql في Supabase).");
-    onDone(data[0]);
-  }
-
-  return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
-        <form className="card" onSubmit={save}>
-          <h2 style={{ marginTop: 0 }}>⚖️ اعتراض على قرار إداري</h2>
-          <p className="muted" style={{ fontSize: 13.5, marginTop: 0 }}>يُرقَّم مع الشكاوى في الموسم الحالي، ويُتابع بالجلسات كالمعتاد. لا يظهر في الصفحات العامة.</p>
-          <div className="grid">
-            <Field label="اسم المعترض" required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
-            <Field label="صفة المعترض"><input type="text" value={f.role} onChange={set("role")} maxLength={100} list="roles-list" placeholder="مثال: موجّه ديني (الأبرار)" /></Field>
-            <Field label="هاتف المعترض"><input type="tel" dir="ltr" value={f.phone} onChange={e => { setF(x => ({ ...x, phone: cleanPhone(e.target.value) })); setErr(""); }} maxLength={15} placeholder="963912345678" /></Field>
-            <Field label="المعترض عليه" required><input type="text" value={f.against} onChange={set("against")} maxLength={200} placeholder="مثال: قرار السيد مدير الحج" /></Field>
-            <Field label="رقم القرار المعترض عليه"><input type="text" value={f.ref} onChange={set("ref")} maxLength={60} placeholder="مثال: 2215/46/ ق د" /></Field>
-            <Field label="تاريخ صدور القرار"><input type="date" value={f.date} onChange={set("date")} /></Field>
-            <Field label="الجهة المحيلة" hint="مثال: السيد مدير الحج"><input type="text" value={f.by} onChange={set("by")} maxLength={200} /></Field>
-            <Field label="تاريخ تقديم الاعتراض" required><input type="datetime-local" value={f.at} onChange={set("at")} /></Field>
-            {delay && (
-              <div className={`field full reminder-bar ${delay.late ? "" : "later"}`}>
-                {delay.late
-                  ? `⚠️ خارج المدة القانونية: قُدّم بعد ${delay.diff} يوماً من صدور القرار (المهلة ${ADMIN_CTX.objDays} أيام).`
-                  : `✅ ضمن المدة القانونية: قُدّم بعد ${Math.max(0, delay.diff)} يوماً من صدور القرار (المهلة ${ADMIN_CTX.objDays} أيام).`}
-              </div>
-            )}
-            <Field label="موضوع الاعتراض"><input type="text" value={f.title} onChange={set("title")} maxLength={150} placeholder="مثال: إلغاء الصفة الإدارية والاعتذار النهائي" /></Field>
-            <Field label="تصنيف الاعتراض">
-              <select value={f.classification} onChange={set("classification")}>
-                <option value="">— اختر —</option>
-                {CLASSIFICATIONS.map(x => <option key={x}>{x}</option>)}
-              </select>
-            </Field>
-            <Field label="نص الاعتراض" required full><textarea style={{ minHeight: 160 }} value={f.subject} onChange={set("subject")} maxLength={5000} /></Field>
-            <LinksField value={f.links} onChange={l => setF(x => ({ ...x, links: l }))} hint="اختياري — حتى رابطين، مثل صورة الاعتراض الورقي أو القرار" />
-          </div>
-          <datalist id="roles-list">{ROLES.map(r => <option key={r} value={r} />)}</datalist>
-          {err && <Alert type="error">{err}</Alert>}
-          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
-            <button className="btn" disabled={busy}>{busy ? "جارٍ الإدخال…" : "💾 إدخال الاعتراض"}</button>
-            <button type="button" className="btn secondary" onClick={onClose}>إلغاء</button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
