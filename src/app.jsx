@@ -84,6 +84,11 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-08  «🔗 الاسم الموحّد للمشتكى عليه» (القسم 58، للمدير): يُكتب لعدة شكاوى معاً من شريط التحديد في «📋 الشكاوى»
+//                (بحث ← تحديد ← «🔗 توحيد») أو من البطاقة (AccusedKeyLine)، مع اختيار من الأسماء الموحّدة السابقة؛ عمود في الجدول
+//                وملف الموسم؛ «المشتكى عليهم الأكثر شكاوى» تُحسب منه، والشكاوى بلا اسم موحّد تُعلَّم «غير موحّد».
+//    2026-10-08  «المشتكى عليهم الأكثر شكاوى» (countByAccused) في المؤشرات وتقريرها Word وصفحة التقارير: عدد الشكاوى لكل مشتكى عليه
+//                (الشكاوى فقط)، مع توحيد كتابة الاسم عند العدّ فقط (nameKey: الهمزات والتاء المربوطة والمسافات) دون تغيير الشكوى.
 //    2026-10-08  عارض المواسم السابقة: في «🏛️ قرارات الإدارة» شارة «⚖️ معترض عليه / صُدّق / أُلغي / عُدّل» من شكاوى الملف نفسه،
 //                وأرقام الاعتراضات تفتح بطاقاتها (objectionsFor / objectionTag مشتركتان مع اللوحة والتقارير).
 //    2026-10-08  الاعتراض على قرار: جلسة الإغلاق بلا «النص الذي يظهر للمشتكي» وبتسمية «حالة الاعتراض»؛ لا يظهر في صفحتي
@@ -746,7 +751,7 @@ const XL_SHEETS = [
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["updated_at", "آخر تعديل", true],
     // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
-    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"]] },
+    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -1950,6 +1955,7 @@ function AdminPage({ secret, onLogout }) {
   }, [secret]);
   useEffect(() => { loadLinks(); }, [loadLinks]);
   ADMIN_CTX.reloadLinks = loadLinks;
+  ADMIN_CTX.allRows = rows || [];   // كل الطلبات (لقائمة الأسماء الموحّدة السابقة)
 
   // كلمة مرور قفل ملفات Excel (من الإعدادات) لتُستخدم في كل تصدير
   useEffect(() => {
@@ -2349,6 +2355,8 @@ const COLUMNS = [
   { key: "phone", label: "رقم الهاتف", sort: c => c.phone_number, text: c => c.phone_number, cell: c => <span dir="ltr">{c.phone_number || "—"}</span> },
   { key: "contact", label: "واتس / تلغرام", sort: c => c.contact_number, text: c => c.contact_number, cell: c => <span dir="ltr">{c.contact_number || "—"}</span> },
   { key: "accused", label: "المشتكى عليه", sort: c => c.accused_name, text: c => withRole(c.accused_name, c.accused_role), cell: c => c.accused_name ? <NameRole name={c.accused_name} role={c.accused_role} /> : muted() },
+  // الاسم الموحّد للمشتكى عليه (القسم 58): داخلي، للمؤشرات والتقارير
+  { key: "accused_key", label: "🔗 الاسم الموحّد", sort: c => c.accused_key, text: c => c.accused_key, cell: c => c.accused_key ? <b>{c.accused_key}</b> : muted() },
   { key: "subject", label: "الموضوع", sort: c => c.subject, text: c => c.subject, wrap: true, cell: c => <span className="clip">{c.subject}</span> },
   { key: "class", label: "التصنيف", sort: c => c.classification, text: c => c.classification, cell: c => muted(c.classification) },
   { key: "referred", label: "مُحالة إلى", sort: c => c.referred_to, text: c => c.referred_to, cell: c => muted(c.referred_to) },
@@ -2472,6 +2480,20 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
     setBulk({ status: "", classification: "", referred_to: "", closed: "" });
   }
 
+  // الاسم الموحّد للمشتكى عليه للشكاوى المحددة (admin_set_accused_key)؛ الأسماء الموحّدة السابقة للاختيار
+  const [keyName, setKeyName] = useState("");
+  const accusedKeys = [...new Set((ADMIN_CTX.allRows || rows).map(r => r.accused_key).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+  async function applyKey(name) {
+    if (!name.trim() && !window.confirm(`مسح الاسم الموحّد من ${chosen.length} شكوى؟`)) return;
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_accused_key", { p_secret: secret, p_ids: chosen, p_name: name });
+    setBusy(false);
+    if (error || !data) return setMsg({ type: "error", text: "تعذّر التوحيد (نفّذ القسم 58 من schema.sql في Supabase)." });
+    onSaved(data);
+    setMsg({ type: "ok", text: name.trim() ? `🔗 وُحّد اسم المشتكى عليه في ${data.length} شكوى: «${name.trim()}».` : `مُسح الاسم الموحّد من ${data.length} شكوى.` });
+    setSelected(new Set()); setKeyName("");
+  }
+
   // العرض: شريط التغيير الجماعي (عند الاختيار)، شريط الأدوات، الجدول، ثم التنقل بين الصفحات
   return (
     <div>
@@ -2486,6 +2508,16 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
           <ReferralSelect value={bulk.referred_to} onChange={val => setBulk(b => ({ ...b, referred_to: val }))} placeholder="الإحالة (بلا تغيير)" />
           <button className="btn gold" disabled={busy} onClick={applyBulk}>{busy ? "جارٍ التطبيق…" : `تطبيق على ${chosen.length}`}</button>
           <button className="btn secondary" onClick={() => setSelected(new Set())}>إلغاء التحديد</button>
+          {/* الاسم الموحّد للمشتكى عليه للشكاوى المحددة (للمدير): يُختار من الأسماء الموحّدة السابقة أو يُكتب جديداً */}
+          {ADMIN_CTX.manager && (
+            <div className="row" style={{ flexBasis: "100%", flexWrap: "nowrap" }}>
+              <input type="text" list="accused-key-list" value={keyName} onChange={e => setKeyName(e.target.value)} maxLength={200}
+                placeholder="🔗 الاسم الموحّد للمشتكى عليه (اختر أو اكتب)" aria-label="الاسم الموحّد للمشتكى عليه" />
+              <datalist id="accused-key-list">{accusedKeys.map(k => <option key={k} value={k} />)}</datalist>
+              <button className="btn" disabled={busy || !keyName.trim()} onClick={() => applyKey(keyName)}>🔗 توحيد ({chosen.length})</button>
+              <button className="btn secondary" disabled={busy} onClick={() => applyKey("")} title="مسح الاسم الموحّد من الشكاوى المحددة">مسح</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -3650,7 +3682,7 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
   const visible = inSeason.filter(c =>
     (!missing || MISSING[missing](c)) &&
     (filter === "الكل" || c.status === filter) &&
-    (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to, c.decision_ref, c.referred_by].some(v => (v || "").includes(term))));
+    (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to, c.decision_ref, c.referred_by, c.accused_key].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
   // موسم سابق مفتوح للتعديل (ليس الحالي، وله شكاوى في القاعدة): زر «➕ إضافة شكوى» إليه
   const pastOpen = ADMIN_CTX.manager && season && current && season !== current && (rows || []).some(c => c.season === season);
@@ -3704,6 +3736,44 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
 
 // معلومات الاعتراض على قرار إداري في البطاقة: رقم القرار وتاريخه والجهة المحيلة، وفحص المهلة القانونية؛
 // المدير يعدّلها (مع تاريخ تقديم الاعتراض) عبر admin_set_decision_objection؛ onSaved غائب = للاطلاع فقط
+// «🔗 الاسم الموحّد للمشتكى عليه» في بطاقة الشكوى: داخلي للمؤشرات والتقارير (لا يغيّر الاسم المكتوب)؛ المدير يعدّله
+// (يُختار من الأسماء الموحّدة السابقة أو يُكتب)؛ onSaved غائب = للاطلاع فقط
+function AccusedKeyLine({ secret, c, onSaved }) {
+  const [edit, setEdit] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const keys = [...new Set((ADMIN_CTX.allRows || []).map(r => r.accused_key).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+  async function save() {
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_accused_key", { p_secret: secret, p_ids: [c.id], p_name: edit });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 58 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+  if (!onSaved && !c.accused_key) return null;
+  return (
+    <div className="links-line">
+      <b>🔗 الاسم الموحّد للمشتكى عليه:</b>
+      {edit !== null ? (
+        <>
+          <input type="text" className="grow" autoFocus list="accused-key-card" value={edit} onChange={e => setEdit(e.target.value)} maxLength={200}
+            placeholder="اختر من الأسماء الموحّدة أو اكتب" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); save(); } }} />
+          <datalist id="accused-key-card">{keys.map(k => <option key={k} value={k} />)}</datalist>
+          <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
+          <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+          {err && <small style={{ color: "var(--danger)", width: "100%" }}>{err}</small>}
+        </>
+      ) : (
+        <>
+          {c.accused_key ? <span>{c.accused_key}</span> : <span className="muted">— (يُحسب بالاسم المكتوب)</span>}
+          {onSaved && ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(c.accused_key || "")}>
+            {c.accused_key ? "✏️ تعديل" : "➕ توحيد"}</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
 // الربط بـ«🏛️ قرارات الإدارة» برقم القرار (كالمصادقة): اختيار القرار من القائمة يملأ تاريخه، ويظهر عنوانه ورابطه
 function DecObjInfo({ secret, c, onSaved }) {
   const [edit, setEdit] = useState(null);   // null = عرض فقط
@@ -3987,7 +4057,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div><dt>🗒️ ملاحظة عن {L.who}</dt><PartyNote secret={secret} complaint={c} party="complainant" onSaved={onSaved} /></div>
         <div><dt>🗒️ ملاحظة عن {L.against}</dt><PartyNote secret={secret} complaint={c} party="accused" onSaved={onSaved} /></div>
       </dl>
-      {isDecObj(c) && <DecObjInfo secret={secret} c={c} onSaved={onSaved} />}
+      {isDecObj(c) ? <DecObjInfo secret={secret} c={c} onSaved={onSaved} /> : <AccusedKeyLine secret={secret} c={c} onSaved={onSaved} />}
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
       <LinksEditor secret={secret} complaint={c} target="complaint" onSaved={onSaved} />
@@ -5213,6 +5283,24 @@ function countBy(list, get, limit = 8) {
   return [...all.slice(0, limit - 1), { label: "أخرى", value: rest }];
 }
 
+// مفتاح موحّد للاسم عند العدّ فقط (لا يغيّر الشكوى): بلا مسافات زائدة ولا تشكيل، والهمزات ألفاً، والتاء المربوطة هاءً، والألف المقصورة ياءً
+const nameKey = s => String(s || "").trim().replace(/\s+/g, " ").replace(/[ً-ْـ]/g, "")
+  .replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+// عدد الشكاوى لكل مشتكى عليه (الشكاوى فقط، لا الاعتراضات على قرارات)، مرتّبة من الأكثر:
+// بالاسم الموحّد (accused_key) إن كُتب، وإلا بالاسم المكتوب (موحّد الكتابة بـ nameKey، ويُعلَّم «غير موحّد»)؛
+// الاسم المعروض = الاسم الموحّد، أو أكثر كتابة تكراراً
+function countByAccused(list, limit = 10) {
+  const m = new Map();
+  list.filter(c => !isDecObj(c) && (c.accused_key || (nameKey(c.accused_name) && nameKey(c.accused_name) !== "—"))).forEach(c => {
+    const unified = !!String(c.accused_key || "").trim();
+    const name = unified ? c.accused_key.trim() : c.accused_name.trim();
+    const k = (unified ? "1:" : "0:") + nameKey(name), g = m.get(k) || { value: 0, unified, names: new Map() };
+    g.value++; g.names.set(name, (g.names.get(name) || 0) + 1); m.set(k, g);
+  });
+  return [...m.values()].map(g => ({ label: [...g.names.entries()].sort((a, b) => b[1] - a[1])[0][0] + (g.unified ? "" : " (غير موحّد)"), value: g.value }))
+    .sort((a, b) => b.value - a.value).slice(0, limit);
+}
+
 function AdminIndicators({ secret, rows }) {
   // الموسم والفترة، الجلسات والإحالات (تُجلب مرة)، وحالة التصدير
   const [season, setSeason] = useState(null);
@@ -5267,6 +5355,7 @@ function AdminIndicators({ secret, rows }) {
   const byClass = countBy(list, c => c.classification);
   const byCRole = countBy(list, c => c.complainant_role, 6);
   const byARole = countBy(list, c => c.accused_role, 6);
+  const byAccused = countByAccused(list);   // المشتكى عليهم الأكثر شكاوى
   const byRef = countBy(refs.filter(r => nums.has(r.complaint_number)), r => r.referred_to, 8);
 
   // الوارد يومياً: آخر 30 يوماً (أو أيام الفترة المختارة)
@@ -5285,6 +5374,7 @@ function AdminIndicators({ secret, rows }) {
       await exportIndicatorsWord(scope, kpis, [
         { title: "توزيع الحالات", items: byStatus }, { title: "حسب التصنيف", items: byClass },
         { title: "صفة المشتكي", items: byCRole }, { title: "صفة المشتكى عليه", items: byARole },
+        { title: "المشتكى عليهم الأكثر شكاوى", items: byAccused },
         { title: "الجهات المحال إليها", items: byRef },
       ], total);
     } catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
@@ -5320,6 +5410,7 @@ function AdminIndicators({ secret, rows }) {
         <div className="card ind-wide"><h2>الوارد يومياً — آخر {span} يوماً</h2><DayColumns days={days} /></div>
         <div className="card"><h2>صفة المشتكي</h2><BarList items={byCRole} total={total} /></div>
         <div className="card"><h2>صفة المشتكى عليه</h2><BarList items={byARole} total={total} /></div>
+        <div className="card"><h2>المشتكى عليهم الأكثر شكاوى</h2><BarList items={byAccused} total={total - list.filter(isDecObj).length} /></div>
         <div className="card ind-wide"><h2>الجهات المحال إليها</h2><BarList items={byRef} total={byRef.reduce((s, x) => s + x.value, 0)} /></div>
       </div>
     </div>
@@ -5902,6 +5993,13 @@ function ReportsPage({ code, viewerName }) {
             <div className="kpi closed"><div className="label">المغلقة</div><div className="value">{closed}</div></div>
             <div className="kpi open"><div className="label">المفتوحة</div><div className="value">{total - closed}</div></div>
           </div>
+          {/* المشتكى عليهم الأكثر شكاوى في الموسم والفترة المختارين (الشكاوى فقط) */}
+          {countByAccused(rows).length > 0 && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h2 style={{ marginTop: 0 }}>المشتكى عليهم الأكثر شكاوى</h2>
+              <BarList items={countByAccused(rows)} total={total - decObjs} />
+            </div>
+          )}
           <div className="card" style={{ padding: 0 }}>
             {rows.length === 0 ? <div className="empty">لا توجد شكاوى في هذه الفترة</div> : (
               <ComplaintsBrief rows={rows} onOpen={cardOn ? r => setOpenNum(r.complaint_number) : null} />
@@ -5948,7 +6046,7 @@ function ComplaintView({ c, sessions }) {
         {c.complainant_note && <div><dt>🗒️ ملاحظة عن {L.who}</dt><dd>{c.complainant_note}</dd></div>}
         {c.accused_note && <div><dt>🗒️ ملاحظة عن {L.against}</dt><dd>{c.accused_note}</dd></div>}
       </dl>
-      {isDecObj(c) && <DecObjInfo c={c} />}
+      {isDecObj(c) ? <DecObjInfo c={c} /> : <AccusedKeyLine c={c} />}
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
       {cleanLinks(c.links).length > 0 && <div className="links-line"><LinksView links={c.links} /></div>}
