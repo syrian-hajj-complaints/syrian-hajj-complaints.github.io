@@ -85,7 +85,7 @@
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
 //    2026-10-12  «🔗 روابط سريعة»: زر «⬆️ إلى القسم الرئيسي / ⬇️ إلى روابط سريعة» لكل رابط في الإعدادات (main في quick_links)،
-//                فيظهر الرابط مع الأقسام الرئيسية في القائمة الجانبية.
+//                فيظهر الرابط مع الأقسام الرئيسية في القائمة الجانبية للمدير والمسؤولين (وباقي الروابط للمدير فقط).
 //    2026-10-12  اسم ملف القرار بالطرفين: «قرار - المشتكي ضد المشتكى عليه - الرقم.docx».
 //    2026-10-12  حذف شارة «⚖️ اعتراض على قرار» من الجداول (لكل نوع قسمه؛ تبقى في البطاقة)، ورقم الطلب بترتيب حروفه (ReqNo)
 //                حتى لا يُعاد ترتيب «1448-ع-001» بسبب الحرف العربي.
@@ -2235,8 +2235,8 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose, links 
         <div className="side-who"><b>إدارة الحج والعمرة</b><small>قسم الشكاوى · الأدمن</small></div>
         <button type="button" className="side-close" onClick={onClose} aria-label="إغلاق القائمة">✕</button>
       </div>
-      {/* الأقسام الرئيسية، وبعدها الروابط السريعة المنقولة إلى القسم الرئيسي (main) */}
-      <nav className="side-nav">{NAV_MAIN.map(item)}{isManager && mainLinks.map(linkItem)}</nav>
+      {/* الأقسام الرئيسية، وبعدها الروابط السريعة المنقولة إلى القسم الرئيسي (main) — للمدير والمسؤول؛ وباقي الروابط للمدير فقط */}
+      <nav className="side-nav">{NAV_MAIN.map(item)}{mainLinks.map(linkItem)}</nav>
       {isManager && (
         <>
           <div className="side-group">للمدير</div>
@@ -3367,7 +3367,7 @@ function QuickLinksCard({ secret }) {
   return (
     <div className="card">
       <h2>🔗 روابط سريعة</h2>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>روابط تظهر في القائمة الجانبية للوحة، مثل مجلد Drive للملفات. الرابط يفتح في نافذة جديدة. «⬆️ إلى القسم الرئيسي» يضعه مع الأقسام الرئيسية بدل مجموعة «روابط سريعة».</p>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>روابط تظهر في القائمة الجانبية للوحة، مثل مجلد Drive للملفات. الرابط يفتح في نافذة جديدة. مجموعة «روابط سريعة» للمدير فقط؛ و«⬆️ إلى القسم الرئيسي» يضع الرابط مع الأقسام الرئيسية فيراه المدير والمسؤولون.</p>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <form className="row" onSubmit={add}>
         <input type="text" placeholder="الاسم (مثال: مجلد Drive)" value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} maxLength={60} style={{ flex: "1 1 160px" }} />
