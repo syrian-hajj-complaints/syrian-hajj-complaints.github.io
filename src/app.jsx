@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-12  قسمان منفصلان: «📋 الشكاوى» و«⚖️ الاعتراضات» (AdminComplaints mode)، ولكل منهما ترقيم ورمز (القسم 59):
+//                «1448-00001 / ق.ش» و«1448-ع-001 / ق.ع»؛ «➕ اعتراض جديد» داخل قسم الاعتراضات (AddDecisionObjection)؛ التحويل
+//                يعطي رقماً من تسلسل النوع الجديد؛ تبويب «⚖️ الاعتراضات» في صفحة التقارير.
 //    2026-10-08  «🔗 الاسم الموحّد للمشتكى عليه» (القسم 58، للمدير): يُكتب لعدة شكاوى معاً من شريط التحديد في «📋 الشكاوى»
 //                (بحث ← تحديد ← «🔗 توحيد») أو من البطاقة (AccusedKeyLine)، مع اختيار من الأسماء الموحّدة السابقة؛ عمود في الجدول
 //                وملف الموسم؛ «المشتكى عليهم الأكثر شكاوى» تُحسب منه، والشكاوى بلا اسم موحّد تُعلَّم «غير موحّد».
@@ -578,10 +581,10 @@ function hijriDate(d) {
 }
 const gregDate = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 
-// رقم المراسلة من رقم الشكوى: 1447-00001 ← 01/47/ ق.ش
+// رقم المراسلة من رقم الطلب: شكوى 1447-00001 ← 01/47/ ق.ش، واعتراض على قرار 1447-ع-001 ← 01/47/ ق.ع
 function complaintRef(c) {
-  const [season, serial] = String(c.complaint_number || "").split("-");
-  return serial ? `${String(Number(serial)).padStart(2, "0")}/${String(season).slice(-2)}/ ق.ش` : "";
+  const m = String(c.complaint_number || "").match(/^(\d{4})-(?:(ع)-)?(\d+)$/);
+  return m ? `${String(Number(m[3])).padStart(2, "0")}/${m[1].slice(-2)}/ ${m[2] ? "ق.ع" : "ق.ش"}` : "";
 }
 
 // القيم الأولى للقرار من الشكوى؛ البنود: رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) أولاً إن وُجد،
@@ -1877,6 +1880,7 @@ const alertWeight = alerts =>
 const SECTIONS = {
   today:      { title: "📅 المطلوب" },
   complaints: { title: "📋 الشكاوى" },
+  objections: { title: "⚖️ الاعتراضات على القرارات" },
   sessions:   { title: "🗓️ الجلسات" },
   links:      { title: "🔗 إرسال رابط", manager: true },
   decisions:  { title: "📑 قرارات الشكاوى" },
@@ -2001,7 +2005,9 @@ function AdminPage({ secret, onLogout }) {
   ADMIN_CTX.used = [...new Set((rows || []).map(r => (r.referred_to || "").trim()).filter(Boolean))];
 
   // الأعداد على عناصر القائمة: المطلوب اليوم، والشكاوى الجديدة
-  const counts = { today: (rows || []).filter(c => dueAlerts(c).length > 0).length, complaints: (rows || []).filter(c => c.status === "جديد").length };
+  const counts = { today: (rows || []).filter(c => dueAlerts(c).length > 0).length,
+                   complaints: (rows || []).filter(c => c.status === "جديد" && !isDecObj(c)).length,
+                   objections: (rows || []).filter(c => c.status === "جديد" && isDecObj(c)).length };
   const current = allowed ? tab : "home";
   const pick = key => { setMenuOpen(false); if (key === "home") goHome(); else go(key); };
 
@@ -2033,8 +2039,11 @@ function AdminPage({ secret, onLogout }) {
         {current === "guide" && <AdminGuide isManager={isManager} />}
         {current === "indicators" && <AdminIndicators secret={secret} rows={rows} />}
         {current === "archive" && <AdminPastSeasons secret={secret} isManager={isManager} rows={rows} />}
-        {current === "complaints" && <AdminComplaints key={start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
-                                   initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} />}
+        {current === "complaints" && <AdminComplaints key={"c" + start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
+                                   initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} mode="complaint" />}
+        {current === "objections" && <AdminComplaints key={"o" + start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
+                                   initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} mode="decobj"
+                                   onAdded={c => { setRows(r => [c, ...(r || [])]); openComplaint(c); }} />}
         {current === "sessions" && <AdminSessions secret={secret} version={sessVer} onOpen={c => openComplaint(c)} />}
         {current === "access" && <AdminAccess secret={secret} />}
         {current === "viewers" && <AdminViewers secret={secret} />}
@@ -2050,6 +2059,78 @@ function AdminPage({ secret, onLogout }) {
           </div>
         </div>, document.body
       )}
+    </div>
+  );
+}
+
+// نافذة «➕ اعتراض جديد» في قسم «⚖️ الاعتراضات» (للمدير والمسؤول؛ لا يظهر في الصفحات العامة): بيانات المعترض، والقرار
+// المعترض عليه (رقمه وتاريخه والجهة المحيلة)، وتاريخ تقديم الاعتراض مع فحص المهلة القانونية فوراً، ثم موضوعه ونصه وروابطه؛
+// يُرقَّم من تسلسل الاعتراضات في الموسم الحالي «1448-ع-001» (admin_add_decision_objection، القسم 59)
+function AddDecisionObjection({ secret, onClose, onDone }) {
+  const [f, setF] = useState({ at: toDateTimeInput(new Date()), name: "", role: "", phone: "", against: "", ref: "", date: "",
+                               by: "", title: "", subject: "", classification: "", links: [] });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const set = k => e => { setF(x => ({ ...x, [k]: e.target.value })); setErr(""); };
+  // فحص المهلة بالقيم الحالية
+  const delay = decObjDelay({ kind: DEC_OBJ, decision_date: f.date, received_date: f.at ? new Date(f.at) : null }, ADMIN_CTX.objDays);
+
+  async function save(e) {
+    e.preventDefault();
+    if (!f.at || !f.name.trim() || !f.against.trim() || !f.subject.trim()) return setErr("تاريخ تقديم الاعتراض واسم المعترض والمعترض عليه ونص الاعتراض إلزامية.");
+    if (badLink(f.links)) return setErr(BAD_LINK);
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_add_decision_objection", {
+      p_secret: secret, p_received_at: dateTimeInputToIso(f.at), p_name: f.name, p_role: f.role, p_phone: f.phone,
+      p_against: f.against, p_decision_ref: f.ref, p_decision_date: f.date || null, p_referred_by: f.by,
+      p_title: f.title, p_subject: f.subject, p_classification: f.classification, p_links: cleanLinks(f.links),
+    });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الإدخال (نفّذ القسم 59 من schema.sql في Supabase).");
+    onDone(data[0]);
+  }
+
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
+        <form className="card" onSubmit={save}>
+          <h2 style={{ marginTop: 0 }}>➕ اعتراض جديد على قرار إداري</h2>
+          <p className="muted" style={{ fontSize: 13.5, marginTop: 0 }}>يأخذ رقماً من تسلسل الاعتراضات (مثل 1448-ع-001)، ويُتابع بالجلسات كالمعتاد. لا يظهر في الصفحات العامة.</p>
+          <div className="grid">
+            <Field label="اسم المعترض" required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
+            <Field label="صفة المعترض"><input type="text" value={f.role} onChange={set("role")} maxLength={100} list="roles-list" placeholder="مثال: موجّه ديني (الأبرار)" /></Field>
+            <Field label="هاتف المعترض"><input type="tel" dir="ltr" value={f.phone} onChange={e => { setF(x => ({ ...x, phone: cleanPhone(e.target.value) })); setErr(""); }} maxLength={15} placeholder="963912345678" /></Field>
+            <Field label="المعترض عليه" required><input type="text" value={f.against} onChange={set("against")} maxLength={200} placeholder="مثال: قرار السيد مدير الحج" /></Field>
+            <Field label="رقم القرار المعترض عليه"><input type="text" value={f.ref} onChange={set("ref")} maxLength={60} placeholder="مثال: 2215/46/ ق د" /></Field>
+            <Field label="تاريخ صدور القرار"><input type="date" value={f.date} onChange={set("date")} /></Field>
+            <Field label="الجهة المحيلة" hint="مثال: السيد مدير الحج"><input type="text" value={f.by} onChange={set("by")} maxLength={200} /></Field>
+            <Field label="تاريخ تقديم الاعتراض" required><input type="datetime-local" value={f.at} onChange={set("at")} /></Field>
+            {delay && (
+              <div className={`field full reminder-bar ${delay.late ? "" : "later"}`}>
+                {delay.late
+                  ? `⚠️ خارج المدة القانونية: قُدّم بعد ${delay.diff} يوماً من صدور القرار (المهلة ${ADMIN_CTX.objDays} أيام).`
+                  : `✅ ضمن المدة القانونية: قُدّم بعد ${Math.max(0, delay.diff)} يوماً من صدور القرار (المهلة ${ADMIN_CTX.objDays} أيام).`}
+              </div>
+            )}
+            <Field label="موضوع الاعتراض"><input type="text" value={f.title} onChange={set("title")} maxLength={150} placeholder="مثال: إلغاء الصفة الإدارية والاعتذار النهائي" /></Field>
+            <Field label="تصنيف الاعتراض">
+              <select value={f.classification} onChange={set("classification")}>
+                <option value="">— اختر —</option>
+                {CLASSIFICATIONS.map(x => <option key={x}>{x}</option>)}
+              </select>
+            </Field>
+            <Field label="نص الاعتراض" required full><textarea style={{ minHeight: 160 }} value={f.subject} onChange={set("subject")} maxLength={5000} /></Field>
+            <LinksField value={f.links} onChange={l => setF(x => ({ ...x, links: l }))} hint="اختياري — حتى رابطين، مثل صورة الاعتراض الورقي أو القرار" />
+          </div>
+          <datalist id="roles-list">{ROLES.map(r => <option key={r} value={r} />)}</datalist>
+          {err && <Alert type="error">{err}</Alert>}
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+            <button className="btn" disabled={busy}>{busy ? "جارٍ الإدخال…" : "💾 إدخال الاعتراض"}</button>
+            <button type="button" className="btn secondary" onClick={onClose}>إلغاء</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -2077,7 +2158,7 @@ function EnterComplaintButton({ secret }) {
 }
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
-const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"],
+const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"], ["objections", "⚖️", "الاعتراضات"],
                   ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "قرارات الشكاوى"], ["admindec", "🏛️", "قرارات الإدارة"], ["archive", "📚", "المواسم السابقة"]];
 const NAV_MANAGER = [["notes", "🗒️", "الملاحظات"], ["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
@@ -2348,7 +2429,7 @@ function NameRole({ name, role }) {
 // تعريف الأعمدة: المفتاح، العنوان، قيمة الفرز، النص (للتصدير)، والعرض داخل الخلية
 const muted = v => v || <span className="muted">—</span>;
 const COLUMNS = [
-  { key: "number", label: "رقم الشكوى", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <><b dir="ltr">{c.complaint_number}</b> <KindBadge c={c} /></> },
+  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <><b dir="ltr">{c.complaint_number}</b> <KindBadge c={c} /></> },
   { key: "date", label: "التاريخ", sort: c => new Date(c.received_date).getTime(), text: c => xlDate(c.received_date), cell: c => fmtDate(c.received_date) },
   { key: "title", label: "العنوان", sort: c => c.title, text: c => c.title, cell: c => c.title ? <b>{c.title}</b> : muted() },
   { key: "name", label: "المشتكي", sort: c => c.complainant_name, text: c => withRole(c.complainant_name, c.complainant_role), cell: c => <NameRole name={c.complainant_name} role={c.complainant_role} /> },
@@ -3653,8 +3734,10 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
   );
 }
 
-// تبويب الشكاوى: تصفية بالحالة وبحث، ثم جدول الشكاوى
-function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch = "", initialFilter = "الكل" }) {
+// تبويب الشكاوى أو الاعتراضات: تصفية بالحالة وبحث، ثم جدول الطلبات
+// mode: «complaint» = قسم «📋 الشكاوى»، «decobj» = قسم «⚖️ الاعتراضات» (بزر «➕ اعتراض جديد»؛ onAdded بعد الإدخال)
+function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch = "", initialFilter = "الكل", mode = "complaint", onAdded }) {
+  const OBJ = mode === "decobj";
   // التصفية والبحث (قد يبدآن بقيمة من الرئيسية)، وحالة التصدير الكامل
   const [filter, setFilter] = useState(initialFilter);
   const [search, setSearch] = useState(initialSearch);
@@ -3669,10 +3752,11 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
   // التصنيف المعروض ("" = كل التصنيفات)
   const [klass, setKlass] = useState("");
   const klasses = [...new Set([...CLASSIFICATIONS, ...(rows || []).map(c => c.classification)].filter(Boolean))];
-  // نوع الطلب المعروض ("" = الكل، "complaint" = الشكاوى، "decobj" = الاعتراضات على قرارات إدارية)
-  const [kind, setKind] = useState("");
+  // طلبات هذا القسم فقط (شكاوى أو اعتراضات على قرارات)
   const inSeason = (rows || []).filter(c => (!season || c.season === season) && (!klass || c.classification === klass)
-    && (!kind || (kind === "decobj") === isDecObj(c)));
+    && OBJ === isDecObj(c));
+  // نافذة «➕ اعتراض جديد»
+  const [addingObj, setAddingObj] = useState(false);
 
   // التصفية بالحالة ونص البحث (الرقم، الأسماء، الموضوع، الرموز)
   const term = search.trim();
@@ -3685,7 +3769,7 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
     (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to, c.decision_ref, c.referred_by, c.accused_key].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
   // موسم سابق مفتوح للتعديل (ليس الحالي، وله شكاوى في القاعدة): زر «➕ إضافة شكوى» إليه
-  const pastOpen = ADMIN_CTX.manager && season && current && season !== current && (rows || []).some(c => c.season === season);
+  const pastOpen = !OBJ && ADMIN_CTX.manager && season && current && season !== current && (rows || []).some(c => c.season === season);
   const [adding, setAdding] = useState(false);
 
   // العرض: أزرار التصفية مع الأعداد، البحث، ثم الجدول
@@ -3702,14 +3786,10 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
           <option value="">كل التصنيفات</option>
           {klasses.map(x => <option key={x} value={x}>{x}</option>)}
         </select>
-        <select value={kind} onChange={e => setKind(e.target.value)} aria-label="نوع الطلب">
-          <option value="">الشكاوى والاعتراضات</option>
-          <option value="complaint">📋 الشكاوى فقط</option>
-          <option value="decobj">⚖️ الاعتراضات على قرارات إدارية</option>
-        </select>
       </div>
       <div className="chips">
-        {["الكل", ...STATUSES].map(s => (
+        {/* (الاعتراض على قرار بلا حالات «اعتراض المشتكى عليه على النتيجة») */}
+        {["الكل", ...STATUSES.filter(s => !OBJ || !/الاعتراض/.test(s))].map(s => (
           <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{s} ({count(s)})</button>
         ))}
       </div>
@@ -3717,19 +3797,23 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       <div className="chips">
         <button className={!missing ? "active" : ""} onClick={() => setMissing("")}>📂 كل الملفات</button>
         <button className={missing === "study" ? "active" : ""} onClick={() => setMissing("study")}>
-          ⚠️ بلا دراسة شكوى ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.study_url).length})</button>
+          ⚠️ بلا {OBJ ? "دراسة اعتراض" : "دراسة شكوى"} ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.study_url).length})</button>
         <button className={missing === "decision" ? "active" : ""} onClick={() => setMissing("decision")}>
           ⚠️ بلا ملف قرار ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.decision_url).length})</button>
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="grow" type="text" placeholder="بحث بالرقم أو الاسم أو الهاتف أو الموضوع أو الجهة…" value={search} onChange={e => setSearch(e.target.value)} />
         <button className="btn secondary" onClick={reload}>🔄 تحديث</button>
+        {OBJ && <button className="btn" onClick={() => setAddingObj(true)}>➕ اعتراض جديد</button>}
         {pastOpen && <button className="btn gold" onClick={() => setAdding(true)}>➕ إضافة شكوى إلى موسم {season}</button>}
       </div>
       {pastOpen && <p className="muted" style={{ fontSize: 13.5, marginTop: -6 }}>🔓 موسم {season} مفتوح للتعديل. بعد الانتهاء أعد أرشفته من «الإعدادات ← 📚 أرشفة المواسم».</p>}
       {rows === null ? <Loading /> : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
+      {addingObj && ReactDOM.createPortal(
+        <AddDecisionObjection secret={secret} onClose={() => setAddingObj(false)}
+          onDone={c => { setAddingObj(false); onAdded ? onAdded(c) : (reload(), onOpen(c)); }} />, document.body)}
     </div>
   );
 }
@@ -4006,7 +4090,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
   // تحويل النوع (للمدير): شكوى ↔ اعتراض على قرار إداري، برقمه وجلساته (admin_set_kind)
   async function convert() {
     const to = isDecObj(c) ? "شكوى" : DEC_OBJ;
-    if (!window.confirm(`تحويل ${c.complaint_number} إلى «${to}»؟\nيبقى رقمه وجلساته وكل بياناته، وتتغيّر التسميات وملف Word.`)) return;
+    if (!window.confirm(`تحويل ${c.complaint_number} إلى «${to}»؟\nيأخذ رقماً جديداً من تسلسل ${to === DEC_OBJ ? "الاعتراضات" : "الشكاوى"}، وتبقى جلساته وكل بياناته، وتتغيّر التسميات وملف Word.`)) return;
     setBusy(true); setMsg(null);
     const { data, error } = await sb.rpc("admin_set_kind", { p_secret: secret, p_id: c.id, p_kind: to });
     setBusy(false);
@@ -4014,7 +4098,9 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       return setMsg({ type: "error", text: "لا تُحوَّل إلى اعتراض على قرار: على هذه الشكوى «اعتراض على النتيجة» من المشتكى عليه." });
     if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التحويل (نفّذ القسم 55 من schema.sql في Supabase)." });
     onSaved(data[0]); setCardTab("follow");   // (تبويب «الاعتراض» قد يختفي بعد التحويل)
-    setMsg({ type: "ok", text: to === DEC_OBJ ? "✅ تحوّلت إلى اعتراض على قرار إداري. أكمل بيانات القرار المعترض عليه من «✏️ تعديل بيانات القرار المعترض عليه»." : "✅ تحوّلت إلى شكوى." });
+    setMsg({ type: "ok", text: to === DEC_OBJ
+      ? `✅ تحوّلت إلى اعتراض على قرار إداري برقم ${data[0].complaint_number} (في قسم «⚖️ الاعتراضات»). أكمل بيانات القرار من «✏️ تعديل بيانات القرار المعترض عليه».`
+      : `✅ تحوّلت إلى شكوى برقم ${data[0].complaint_number} (في قسم «📋 الشكاوى»).` });
   }
 
   // هل أُغلقت نهائياً بعد الاعتراض؟ (تُقفل ولا يبقى إلا تعديل الجلسات)
@@ -5152,8 +5238,9 @@ function AdminGuide({ isManager }) {
         <h2>⚖️ الاعتراض على قرار إداري</h2>
         <p style={{ marginTop: 0 }}>نوع طلب ثانٍ بجانب الشكوى، في السجل نفسه وبالترقيم نفسه، ولا يظهر في الصفحات العامة. يختلف عن «اعتراض المشتكى عليه على نتيجة شكوى».</p>
         <ul className="list">
-          <GuideItem name="1. الإدخال">من «📝 إدخال شكوى» (المدير أو المسؤول) كأي شكوى.</GuideItem>
-          <GuideItem name="2. التحويل (للمدير)">في أسفل البطاقة: «🔁 تحويل إلى اعتراض على قرار إداري»؛ يبقى الرقم والجلسات، وتصير التسميات «المعترض» و«المعترض عليه». والعكس «🔁 تحويل إلى شكوى».</GuideItem>
+          <GuideItem name="القسم والترقيم">قسم «⚖️ الاعتراضات» مستقل عن «📋 الشكاوى»، وتسلسله خاص: «1448-ع-001»، ورمزه في Word «ق.ع» (والشكاوى «1448-00001» و«ق.ش»).</GuideItem>
+          <GuideItem name="1. الإدخال">زر «➕ اعتراض جديد» في قسم «⚖️ الاعتراضات» (المدير أو المسؤول).</GuideItem>
+          <GuideItem name="2. التحويل (للمدير)">إن أُدخل كشكوى: في أسفل البطاقة «🔁 تحويل إلى اعتراض على قرار إداري»؛ يأخذ رقماً من تسلسل الاعتراضات وتبقى الجلسات. والعكس «🔁 تحويل إلى شكوى».</GuideItem>
           <GuideItem name="3. بيانات القرار (للمدير)">«✏️ تعديل بيانات القرار المعترض عليه»: رقم القرار (يُختار من «🏛️ قرارات الإدارة» فيُملأ تاريخه، أو يُكتب يدوياً)، والجهة المحيلة، و<b>تاريخ تقديم الاعتراض الفعلي</b>.</GuideItem>
           <GuideItem name="4. المهلة القانونية">تُحسب من تاريخ القرار إلى تاريخ تقديم الاعتراض، ويظهر «✅ ضمن المدة» أو «⚠️ خارج المدة القانونية». عدد الأيام في الإعدادات (الافتراضي 3).</GuideItem>
           <GuideItem name="5. الجلسات">كالشكوى: رد الطرف المعني، والتواصل مع مصدر القرار، ومناقشة المعترض، ورأي اللجنة.</GuideItem>
@@ -5937,10 +6024,12 @@ function ReportsPage({ code, viewerName }) {
     if (kind === "all") setRange({ from: "", to: "" });
   }
 
-  // الأعداد: الإجمالي، المغلقة، والمفتوحة (كل ما لم يُغلق)
-  const total = rows ? rows.length : 0;
-  const closed = rows ? rows.filter(r => isClosed(r.status)).length : 0;
-  const decObjs = rows ? rows.filter(isDecObj).length : 0;   // الاعتراضات على قرارات (ضمن الإجمالي)
+  // طلبات التبويب: الشكاوى، أو الاعتراضات على قرارات؛ والأعداد: الإجمالي، المغلقة، والمفتوحة (كل ما لم يُغلق)
+  const OBJ = view === "objections";
+  const shown = rows ? rows.filter(r => OBJ === isDecObj(r)) : null;
+  const total = shown ? shown.length : 0;
+  const closed = shown ? shown.filter(r => isClosed(r.status)).length : 0;
+  const noun = OBJ ? "الاعتراضات" : "الشكاوى";
 
   // العرض: الفلتر، بطاقات الأعداد، ثم الجدول (يتحول لبطاقات على الجوال)
   return (
@@ -5952,10 +6041,10 @@ function ReportsPage({ code, viewerName }) {
         <div className="center" style={{ marginTop: 6 }}><InstallButton /></div>
       </div>
       <div className="tabs" style={{ marginBottom: 12 }}>
-        {[["complaints", "📋 الشكاوى"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
+        {[["complaints", "📋 الشكاوى"], ["objections", "⚖️ الاعتراضات"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
           <button key={k} className={view === k ? "active" : ""} onClick={() => setView(k)}>{t}</button>)}
       </div>
-      {view !== "complaints" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer
+      {view === "decisions" || view === "admindec" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer
         requests={rows || []} onOpenRequest={cardOn ? r => setOpenNum(r.complaint_number) : null} /> : (<>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="filters">
@@ -5988,24 +6077,23 @@ function ReportsPage({ code, viewerName }) {
       {rows === null ? (!error && <Loading />) : (
         <>
           <div className="kpis">
-            <div className="kpi"><div className="label">{decObjs ? "إجمالي الطلبات" : "إجمالي الشكاوى"}</div><div className="value">{total}</div></div>
-            {decObjs > 0 && <div className="kpi"><div className="label">⚖️ اعتراضات على قرارات</div><div className="value">{decObjs}</div></div>}
+            <div className="kpi"><div className="label">إجمالي {noun}</div><div className="value">{total}</div></div>
             <div className="kpi closed"><div className="label">المغلقة</div><div className="value">{closed}</div></div>
             <div className="kpi open"><div className="label">المفتوحة</div><div className="value">{total - closed}</div></div>
           </div>
-          {/* المشتكى عليهم الأكثر شكاوى في الموسم والفترة المختارين (الشكاوى فقط) */}
-          {countByAccused(rows).length > 0 && (
+          {/* المشتكى عليهم الأكثر شكاوى في الموسم والفترة المختارين (تبويب الشكاوى) */}
+          {!OBJ && countByAccused(shown).length > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
               <h2 style={{ marginTop: 0 }}>المشتكى عليهم الأكثر شكاوى</h2>
-              <BarList items={countByAccused(rows)} total={total - decObjs} />
+              <BarList items={countByAccused(shown)} total={total} />
             </div>
           )}
           <div className="card" style={{ padding: 0 }}>
-            {rows.length === 0 ? <div className="empty">لا توجد شكاوى في هذه الفترة</div> : (
-              <ComplaintsBrief rows={rows} onOpen={cardOn ? r => setOpenNum(r.complaint_number) : null} />
+            {shown.length === 0 ? <div className="empty">لا توجد {noun} في هذه الفترة</div> : (
+              <ComplaintsBrief rows={shown} onOpen={cardOn ? r => setOpenNum(r.complaint_number) : null} />
             )}
           </div>
-          {cardOn && rows.length > 0 && <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي شكوى لعرض بطاقتها (للاطلاع فقط)</p>}
+          {cardOn && shown.length > 0 && <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي طلب لعرض بطاقته (للاطلاع فقط)</p>}
         </>
       )}
       </>)}
@@ -6132,7 +6220,7 @@ function ComplaintsBrief({ rows, onOpen }) {
   return (
     <div className="table-wrap" style={{ maxHeight: "none" }}>
       <table className="stack">
-        <thead><tr><th>رقم الشكوى</th><th>عنوان الشكوى</th><th>الحالة</th><th>النتيجة</th></tr></thead>
+        <thead><tr><th>الرقم</th><th>العنوان</th><th>الحالة</th><th>النتيجة</th></tr></thead>
         <tbody>
           {rows.map(r => (
             <tr key={r.complaint_number} className={`status-row ${stClass(r.status)} ${onOpen ? "clickable" : ""}`}

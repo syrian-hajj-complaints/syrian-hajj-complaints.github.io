@@ -111,6 +111,8 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 58.
 --    2026-10-08  القسم 58: «الاسم الموحّد للمشتكى عليه» (accused_key، admin_set_accused_key، للمدير) للمؤشرات والتقارير؛
 --                كلمة مرور الأدمن الأولى صارت القسم 59.
+--    2026-10-12  القسم 59: ترقيم مستقل للاعتراضات على قرارات («1448-ع-001»)، وإدخالها مباشرة، والتحويل برقم جديد من تسلسل
+--                النوع، والحذف بالتسلسلين؛ كلمة مرور الأدمن الأولى صارت القسم 60.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -6522,7 +6524,200 @@ grant execute on function public.viewer_report(text, timestamptz, timestamptz, t
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 59) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 59) ترقيم مستقل للاعتراضات على قرارات إدارية: «1448-ع-001» بعدّاد خاص لكل موسم (season_counters: «1448-ع»)،
+--     والشكاوى «1448-00001» كما هي؛ الاعتراض يُدخل مباشرة برقمه، والتحويل يعطي الطلب رقماً من تسلسل نوعه الجديد،
+--     وكل عدّاد يعود إلى أكبر رقم باقٍ في تسلسله (فلا يبقى آخر رقم فارغاً)؛ والاعتراضات الموجودة تُرقَّم بتسلسلها
+--     يحتاج الأقسام حتى 58 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (يغيّر أرقام الاعتراضات الموجودة فقط)
+-- ---------------------------------------------------------------------
+-- مفتاح عدّاد التسلسل ورقم الطلب حسب نوعه
+create or replace function public.request_counter_key(p_season text, p_obj boolean)
+returns text language sql immutable as $$
+  select case when p_obj then p_season || '-ع' else p_season end;
+$$;
+create or replace function public.request_number(p_season text, p_obj boolean, p_n int)
+returns text language sql immutable as $$
+  select case when p_obj then p_season || '-ع-' || lpad(p_n::text, 3, '0') else p_season || '-' || lpad(p_n::text, 5, '0') end;
+$$;
+
+-- الرقم التالي في تسلسل (الموسم والنوع)، بزيادة ذرّية للعدّاد
+create or replace function public.next_request_number(p_season text, p_obj boolean)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_n int;
+begin
+  insert into public.season_counters (season, last_number) values (public.request_counter_key(p_season, p_obj), 1)
+    on conflict (season) do update set last_number = public.season_counters.last_number + 1
+    returning last_number into v_n;
+  return public.request_number(p_season, p_obj, v_n);
+end $$;
+
+-- إعادة عدّادَي موسم إلى أكبر رقم باقٍ في كل تسلسل (أو صفر)
+create or replace function public.reset_season_counters(p_season text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.season_counters (season, last_number)
+  select public.request_counter_key(p_season, o), coalesce((
+           select max(nullif(substring(c.complaint_number from case when o then '^' || p_season || '-ع-(\d+)$' else '^' || p_season || '-(\d+)$' end), '')::int)
+           from public.complaints c where c.season = p_season), 0)
+  from (values (false), (true)) v(o)
+  on conflict (season) do update set last_number = excluded.last_number;
+end $$;
+
+-- عند إدخال طلب: الموسم الحالي، ورقمه التالي في تسلسل نوعه، ورمز المتابعة والتاريخ، والحالة «جديد»
+create or replace function public.complaints_before_insert()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_season text := coalesce(nullif(public.setting('season'), ''), '1448');
+begin
+  new.season           := v_season;
+  new.complaint_number := public.next_request_number(v_season, coalesce(new.kind, 'شكوى') = 'اعتراض على قرار إداري');
+  new.tracking_code    := public.random_password(6, true);
+  new.received_date    := now();
+  new.updated_at       := now();
+  new.status           := 'جديد';
+  new.closed_date      := null;
+  return new;
+end $$;
+
+-- إدخال اعتراض على قرار إداري (برقم من تسلسل الاعتراضات)
+create or replace function public.admin_add_decision_objection(
+  p_secret text, p_received_at timestamptz, p_name text, p_role text, p_phone text,
+  p_against text, p_decision_ref text, p_decision_date date, p_referred_by text,
+  p_title text, p_subject text, p_classification text, p_links text[]
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+begin
+  if public.verify_password('أدمن', p_secret) is null
+     or coalesce(btrim(p_name), '') = '' or coalesce(btrim(p_against), '') = '' or coalesce(btrim(p_subject), '') = ''
+     or p_received_at is null or p_received_at > now() + interval '1 day' then
+    return;
+  end if;
+  insert into public.complaints (kind, complainant_name, complainant_role, phone_number, accused_name, title, subject, classification, links)
+  values ('اعتراض على قرار إداري', btrim(left(p_name, 200)), nullif(btrim(left(p_role, 100)), ''), public.normalize_phone(p_phone),
+          btrim(left(p_against, 200)), nullif(btrim(left(p_title, 150)), ''), btrim(left(p_subject, 5000)),
+          nullif(btrim(left(p_classification, 60)), ''), public.clean_links(p_links))
+  returning id into v_id;
+  update public.complaints set
+    received_date = p_received_at,
+    decision_ref  = nullif(btrim(left(p_decision_ref, 60)), ''),
+    decision_date = p_decision_date,
+    referred_by   = nullif(btrim(left(p_referred_by, 200)), '')
+  where id = v_id;
+  return query select * from public.complaints where id = v_id;
+end $$;
+
+-- تحويل نوع الطلب (للمدير): رقم جديد من تسلسل النوع الجديد، ويعود عدّاد التسلسل القديم إلى أكبر رقم باقٍ
+create or replace function public.admin_set_kind(p_secret text, p_id uuid, p_kind text)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  c public.complaints;
+  v_number text;
+begin
+  if public.verify_password('مدير', p_secret) is null or p_kind not in ('شكوى', 'اعتراض على قرار إداري') then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null then
+    return;
+  end if;
+  if p_kind = 'اعتراض على قرار إداري' and c.objection_at is not null then
+    raise exception 'HAS_OBJECTION';
+  end if;
+  if c.kind = p_kind then
+    return query select * from public.complaints where id = p_id;
+    return;
+  end if;
+  v_number := public.next_request_number(c.season, p_kind = 'اعتراض على قرار إداري');
+  -- (مشغّل التعديل يمنع تغيير الرقم: يُوقف أثناء هذا التعديل وحده)
+  alter table public.complaints disable trigger user;
+  update public.complaints set kind = p_kind, complaint_number = v_number, updated_at = now() where id = p_id;
+  alter table public.complaints enable trigger user;
+  perform public.reset_season_counters(c.season);
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+-- حذف طلب نهائياً (نسخة بالتسلسلين)
+create or replace function public.admin_delete_complaint(p_secret text, p_id uuid, p_number text)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  c     public.complaints;
+  v_max int;
+  v_obj boolean;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return json_build_object('ok', false, 'error', 'INVALID');
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null or btrim(coalesce(p_number, '')) <> c.complaint_number then
+    return json_build_object('ok', false, 'error', 'NUMBER');
+  end if;
+  v_obj := c.complaint_number ~ '-ع-\d+$';
+  delete from public.complaints where id = p_id;
+  perform public.reset_season_counters(c.season);
+  select last_number into v_max from public.season_counters where season = public.request_counter_key(c.season, v_obj);
+  return json_build_object('ok', true, 'number', c.complaint_number,
+    'freed', coalesce(nullif(substring(c.complaint_number from '-(\d+)$'), '')::int, 0) > coalesce(v_max, 0));
+end $$;
+
+-- إضافة شكوى إلى موسم سابق (الرقم التالي في تسلسل الشكاوى فقط)
+create or replace function public.admin_add_season_complaint(
+  p_secret text, p_season text, p_received_at timestamptz,
+  p_complainant_name text, p_complainant_role text, p_phone_number text, p_contact_number text,
+  p_accused_name text, p_accused_role text, p_accused_phone text, p_title text, p_subject text, p_classification text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_next int;
+  v_id   uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(p_season, '') !~ '^\d{4}$' or p_season = public.setting('season')
+     or coalesce(btrim(p_complainant_name), '') = '' or coalesce(btrim(p_accused_name), '') = '' or coalesce(btrim(p_subject), '') = ''
+     or not exists (select 1 from public.complaints where season = p_season) then
+    return;
+  end if;
+  select coalesce(max(nullif(substring(complaint_number from '^' || p_season || '-(\d+)$'), '')::int), 0) + 1 into v_next
+    from public.complaints where season = p_season;
+
+  -- الإدخال بلا مشغّلات الإدخال (التي ترقّم بالموسم الحالي)؛ تعود عند نهاية الدالة
+  alter table public.complaints disable trigger user;
+  insert into public.complaints (season, complaint_number, tracking_code, received_date, status, title,
+         complainant_name, complainant_role, phone_number, contact_number, accused_name, accused_role, accused_phone,
+         subject, classification, updated_at)
+  values (p_season, public.request_number(p_season, false, v_next), public.random_password(6, true), coalesce(p_received_at, now()), 'جديد',
+          nullif(btrim(left(p_title, 150)), ''), btrim(left(p_complainant_name, 200)), nullif(btrim(left(p_complainant_role, 100)), ''),
+          public.normalize_phone(p_phone_number), public.normalize_phone(p_contact_number),
+          btrim(left(p_accused_name, 200)), nullif(btrim(left(p_accused_role, 100)), ''), public.normalize_phone(p_accused_phone),
+          btrim(left(p_subject, 5000)), nullif(btrim(left(p_classification, 60)), ''), now())
+  returning id into v_id;
+  alter table public.complaints enable trigger user;
+  return query select * from public.complaints where id = v_id;
+end $$;
+
+-- مرة واحدة: الاعتراضات الموجودة تأخذ أرقامها من تسلسل الاعتراضات (بترتيب تاريخ تقديمها في كل موسم)، ثم تُضبط العدّادات
+alter table public.complaints disable trigger user;
+update public.complaints c set complaint_number = public.request_number(x.season, true, x.n)
+  from (select id, season, row_number() over (partition by season order by received_date, complaint_number) as n
+          from public.complaints where kind = 'اعتراض على قرار إداري' and complaint_number !~ '-ع-\d+$') x
+ where c.id = x.id
+   and not exists (select 1 from public.complaints y where y.season = x.season and y.complaint_number ~ '-ع-\d+$');
+alter table public.complaints enable trigger user;
+select public.reset_season_counters(s) from (select distinct season as s from public.complaints where season is not null
+                                              union select public.setting('season')) z;
+
+-- منع الموقع من استدعاء الدوال الداخلية، والسماح بدوال الإدارة
+revoke all on function public.next_request_number(text, boolean)  from public, anon, authenticated;
+revoke all on function public.reset_season_counters(text)         from public, anon, authenticated;
+grant execute on function public.admin_add_decision_objection(text, timestamptz, text, text, text, text, text, date, text, text, text, text, text[]) to anon, authenticated;
+grant execute on function public.admin_set_kind(text, uuid, text)            to anon, authenticated;
+grant execute on function public.admin_delete_complaint(text, uuid, text)    to anon, authenticated;
+grant execute on function public.admin_add_season_complaint(text, text, timestamptz, text, text, text, text, text, text, text, text, text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 60) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
