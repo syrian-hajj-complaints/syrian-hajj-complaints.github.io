@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-12  «🔗 روابط سريعة»: زر «⬆️ إلى القسم الرئيسي / ⬇️ إلى روابط سريعة» لكل رابط في الإعدادات (main في quick_links)،
+//                فيظهر الرابط مع الأقسام الرئيسية في القائمة الجانبية.
+//    2026-10-12  اسم ملف القرار بالطرفين: «قرار - المشتكي ضد المشتكى عليه - الرقم.docx».
 //    2026-10-12  حذف شارة «⚖️ اعتراض على قرار» من الجداول (لكل نوع قسمه؛ تبقى في البطاقة)، ورقم الطلب بترتيب حروفه (ReqNo)
 //                حتى لا يُعاد ترتيب «1448-ع-001» بسبب الحرف العربي.
 //    2026-10-12  قسمان منفصلان: «📋 الشكاوى» و«⚖️ الاعتراضات» (AdminComplaints mode)، ولكل منهما ترقيم ورمز (القسم 59):
@@ -679,7 +682,7 @@ function DecisionTab({ secret, c }) {
     try {
       const D = await loadDocx();
       const letterhead = await fetchBytes("letterhead.jpg");
-      downloadBlob(await D.Packer.toBlob(buildDecisionDoc(D, f, letterhead)), wordName("قرار", c));
+      downloadBlob(await D.Packer.toBlob(buildDecisionDoc(D, f, letterhead)), wordName("قرار", c, true));
     } catch (e) { setErr(e.message || NET_ERR); }
     setBusy(false);
   }
@@ -724,9 +727,13 @@ function DecisionTab({ secret, c }) {
   );
 }
 
-// اسم ملف Word للشكوى: «النوع - اسم المشتكي - رقم الشكوى.docx» (بلا الأحرف الممنوعة في أسماء الملفات)
-const wordName = (kind, c) => [kind, c.complainant_name, c.complaint_number]
-  .map(x => String(x || "").replace(/[\\/:*?"<>|\r\n\t]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean).join(" - ") + ".docx";
+// اسم ملف Word للشكوى: «النوع - اسم المشتكي - رقم الشكوى.docx»، وبالطرفين withAccused: «النوع - المشتكي ضد المشتكى عليه - الرقم.docx»
+// (بلا الأحرف الممنوعة في أسماء الملفات)
+const fileSafe = x => String(x || "").replace(/[\\/:*?"<>|\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+const wordName = (kind, c, withAccused = false) => {
+  const who = withAccused && fileSafe(c.accused_name) ? `${fileSafe(c.complainant_name)} ضد ${fileSafe(c.accused_name)}` : fileSafe(c.complainant_name);
+  return [kind, who, c.complaint_number].map(fileSafe).filter(Boolean).join(" - ") + ".docx";
+};
 
 // تصدير ملف الشكوى: الجلسات، الترويسة والشعار، وصور الروابط؛ تُرجع {images: عدد الصور المدمجة, links: عدد الروابط}
 async function exportComplaintWord(secret, c) {
@@ -2213,6 +2220,14 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose, links 
       {counts[key] > 0 && <span className={`side-count ${key === "today" ? "hot" : ""}`}>{counts[key]}</span>}
     </button>
   );
+  // رابط سريع (يفتح في نافذة جديدة)؛ والروابط قسمان: في القسم الرئيسي (main)، وفي «روابط سريعة»
+  const linkItem = (l, i) => (
+    <a key={"l" + i} className="side-item" href={l.url} target="_blank" rel="noopener" title={l.url}>
+      <span className="side-icon">{/drive\.google|docs\.google/i.test(l.url) ? "📁" : "🔗"}</span>
+      <span className="side-label">{l.name}</span><span className="side-ext">↗</span>
+    </a>
+  );
+  const mainLinks = links.filter(l => l.main), otherLinks = links.filter(l => !l.main);
   return (
     <aside className={`side ${open ? "open" : ""}`} aria-label="أقسام لوحة الإدارة">
       <div className="side-head">
@@ -2220,24 +2235,18 @@ function SideNav({ me, isManager, current, counts, open, onPick, onClose, links 
         <div className="side-who"><b>إدارة الحج والعمرة</b><small>قسم الشكاوى · الأدمن</small></div>
         <button type="button" className="side-close" onClick={onClose} aria-label="إغلاق القائمة">✕</button>
       </div>
-      <nav className="side-nav">{NAV_MAIN.map(item)}</nav>
+      {/* الأقسام الرئيسية، وبعدها الروابط السريعة المنقولة إلى القسم الرئيسي (main) */}
+      <nav className="side-nav">{NAV_MAIN.map(item)}{isManager && mainLinks.map(linkItem)}</nav>
       {isManager && (
         <>
           <div className="side-group">للمدير</div>
           <nav className="side-nav">{NAV_MANAGER.map(item)}</nav>
         </>
       )}
-      {isManager && links.length > 0 && (
+      {isManager && otherLinks.length > 0 && (
         <>
           <div className="side-group">🔗 روابط سريعة</div>
-          <nav className="side-nav">
-            {links.map((l, i) => (
-              <a key={i} className="side-item" href={l.url} target="_blank" rel="noopener" title={l.url}>
-                <span className="side-icon">{/drive\.google|docs\.google/i.test(l.url) ? "📁" : "🔗"}</span>
-                <span className="side-label">{l.name}</span><span className="side-ext">↗</span>
-              </a>
-            ))}
-          </nav>
+          <nav className="side-nav">{otherLinks.map(linkItem)}</nav>
         </>
       )}
       <div className="side-user">
@@ -3351,11 +3360,14 @@ function QuickLinksCard({ secret }) {
   }
   const remove = i => { if (window.confirm(`حذف الرابط «${list[i].name}»؟`)) persist(list.filter((x, k) => k !== i), "حُذف الرابط."); };
   const move = (i, d) => { const n = [...list]; const j = i + d; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; persist(n, "تم الترتيب."); };
+  // نقل رابط بين القسم الرئيسي في القائمة الجانبية و«روابط سريعة»
+  const toggleMain = i => persist(list.map((l, k) => k === i ? { name: l.name, url: l.url, ...(l.main ? {} : { main: true }) } : l),
+    list[i].main ? `«${list[i].name}» في «روابط سريعة».` : `«${list[i].name}» في القسم الرئيسي من القائمة الجانبية.`);
 
   return (
     <div className="card">
       <h2>🔗 روابط سريعة</h2>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>روابط تظهر في القائمة الجانبية للوحة (للمدير والمسؤول)، مثل مجلد Drive للملفات. الرابط يفتح في نافذة جديدة.</p>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>روابط تظهر في القائمة الجانبية للوحة، مثل مجلد Drive للملفات. الرابط يفتح في نافذة جديدة. «⬆️ إلى القسم الرئيسي» يضعه مع الأقسام الرئيسية بدل مجموعة «روابط سريعة».</p>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <form className="row" onSubmit={add}>
         <input type="text" placeholder="الاسم (مثال: مجلد Drive)" value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} maxLength={60} style={{ flex: "1 1 160px" }} />
@@ -3366,8 +3378,11 @@ function QuickLinksCard({ secret }) {
         <ul className="list-items">
           {list.map((l, i) => (
             <li key={i}>
-              <span><b>{l.name}</b> · <a href={l.url} target="_blank" rel="noopener">فتح ↗</a></span>
+              <span><b>{l.name}</b> · <a href={l.url} target="_blank" rel="noopener">فتح ↗</a>
+                {l.main && <span className="muted" style={{ fontSize: 12.5 }}> · 📌 في القسم الرئيسي</span>}</span>
               <span className="row" style={{ gap: 4 }}>
+                <button type="button" className="btn secondary sm" disabled={busy} onClick={() => toggleMain(i)}
+                  title={l.main ? "إعادته إلى «روابط سريعة»" : "نقله إلى القسم الرئيسي في القائمة الجانبية"}>{l.main ? "⬇️ إلى روابط سريعة" : "⬆️ إلى القسم الرئيسي"}</button>
                 <button type="button" className="btn secondary sm" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="إلى الأعلى">▲</button>
                 <button type="button" className="btn secondary sm" disabled={busy || i === list.length - 1} onClick={() => move(i, 1)} aria-label="إلى الأسفل">▼</button>
                 <button type="button" className="btn danger-text" disabled={busy} onClick={() => remove(i)}>حذف</button>
