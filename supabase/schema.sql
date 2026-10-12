@@ -113,6 +113,7 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 59.
 --    2026-10-12  القسم 59: ترقيم مستقل للاعتراضات على قرارات («1448-ع-001»)، وإدخالها مباشرة، والتحويل برقم جديد من تسلسل
 --                النوع، والحذف بالتسلسلين؛ كلمة مرور الأدمن الأولى صارت القسم 60.
+--    2026-10-12  القسم 60: المسؤول يقرأ الروابط السريعة المنقولة إلى القسم الرئيسي فقط؛ كلمة مرور الأدمن الأولى صارت القسم 61.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -6717,7 +6718,28 @@ grant execute on function public.admin_delete_complaint(text, uuid, text)    to 
 grant execute on function public.admin_add_season_complaint(text, text, timestamptz, text, text, text, text, text, text, text, text, text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 60) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 60) الروابط السريعة: المدير يقرأها كلها، والمسؤول يقرأ المنقولة إلى القسم الرئيسي فقط ("main": true)
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة
+-- ---------------------------------------------------------------------
+create or replace function public.admin_get_quick_links(p_secret text)
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_all json := coalesce(public.setting('quick_links'), '[]')::json;
+begin
+  if public.verify_password('مدير', p_secret) is not null then
+    return v_all;
+  end if;
+  if public.verify_password('أدمن', p_secret) is null then
+    return null;
+  end if;
+  return coalesce((select json_agg(e) from json_array_elements(v_all) e where (e->>'main') = 'true'), '[]'::json);
+end $$;
+
+grant execute on function public.admin_get_quick_links(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 61) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
