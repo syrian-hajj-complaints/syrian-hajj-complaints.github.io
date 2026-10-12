@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-12  حذف شارة «⚖️ اعتراض على قرار» من الجداول (لكل نوع قسمه؛ تبقى في البطاقة)، ورقم الطلب بترتيب حروفه (ReqNo)
+//                حتى لا يُعاد ترتيب «1448-ع-001» بسبب الحرف العربي.
 //    2026-10-12  قسمان منفصلان: «📋 الشكاوى» و«⚖️ الاعتراضات» (AdminComplaints mode)، ولكل منهما ترقيم ورمز (القسم 59):
 //                «1448-00001 / ق.ش» و«1448-ع-001 / ق.ع»؛ «➕ اعتراض جديد» داخل قسم الاعتراضات (AddDecisionObjection)؛ التحويل
 //                يعطي رقماً من تسلسل النوع الجديد؛ تبويب «⚖️ الاعتراضات» في صفحة التقارير.
@@ -198,8 +200,10 @@ const isDecObj = c => !!c && String(c.kind || "").trim() === DEC_OBJ;
 const partyLabels = c => isDecObj(c)
   ? { who: "المعترض", against: "المعترض عليه", noun: "الاعتراض", study: "دراسة اعتراض" }
   : { who: "المشتكي", against: "المشتكى عليه", noun: "الشكوى", study: "دراسة شكوى" };
-// شارة النوع (للاعتراض على قرار فقط)
+// شارة النوع (للاعتراض على قرار فقط؛ في البطاقة، لا في الجداول — لكل نوع قسمه)
 const KindBadge = ({ c }) => isDecObj(c) ? <span className="kind-badge" title={DEC_OBJ}>⚖️ اعتراض على قرار</span> : null;
+// رقم الطلب بترتيب حروفه كما هي (1448-ع-001): بلا إعادة ترتيب حرف «ع» العربي بين الأرقام
+const ReqNo = ({ n, bold = true }) => React.createElement(bold ? "b" : "span", { dir: "ltr", style: { unicodeBidi: "bidi-override" } }, n);
 
 // المهلة القانونية للاعتراض على قرار: عدد الأيام بين تاريخ القرار وتاريخ تقديم الاعتراض، ومتأخر؟ (days من الإعدادات)
 function decObjDelay(c, days) {
@@ -2429,7 +2433,7 @@ function NameRole({ name, role }) {
 // تعريف الأعمدة: المفتاح، العنوان، قيمة الفرز، النص (للتصدير)، والعرض داخل الخلية
 const muted = v => v || <span className="muted">—</span>;
 const COLUMNS = [
-  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <><b dir="ltr">{c.complaint_number}</b> <KindBadge c={c} /></> },
+  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <ReqNo n={c.complaint_number} /> },
   { key: "date", label: "التاريخ", sort: c => new Date(c.received_date).getTime(), text: c => xlDate(c.received_date), cell: c => fmtDate(c.received_date) },
   { key: "title", label: "العنوان", sort: c => c.title, text: c => c.title, cell: c => c.title ? <b>{c.title}</b> : muted() },
   { key: "name", label: "المشتكي", sort: c => c.complainant_name, text: c => withRole(c.complainant_name, c.complainant_role), cell: c => <NameRole name={c.complainant_name} role={c.complainant_role} /> },
@@ -4121,7 +4125,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
     <div className={`card status-card ${stClass(c.status)}`}>
       <div className="c-head">
         <div>
-          <div className="c-no">{c.complaint_number} <KindBadge c={c} /></div>
+          <div className="c-no"><ReqNo n={c.complaint_number} bold={false} /> <KindBadge c={c} /></div>
           <div className="meta">
             <span>📅 {fmtDateTime(c.received_date)}</span>
             {!isDecObj(c) && <span>🔖 رمز المتابعة: <span dir="ltr">{c.tracking_code || "—"}</span></span>}
@@ -5022,7 +5026,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   {objectionsOf(shown).map(r => (
                     <div key={r.complaint_number} className={onOpenRequest ? "clickable" : ""} style={{ marginTop: 6 }}
                       onClick={onOpenRequest ? () => { setShown(null); onOpenRequest(r); } : undefined} title={onOpenRequest ? "اضغط لفتح الاعتراض" : undefined}>
-                      <b dir="ltr">{r.complaint_number}</b> — {r.complainant_name} <StatusBadge value={r.status} />
+                      <ReqNo n={r.complaint_number} /> — {r.complainant_name} <StatusBadge value={r.status} />
                       {(r.obj_form || r.obj_merit) && <div><b>{r.obj_form ? `شكلاً: ${r.obj_form}` : ""}{r.obj_form && r.obj_merit ? " · " : ""}{r.obj_merit ? MERIT_TAG[r.obj_merit] : ""}</b></div>}
                       {r.result && <div className="muted" style={{ fontSize: 13.5 }}>النتيجة: {r.result}</div>}
                     </div>
@@ -6120,7 +6124,7 @@ function ComplaintView({ c, sessions }) {
     <div className={`card status-card ${stClass(c.status)}`}>
       <div className="c-head">
         <div>
-          <div className="c-no">{c.complaint_number} <KindBadge c={c} /></div>
+          <div className="c-no"><ReqNo n={c.complaint_number} bold={false} /> <KindBadge c={c} /></div>
           <div className="meta"><span>📅 {fmtDateTime(c.received_date)}</span><span className="readonly-tag">👁️ للاطلاع فقط</span></div>
         </div>
         <div className="c-head-actions"><StatusBadge value={c.status} /></div>
@@ -6225,7 +6229,7 @@ function ComplaintsBrief({ rows, onOpen }) {
           {rows.map(r => (
             <tr key={r.complaint_number} className={`status-row ${stClass(r.status)} ${onOpen ? "clickable" : ""}`}
               onClick={onOpen ? () => onOpen(r) : undefined} title={onOpen ? "اضغط لعرض بطاقة الشكوى" : undefined}>
-              <td data-label="رقم الشكوى"><b dir="ltr">{r.complaint_number}</b> <KindBadge c={r} /></td>
+              <td data-label="الرقم"><ReqNo n={r.complaint_number} /></td>
               <td data-label="عنوان الشكوى"><b>{r.title || "—"}</b></td>
               <td data-label="الحالة"><StatusBadge value={r.status} /></td>
               <td data-label="النتيجة" className="subj">{r.result || "—"}</td>
