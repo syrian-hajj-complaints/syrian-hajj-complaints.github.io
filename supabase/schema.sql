@@ -6700,7 +6700,7 @@ end $$;
 -- مرة واحدة: الاعتراضات الموجودة تأخذ أرقامها من تسلسل الاعتراضات (بترتيب تاريخ تقديمها في كل موسم)، ثم تُضبط العدّادات
 alter table public.complaints disable trigger user;
 update public.complaints c set complaint_number = public.request_number(x.season, true, x.n)
-  from (select id, season, row_number() over (partition by season order by received_date, complaint_number) as n
+  from (select id, season, (row_number() over (partition by season order by received_date, complaint_number))::int as n
           from public.complaints where kind = 'اعتراض على قرار إداري' and complaint_number !~ '-ع-\d+$') x
  where c.id = x.id
    and not exists (select 1 from public.complaints y where y.season = x.season and y.complaint_number ~ '-ع-\d+$');
