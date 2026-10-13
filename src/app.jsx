@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-12  «🔒 قفل الجهاز» (PinButton / DeviceLock) في لوحة الإدارة وصفحة التقارير: رمز من 4 أرقام يُحفظ على الجهاز فقط
+//                (SHA-256، لا في Supabase)، وشاشة قفل بعد مدة بلا استعمال (60 ثانية افتراضياً) وعند فتح المنصة بعدها؛
+//                «قفل الآن»، وتغيير الرمز وإلغاؤه بالرمز الحالي؛ 5 محاولات خاطئة أو «نسيت الرمز» ← خروج والدخول بكلمة المرور.
 //    2026-10-12  «🔗 روابط سريعة»: زر «⬆️ إلى القسم الرئيسي / ⬇️ إلى روابط سريعة» لكل رابط في الإعدادات (main في quick_links)،
 //                فيظهر الرابط مع الأقسام الرئيسية في القائمة الجانبية للمدير والمسؤولين (وباقي الروابط للمدير فقط).
 //    2026-10-12  اسم ملف القرار بالطرفين: «قرار - المشتكي ضد المشتكى عليه - الرقم.docx».
@@ -2035,6 +2038,7 @@ function AdminPage({ secret, onLogout }) {
           <h2 className="admin-title">{current === "home" ? "🏠 الرئيسية" : section.title}</h2>
           <div className="admin-top-actions">
             <InstallButton />
+            <PinButton />
             <EnterComplaintButton secret={secret} />
             <button type="button" className={`btn secondary sm ${current === "guide" ? "is-on" : ""}`} onClick={() => pick("guide")}>📘 <span className="hide-xs">دليل المنصة</span></button>
             {onLogout && <button type="button" className="btn sm" onClick={onLogout}>خروج</button>}
@@ -6057,7 +6061,7 @@ function ReportsPage({ code, viewerName }) {
         <h1>تقارير الشكاوى</h1>
         <p>أهلاً {viewerName}</p>
         {/* أيقونة «تقارير الشكاوى» على الجوال أو الحاسوب */}
-        <div className="center" style={{ marginTop: 6 }}><InstallButton /></div>
+        <div className="center row" style={{ marginTop: 6, justifyContent: "center" }}><InstallButton /><PinButton /></div>
       </div>
       <div className="tabs" style={{ marginBottom: 12 }}>
         {[["complaints", "📋 الشكاوى"], ["objections", "⚖️ الاعتراضات"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
@@ -6388,6 +6392,179 @@ function ReportCard({ code, number, onClose }) {
 }
 
 // =====================================================================
+// 🔒 قفل الجهاز برمز PIN (لوحة الإدارة وصفحة التقارير): رمز من 4 أرقام يُحفظ على هذا الجهاز فقط (مُشفَّراً بـ SHA-256)،
+// وتظهر شاشة القفل بعد مدة بلا استعمال (60 ثانية افتراضياً) وعند فتح المنصة بعد هذه المدة؛ 5 محاولات خاطئة ← خروج
+// =====================================================================
+const PIN_KEY = "hajj_pin";              // { salt, hash, timeout } على الجهاز
+const PIN_ACTIVE = "hajj_last_active";   // آخر وقت استعمال (لقفل المنصة إن فُتحت بعد المدة)
+const PIN_TIMEOUTS = [[60, "دقيقة واحدة"], [120, "دقيقتان"], [300, "5 دقائق"], [900, "15 دقيقة"]];
+const readPin = () => { try { return JSON.parse(storeGet(localStorage, PIN_KEY)) || null; } catch { return null; } };
+const pinHash = async (salt, pin) => {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${pin}`));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+};
+const touchActive = () => storeSet(localStorage, PIN_ACTIVE, String(Date.now()));
+
+// خانات الرمز الأربع مع لوحة أرقام (وتقبل لوحة المفاتيح)؛ onDone(الرمز) عند اكتمال 4 أرقام
+function PinPad({ onDone, error, busy }) {
+  const [v, setV] = useState("");
+  const push = d => setV(x => {
+    const n = d === "⌫" ? x.slice(0, -1) : (x + d).slice(0, 4);
+    if (n.length === 4 && d !== "⌫") setTimeout(() => { onDone(n); setV(""); }, 120);
+    return n;
+  });
+  useEffect(() => {
+    const onKey = e => { if (/^\d$/.test(e.key)) push(e.key); else if (e.key === "Backspace") push("⌫"); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <div className="pin-box">
+      <div className={`pin-dots ${error ? "bad" : ""}`} aria-label={`${v.length} من 4`}>
+        {[0, 1, 2, 3].map(i => <span key={i} className={i < v.length ? "on" : ""} />)}
+      </div>
+      <div className="pin-pad">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map((d, i) => d
+          ? <button key={i} type="button" disabled={busy} onClick={() => push(d)} aria-label={d === "⌫" ? "حذف" : d}>{d}</button>
+          : <span key={i} />)}
+      </div>
+    </div>
+  );
+}
+
+// شاشة القفل فوق كل شيء: enabled = صفحة محمية مفتوحة بكلمة مرور؛ onReset = الخروج (5 محاولات خاطئة أو «نسيت الرمز»)
+function DeviceLock({ enabled, onReset }) {
+  // (الرمز يُقرأ من الجهاز في كل فحص، فيعمل القفل فور تعيينه دون إعادة فتح الصفحة)
+  const expired = () => { const p = readPin(), t = Number(storeGet(localStorage, PIN_ACTIVE) || 0); return !!p && (!t || Date.now() - t > p.timeout * 1000); };
+  const [locked, setLocked] = useState(() => !!(enabled && expired()));
+  const [err, setErr] = useState("");
+  const [tries, setTries] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const cfgPin = readPin();
+  const on = !!enabled;
+
+  // تسجيل الاستعمال (كل ثانيتين على الأكثر)، وفحص المدة كل 5 ثوانٍ وعند العودة إلى الصفحة
+  useEffect(() => {
+    if (!on) return;
+    if (!locked) touchActive();
+    let last = 0;
+    const act = () => { if (locked) return; const n = Date.now(); if (n - last > 2000) { last = n; touchActive(); } };
+    const check = () => { if (!locked && expired()) setLocked(true); };
+    const vis = () => { if (document.visibilityState === "visible") check(); };
+    const now = () => { if (readPin()) setLocked(true); };   // زر «🔒 قفل الآن»
+    ["pointerdown", "keydown", "scroll", "touchstart"].forEach(e => window.addEventListener(e, act, { passive: true }));
+    document.addEventListener("visibilitychange", vis);
+    window.addEventListener("hajj-lock-now", now);
+    const t = setInterval(check, 5000);
+    return () => { ["pointerdown", "keydown", "scroll", "touchstart"].forEach(e => window.removeEventListener(e, act));
+                   document.removeEventListener("visibilitychange", vis); window.removeEventListener("hajj-lock-now", now); clearInterval(t); };
+  }, [on, locked]);
+
+  // التحقق من الرمز
+  async function tryPin(pin) {
+    setBusy(true);
+    const ok = (await pinHash(cfgPin.salt, pin)) === cfgPin.hash;
+    setBusy(false);
+    if (ok) { setLocked(false); setErr(""); setTries(0); touchActive(); return; }
+    const n = tries + 1; setTries(n);
+    if (n >= 5) { setLocked(false); setTries(0); onReset(false); return; }
+    setErr(`الرمز غير صحيح — بقي ${5 - n} ${5 - n === 1 ? "محاولة" : "محاولات"} قبل الخروج.`);
+  }
+
+  // «نسيت الرمز؟»: خروج وحذف الرمز من الجهاز (الدخول من جديد بكلمة المرور)
+  function forgot() {
+    if (!window.confirm("سيتم الخروج وحذف رمز القفل من هذا الجهاز، وتدخل من جديد بكلمة المرور. متابعة؟")) return;
+    setLocked(false); onReset(true);
+  }
+
+  if (!on || !locked || !cfgPin) return null;
+  return ReactDOM.createPortal(
+    <div className="pin-lock" role="dialog" aria-modal="true" aria-label="المنصة مقفلة">
+      <Logo size={56} />
+      <h2>🔒 المنصة مقفلة</h2>
+      <p>أدخل رمز القفل (4 أرقام)</p>
+      <PinPad onDone={tryPin} error={!!err} busy={busy} />
+      {err && <div className="pin-err">{err}</div>}
+      <button type="button" className="btn danger-text pin-forgot" onClick={forgot}>نسيت الرمز؟ الدخول بكلمة المرور</button>
+    </div>, document.body);
+}
+
+// زر «🔒 قفل» ونافذة إعداده: تعيين الرمز (مرتين للتأكيد) ومدة القفل، أو تغييره، أو إلغاؤه (بالرمز الحالي)، أو القفل الآن
+function PinButton() {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState("menu");   // menu / new / confirm / current
+  const [first, setFirst] = useState("");
+  const [timeout, setTimeoutSec] = useState(() => (readPin() || {}).timeout || 60);
+  const [msg, setMsg] = useState(null);
+  const [next, setNext] = useState(null);     // بعد التحقق من الرمز الحالي: change / off
+  const cur = readPin();
+
+  const close = () => { setOpen(false); setStep("menu"); setFirst(""); setMsg(null); };
+  async function save(pin) {
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(12)), x => x.toString(16).padStart(2, "0")).join("");
+    storeSet(localStorage, PIN_KEY, JSON.stringify({ salt, hash: await pinHash(salt, pin), timeout }));
+    touchActive(); setStep("menu"); setFirst("");
+    setMsg({ type: "ok", text: "✅ حُفظ رمز القفل على هذا الجهاز." });
+  }
+  async function onPin(pin) {
+    if (step === "new") { setFirst(pin); setStep("confirm"); setMsg(null); return; }
+    if (step === "confirm") { if (pin !== first) { setStep("new"); setFirst(""); return setMsg({ type: "error", text: "الرمزان غير متطابقين — أعد الإدخال." }); } return save(pin); }
+    if (step === "current") {
+      if ((await pinHash(cur.salt, pin)) !== cur.hash) return setMsg({ type: "error", text: "الرمز الحالي غير صحيح." });
+      setMsg(null);
+      if (next === "off") { storeSet(localStorage, PIN_KEY, null); setStep("menu"); return setMsg({ type: "ok", text: "أُلغي رمز القفل من هذا الجهاز." }); }
+      setStep("new");
+    }
+  }
+  // تغيير المدة لرمز موجود (يُحفظ مباشرة)
+  const setTO = s => { setTimeoutSec(s); if (cur) storeSet(localStorage, PIN_KEY, JSON.stringify({ ...cur, timeout: s })); };
+  // القفل الآن: يُعدّ آخر استعمال قديماً، فتظهر شاشة القفل خلال ثوانٍ
+  const lockNow = () => { storeSet(localStorage, PIN_ACTIVE, "1"); close(); window.dispatchEvent(new Event("hajj-lock-now")); };
+
+  return (
+    <>
+      <button type="button" className="btn secondary sm" onClick={() => setOpen(true)} title="قفل المنصة على هذا الجهاز برمز من 4 أرقام">
+        🔒 <span className="hide-xs">{cur ? "القفل" : "رمز القفل"}</span>
+      </button>
+      {open && ReactDOM.createPortal(
+        <div className="modal-back" onClick={close}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-close"><button className="btn secondary sm" onClick={close}>✕ إغلاق</button></div>
+            <div className="card center">
+              <h2 style={{ marginTop: 0 }}>🔒 قفل المنصة على هذا الجهاز</h2>
+              {step === "menu" ? (
+                <>
+                  <p className="muted" style={{ fontSize: 14 }}>رمز من 4 أرقام يُطلب بعد مدة بلا استعمال، وعند فتح المنصة بعدها. يُحفظ على هذا الجهاز فقط، ولا يغني عن كلمة المرور.</p>
+                  <Field label="القفل بعد بلا استعمال">
+                    <select value={timeout} onChange={e => setTO(Number(e.target.value))}>{PIN_TIMEOUTS.map(([s, t]) => <option key={s} value={s}>{t}</option>)}</select>
+                  </Field>
+                  {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+                  <div className="grid" style={{ marginTop: 10 }}>
+                    {!cur ? <button type="button" className="btn" onClick={() => { setStep("new"); setMsg(null); }}>تعيين رمز القفل</button> : (
+                      <>
+                        <button type="button" className="btn" onClick={lockNow}>🔒 قفل الآن</button>
+                        <button type="button" className="btn secondary" onClick={() => { setNext("change"); setStep("current"); setMsg(null); }}>تغيير الرمز</button>
+                        <button type="button" className="btn secondary" style={{ color: "var(--danger)" }} onClick={() => { setNext("off"); setStep("current"); setMsg(null); }}>إلغاء القفل</button>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontWeight: 700 }}>{step === "new" ? "أدخل الرمز الجديد (4 أرقام)" : step === "confirm" ? "أعد إدخال الرمز للتأكيد" : "أدخل الرمز الحالي"}</p>
+                  <PinPad key={step} onDone={onPin} error={msg && msg.type === "error"} />
+                  {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+                  <button type="button" className="btn danger-text" style={{ marginTop: 8 }} onClick={() => { setStep("menu"); setFirst(""); setMsg(null); }}>رجوع</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>, document.body)}
+    </>
+  );
+}
+
+// =====================================================================
 // التطبيق الرئيسي
 // =====================================================================
 // يختار الصفحة حسب الرابط: ‎#/admin، ‎#/reports، ‎#/result، وغير ذلك ← المشتكي
@@ -6447,9 +6624,14 @@ function App() {
   else if (hash === "#/objection") { label = "الاعتراض"; page = <ObjectionPage />; }
   else page = <ComplainantPage />;
 
-  // العرض: الشريط العلوي ثم الصفحة المختارة
+  // قفل الجهاز: للوحة الإدارة وصفحة التقارير المفتوحتين بكلمة مرور؛ الخروج منه يمسح كلمة المرور (وحذف الرمز عند «نسيت الرمز»)
+  const protectedPage = (hash === "#/admin" && !!adminSecret) || (hash === "#/reports" && !!viewer);
+  const lockReset = dropPin => { if (dropPin) storeSet(localStorage, PIN_KEY, null); setAdmin(null); setView(null); };
+
+  // العرض: الشريط العلوي ثم الصفحة المختارة، وشاشة القفل فوقها عند الحاجة
   return (
     <>
+      <DeviceLock key={protectedPage ? "on" : "off"} enabled={protectedPage} onReset={lockReset} />
       {!(hash === "#/admin" && adminSecret) && <Header label={label} onLogout={logout}
         adminLink={hash !== "#/admin" && hash !== "#/reports" && (isStandalone() || !!adminSecret || storeGet(localStorage, ADMIN_DEVICE) === "1")} />}
       <main className={`container${hash === "#/admin" && adminSecret ? " admin-wide" : ""}`}>{page}</main>

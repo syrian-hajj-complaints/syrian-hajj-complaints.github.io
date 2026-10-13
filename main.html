@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-12  شاشة قفل الجهاز برمز PIN ولوحة الأرقام (.pin-lock / .pin-dots / .pin-pad).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
     2026-10-01  القائمة الجانبية في أقصى اليمين (.admin-wide)؛ تنسيقات المؤشرات (.ind-* / .bars / .cols).
@@ -434,6 +435,27 @@
   /* شارة نوع الطلب: اعتراض على قرار إداري (ذهبية، بجانب الرقم) */
   .kind-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #f1ead7; color: #6b5d2f; border: 1px solid #d9c89e;
                 font-size: 12px; font-weight: 700; white-space: nowrap; vertical-align: middle; }
+  /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
+  .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; }
+  .pin-lock h2 { margin: 6px 0 0; color: #fff; }
+  .pin-lock p { margin: 0 0 6px; opacity: .85; }
+  .pin-box { display: flex; flex-direction: column; align-items: center; gap: 18px; margin-top: 8px; }
+  .pin-dots { display: flex; gap: 16px; direction: ltr; }
+  .pin-dots span { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; opacity: .7; }
+  .pin-dots span.on { background: currentColor; opacity: 1; }
+  .pin-dots.bad { color: #f2a196; animation: pin-shake .35s; }
+  @keyframes pin-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  @media (prefers-reduced-motion: reduce) { .pin-dots.bad { animation: none; } }
+  .pin-pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px; direction: ltr; }
+  .pin-pad button { width: 72px; height: 72px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.08);
+                    color: inherit; font-size: 26px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .pin-pad button:active { background: rgba(255,255,255,.25); }
+  .pin-pad button:focus-visible { outline: 2px solid #d9c89e; outline-offset: 2px; }
+  .modal .pin-pad button { border-color: var(--line); background: #faf8f4; color: var(--ink); }
+  .modal .pin-dots { color: var(--brand); justify-content: center; }
+  .pin-err { color: #f2a196; font-weight: 700; font-size: 14px; }
+  .pin-lock .pin-forgot { color: #d9c89e; margin-top: 10px; }
   .links-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
   .links-edit { margin: 8px 0; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; }
   /* «إعداد لمرة واحدة» في أرشفة المواسم: مربع قابل للفتح */
@@ -741,6 +763,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=cae9e1a7df"></script>
+<script src="app.js?v=578e48ddda"></script>
 </body>
 </html>
