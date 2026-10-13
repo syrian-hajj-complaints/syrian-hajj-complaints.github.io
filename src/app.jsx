@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-13  «نتيجة الشكوى (قرار اللجنة)» المستقلة (القسم 61): خانة في جلسة الإغلاق وتعديل في «📋 النتائج» (ResultBox، للمدير)،
+//                ومنها بنود القرار في الدراسة والقرار (فارغة = خلاصة آخر جلسة)؛ «نتيجة الجلسة» صارت «خلاصة الجلسة» اختيارية لا تظهر
+//                في Word إن كانت فارغة؛ عمود «النتيجة» في التقارير منها؛ عمود في ملف الموسم.
 //    2026-10-12  «🔒 قفل الجهاز» (PinButton / DeviceLock) في لوحة الإدارة وصفحة التقارير: رمز من 4 أرقام يُحفظ على الجهاز فقط
 //                (SHA-256، لا في Supabase)، وشاشة قفل بعد مدة بلا استعمال (60 ثانية افتراضياً) وعند فتح المنصة بعدها؛
 //                «قفل الآن»، وتغيير الرمز وإلغاؤه بالرمز الحالي؛ 5 محاولات خاطئة أو «نسيت الرمز» ← خروج والدخول بكلمة المرور.
@@ -433,7 +436,7 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
     ...(s.location ? [para(`المكان: ${s.location}`, { color: MUTED, after: 60 })] : []),
     para("موضوع الجلسة:", { bold: true, after: 40 }), ...box(s.topic),
     ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...opt(docText(T, K("opinion_intro")), { after: 40 }), ...box(s.opinion)] : []),
-    para("نتيجة الجلسة:", { bold: true, before: 80, after: 40 }), ...box(s.result),
+    // خلاصة الجلسة (اختيارية): لا تظهر إن كانت فارغة
     ...linkParas("روابط الجلسة:", s.links),
   ]);
 
@@ -508,13 +511,13 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
       new Paragraph({ bidirectional: true, alignment: "right", spacing: { before: 240 }, children: runs("لجنة الشكاوى والصلح", { bold: true, size: 26 }) }),
     ];
   };
-  if (objAt === null) body.push(...(closedBefore ? conclusion(c.result, c.closed_date) : [para("لم تُغلق الشكوى بعد.", { color: MUTED, before: 240 })]));
+  if (objAt === null) body.push(...(closedBefore ? conclusion(c.final_result || c.result, c.closed_date) : [para("لم تُغلق الشكوى بعد.", { color: MUTED, before: 240 })]));
   else body.push(
     heading("نتيجة الشكوى عند إغلاقها"), ...box(c.result_before_objection),
     heading("⚖️ الاعتراض"), para(`تاريخ الاعتراض: ${xlDate(c.objection_at)}`, { color: MUTED }), ...box(c.objection_text),
     ...linkParas("روابط الاعتراض:", c.objection_links),
     heading("الجلسات بعد الاعتراض"), ...sessionsBlock(after),
-    ...(c.status === CLOSED_OBJ ? conclusion(c.result, c.closed_date) : [para("الاعتراض قيد المتابعة.", { color: MUTED, before: 240 })]),
+    ...(c.status === CLOSED_OBJ ? conclusion(c.final_result || c.result, c.closed_date) : [para("الاعتراض قيد المتابعة.", { color: MUTED, before: 240 })]),
   );
 
   // الصفحة: A4 بهوامش 1000 (≈1.8 سم)؛ الترويسة بعرض الصفحة كاملاً (794 × 189 بكسل) عائمة من حافتيها، والهامش العلوي يتسع لها
@@ -606,7 +609,7 @@ function decisionDefaults(c, opinion = "", T = {}) {
   const intro = docText(T, isDecObj(c) ? "obj_opinion_intro" : "opinion_intro");
   // الاعتراض على قرار بحكم محدد: بنود الحكم (شكلاً ثم موضوعاً) بدل النتيجة
   const verdict = verdictItems(c, T);
-  const middle = verdict.length ? verdict : [(c.result || c.complainant_result || "").trim()];
+  const middle = verdict.length ? verdict : [(c.final_result || c.result || c.complainant_result || "").trim()];
   const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), ...middle, docText(T, "notify")]
     .filter((x, i) => x || (i === 1 && !verdict.length));
   return {
@@ -768,7 +771,7 @@ const XL_SHEETS = [
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["updated_at", "آخر تعديل", true],
     // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
-    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"]] },
+    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -4242,7 +4245,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
 
       {cardTab === "results" && (
         <div className="card-pane">
-          <ResultBox c={c} />
+          <ResultBox c={c} secret={secret} onSaved={onSaved} />
           <div className="grid" style={{ marginTop: 12 }}>
             <Field label="👤 النتيجة التي يراها المشتكي" hint="تظهر للمشتكي في صفحة «نتيجة الشكوى» — لا تأتي من الجلسات" full>
               <textarea style={{ minHeight: 70 }} value={v.complainant_result} onChange={set("complainant_result")} maxLength={2000} readOnly={!ADMIN_CTX.manager} />
@@ -4272,15 +4275,44 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
 }
 
 // «نتيجة الشكوى» للعرض فقط: من آخر جلسة؛ بعد الاعتراض تظهر علامة ⚖️ والنتيجة قبل الاعتراض تحتها
-function ResultBox({ c }) {
+// نتيجة الطلب: «نتيجة الشكوى (قرار اللجنة)» المستقلة (final_result، القسم 61) — يعدّلها المدير إن مُرّر onSaved —
+// وتحتها خلاصة آخر جلسة (تُستعمل في بنود القرار إن بقيت النتيجة المستقلة فارغة)
+function ResultBox({ c, secret, onSaved }) {
   const afterObjection = !!c.objection_at;
+  const L = partyLabels(c);
+  const [edit, setEdit] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function save() {
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_final_result", { p_secret: secret, p_id: c.id, p_text: edit });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 61 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
   return (
     <div className="result-box">
       <div className="field-label">
-        📋 نتيجة الشكوى {afterObjection && <span className="obj-tag">⚖️ بعد الاعتراض</span>}
-        <small className="muted"> — من آخر جلسة (لا تُكتب يدوياً)</small>
+        ⚖️ نتيجة {L.noun} (قرار اللجنة) {afterObjection && <span className="obj-tag">⚖️ بعد الاعتراض</span>}
+        <small className="muted"> — منها تُبنى بنود القرار في الدراسة والقرار</small>
       </div>
-      <div className="subject">{c.result || <span className="muted">لم تصدر بعد — تُضاف من الجلسات</span>}</div>
+      {edit !== null ? (
+        <>
+          <textarea style={{ minHeight: 110 }} autoFocus value={edit} onChange={e => setEdit(e.target.value)} maxLength={10000} placeholder="سطر لكل بند" />
+          {err && <Alert type="error">{err}</Alert>}
+          <div className="row" style={{ marginTop: 6 }}>
+            <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "💾 حفظ"}</button>
+            <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="subject">{c.final_result || <span className="muted">لم تُكتب — تُستعمل خلاصة آخر جلسة</span>}</div>
+          {onSaved && ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }}
+            onClick={() => setEdit(c.final_result || c.result || "")}>{c.final_result ? "✏️ تعديل" : "➕ كتابة نتيجة الشكوى"}</button>}
+        </>
+      )}
+      <div className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>📝 خلاصة آخر جلسة: {c.result || "—"}</div>
       {afterObjection && c.result_before_objection && (
         <div className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>النتيجة قبل الاعتراض: {c.result_before_objection}</div>
       )}
@@ -4516,7 +4548,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   // سجل الجلسات، النموذج (جلسة جديدة أو تعديل جلسة: editId)، والرسائل
   const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", opinion: "", links: [],
                          status: sessionStatus(complaint, complaint.status),
-                         cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
+                         cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "" });
   const [list, setList] = useState(null);
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
@@ -4544,7 +4576,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     setForm({ at: toDateTimeInput(s.session_at), title: s.title || "", location: s.location || "", topic: s.topic || "", referred_to: s.referred_to || "", result: s.result || "",
               links: cleanLinks(s.links), opinion: s.opinion || "",
               status: sessionStatus(complaint, s.status, s.session_at),
-              cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "" });
+              cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "" });
     setMsg(null);
   }
 
@@ -4602,6 +4634,11 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
         p_closed_date: u.closed_date, p_reminder_at: null, p_reminder_note: null,
       });
       if (r2.data && r2.data.length) u = r2.data[0];
+      // نتيجة الشكوى (قرار اللجنة) المستقلة، إن تغيّرت
+      if ((form.fresult || "").trim() !== (complaint.final_result || "").trim()) {
+        const r3 = await sb.rpc("admin_set_final_result", { p_secret: secret, p_id: u.id, p_text: form.fresult });
+        if (r3.data && r3.data.length) u = r3.data[0];
+      }
     }
     onApplied(u);
     done();
@@ -4617,7 +4654,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
       {list === null ? <Loading /> : list.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>لا توجد جلسات لهذه الشكوى بعد.</p> : (
         <div className="table-wrap" style={{ maxHeight: 280, marginBottom: 12, border: "1px solid var(--line)" }}>
           <table className="sheet">
-            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
+            <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>خلاصة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th><th></th></tr></thead>
             <tbody>
               {list.map(s => (
                 <tr key={s.id} className={`status-row clickable ${stClass(s.status)} ${editId === s.id ? "selected" : ""}`} onClick={() => startEdit(s)} title="اضغط لعرض الجلسة وتعديلها">
@@ -4663,9 +4700,16 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             value={form.topic} onChange={v => { setForm(f => ({ ...f, topic: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, topic: appendText(f.topic, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <VoiceArea mic={false} label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`}
             value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, opinion: appendText(f.opinion, t) }))} onError={t => setMsg({ type: "error", text: t })} />
-          <VoiceArea mic={false} label="نتيجة الجلسة" hint={`${form.result.length} / 10000 حرف`}
+          <VoiceArea mic={false} label="خلاصة الجلسة" hint={`اختيارية — ما انتهت إليه هذه الجلسة؛ ${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
+          {/* نتيجة الشكوى (قرار اللجنة) المستقلة: منها تُبنى بنود القرار في الدراسة والقرار (للمدير) */}
+          {isClosed(form.status) && ADMIN_CTX.manager && (
+            <VoiceArea mic={false} label={`⚖️ نتيجة ${partyLabels(complaint).noun} (قرار اللجنة)`} minHeight={110}
+              hint={`سطر لكل بند — منها تُبنى بنود القرار في الدراسة والقرار؛ فارغة = خلاصة آخر جلسة. ${(form.fresult || "").length} / 10000 حرف`}
+              value={form.fresult || ""} onChange={v => { setForm(f => ({ ...f, fresult: v })); setMsg(null); }}
+              onAppend={t => setForm(f => ({ ...f, fresult: appendText(f.fresult || "", t) }))} onError={t => setMsg({ type: "error", text: t })} />
+          )}
           {isClosed(form.status) && !isDecObj(complaint) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
               <textarea style={{ minHeight: 70 }} value={form.cresult} onChange={set("cresult")} maxLength={2000} />
@@ -4745,7 +4789,7 @@ function AdminSessions({ secret, version, onOpen }) {
         {list === null ? <Loading /> : visible.length === 0 ? <div className="empty">لا توجد جلسات</div> : (
           <div className="table-wrap">
             <table className="sheet">
-              <thead><tr><th>رقم الشكوى</th><th>المشتكي</th><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th></tr></thead>
+              <thead><tr><th>رقم الشكوى</th><th>المشتكي</th><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>خلاصة الجلسة</th><th>حالة الشكوى</th></tr></thead>
               <tbody>
                 {visible.map(s => (
                   <tr key={s.id} className={`status-row ${stClass(s.status)}`} onClick={() => onOpen({ id: s.complaint_id })}>
@@ -6177,7 +6221,7 @@ function ComplaintView({ c, sessions }) {
           {sess.length === 0 ? <p className="muted" style={{ margin: 0 }}>لا توجد جلسات.</p> : (
             <div className="table-wrap" style={{ maxHeight: 320, border: "1px solid var(--line)" }}>
               <table className="sheet">
-                <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>نتيجة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th></tr></thead>
+                <thead><tr><th>التاريخ والوقت</th><th>عنوان الجلسة</th><th>المكان</th><th>ترحيل / مُحالة إلى</th><th>خلاصة الجلسة</th><th>حالة الشكوى</th><th>الروابط</th></tr></thead>
                 <tbody>
                   {sess.map((s, i) => (
                     <React.Fragment key={i}>
@@ -6251,7 +6295,7 @@ function ComplaintsBrief({ rows, onOpen }) {
               <td data-label="الرقم"><ReqNo n={r.complaint_number} /></td>
               <td data-label="عنوان الشكوى"><b>{r.title || "—"}</b></td>
               <td data-label="الحالة"><StatusBadge value={r.status} /></td>
-              <td data-label="النتيجة" className="subj">{r.result || "—"}</td>
+              <td data-label="النتيجة" className="subj">{r.final_result || r.result || "—"}</td>
             </tr>
           ))}
         </tbody>
