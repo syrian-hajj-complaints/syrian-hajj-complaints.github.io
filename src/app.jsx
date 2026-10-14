@@ -84,6 +84,11 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-14  «🗄️ الأرشيف» داخل الموسم (القسم 62، للمدير): «نقل إلى الأرشيف / إخراج منه» في البطاقة ولعدة طلبات من الجدول
+//                (المغلقة فقط، وتأكيد إن نقص رابط الدراسة أو القرار)؛ تصفية «📂 الطلبات الحالية / 🗄️ الأرشيف» في القسمين؛
+//                المؤرشفة لا تظهر في «المطلوب اليوم»، وتبقى في المؤشرات والتقارير؛ عمود «تاريخ الأرشفة» في ملف الموسم.
+//    2026-10-14  أرشيف المتابعة على الجهاز (للمدير): «⬇️ Excel للمتابعة» (غير مقفول، بعمود «ملاحظاتي») و«🖨️ سجل ورقي» (Word أفقي
+//                بخانة «ملاحظات المتابعة») لما يظهر في القسم بعد التصفية؛ وتذكير أسبوعي في «المطلوب اليوم» (FollowReminder).
 //    2026-10-14  «📋 الشكاوى» و«⚖️ الاعتراضات»: عرض بطاقات (الافتراضي، RequestCards) — الرقم والحالة، العنوان، الطرفان، التصنيف،
 //                والنتيجة، بلون الحالة — وزر «▦ بطاقات / ☰ جدول» يتذكره الجهاز (الجدول للتحديد والتغيير الجماعي).
 //    2026-10-13  «نتيجة الشكوى (قرار اللجنة)» المستقلة (القسم 61): خانة في جلسة الإغلاق وتعديل في «📋 النتائج» (ResultBox، للمدير)،
@@ -758,6 +763,72 @@ async function exportComplaintWord(secret, c) {
   return { images: Object.keys(images).length, links: urls.length };
 }
 
+// ---------------------------------------------------------------------
+// أرشيف المتابعة على الجهاز (للمدير): «⬇️ Excel للمتابعة» و«🖨️ سجل ورقي (Word)» لما يظهر في القسم بعد التصفية،
+// وتذكير أسبوعي في «المطلوب اليوم» (آخر تنزيل يُحفظ على الجهاز)
+// ---------------------------------------------------------------------
+const FOLLOW_KEY = "hajj_follow_export";   // وقت آخر تنزيل لملف المتابعة على هذا الجهاز
+// آخر جلسة لكل طلب (برقمه) من كل الجلسات
+async function lastSessionsMap(secret) {
+  const { data } = await sb.rpc("admin_list_sessions", { p_secret: secret, p_complaint_id: null });
+  const m = {};
+  (data || []).forEach(s => { if (!m[s.complaint_number] || new Date(s.session_at) > new Date(m[s.complaint_number])) m[s.complaint_number] = s.session_at; });
+  return m;
+}
+// أعمدة المتابعة وقيمها لطلب (last: تاريخ آخر جلسة)
+const FOLLOW_HEADERS = ["الرقم", "تاريخ الورود", "العنوان", "المشتكي / المعترض", "المشتكى عليه / المعترض عليه", "التصنيف", "الحالة",
+                        "مُحالة إلى", "آخر جلسة", "موعد التنبيه", "المطلوب عند التنبيه", "النتيجة", "رابط الدراسة", "رابط ملف القرار", "ملاحظاتي"];
+const followRow = (c, last) => [c.complaint_number, xlDate(c.received_date), c.title || "", c.complainant_name || "", c.accused_name || "",
+  c.classification || "", c.status || "", c.referred_to || "", last ? xlDate(last) : "", c.reminder_at ? xlDate(c.reminder_at) : "", c.reminder_note || "",
+  c.final_result || c.result || "", c.study_url || "", c.decision_url || "", ""];
+
+// ملف Excel للمتابعة: ورقة لكل مجموعة {name, rows} (غير مقفول، ليُكتب في «ملاحظاتي» على الجهاز)
+async function exportFollowExcel(secret, groups, filename) {
+  const last = await lastSessionsMap(secret);
+  await saveWorkbook(groups.map(g => ({ name: g.name, headers: FOLLOW_HEADERS, rows: g.rows.map(c => followRow(c, last[c.complaint_number])) })),
+    filename, { lock: false });
+  storeSet(localStorage, FOLLOW_KEY, String(Date.now()));
+}
+
+// السجل الورقي (Word، A4 أفقي): الترويسة، العنوان والتاريخ والعدد، ثم جدول الطلبات مع خانة «ملاحظات المتابعة» فارغة للكتابة باليد
+async function exportFollowWord(secret, list, title, filename) {
+  const D = await loadDocx();
+  const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, Header, ShadingType, PageOrientation,
+          HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
+  const [letterhead, last] = await Promise.all([fetchBytes("letterhead.jpg"), lastSessionsMap(secret)]);
+  const FONT = "Arial", GREEN = "00594F", INK = "333132";
+  // نص عربي من اليمين لليسار، والأرقام والتواريخ من اليسار لليمين
+  const runs = (text, o = {}) => String(text == null || text === "" ? "—" : text).split(/(\d[\d\-:\/ ]*\d|\d)/).filter(x => x !== "")
+    .map(part => new TextRun({ text: part, font: FONT, size: o.size || 18, bold: !!o.bold, color: o.color || INK, rightToLeft: !/^\d/.test(part) }));
+  const short = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+  // الأعمدة بعرضها النسبي (من اليمين)؛ وتُكتب الخلايا بترتيب معكوس فيظهر العمود الأول يميناً
+  const COLS = [["الرقم", 9], ["العنوان", 15], ["المشتكي", 11], ["المشتكى عليه", 11], ["الحالة", 8], ["آخر جلسة", 7], ["التنبيه والمطلوب", 11], ["النتيجة", 14], ["ملاحظات المتابعة", 14]];
+  const cell = (text, w, head) => new TableCell({
+    width: { size: w, type: WidthType.PERCENTAGE }, margins: { top: 40, bottom: 40, left: 60, right: 60 },
+    shading: head ? { type: ShadingType.CLEAR, fill: GREEN, color: "auto" } : undefined,
+    children: [new Paragraph({ bidirectional: true, children: runs(text, { bold: head, color: head ? "FFFFFF" : INK, size: head ? 18 : 17 }) })],
+  });
+  const row = (vals, head) => new TableRow({ tableHeader: !!head, cantSplit: true, children: vals.map((v, i) => cell(v, COLS[i][1], head)).reverse() });
+  const body = list.map(c => row([c.complaint_number, short(c.title, 80), c.complainant_name, c.accused_name, c.status,
+    last[c.complaint_number] ? xlDate(last[c.complaint_number]).slice(0, 10) : "",
+    [c.reminder_at ? xlDate(c.reminder_at).slice(0, 10) : "", short(c.reminder_note, 60)].filter(Boolean).join(" — "),
+    short(c.final_result || c.result, 140), " "]));
+  const now = new Date();
+  const content = [
+    new Paragraph({ bidirectional: true, alignment: "center", spacing: { after: 80 }, children: runs(title, { bold: true, size: 30, color: GREEN }) }),
+    new Paragraph({ bidirectional: true, alignment: "center", spacing: { after: 200 }, children: runs(`بتاريخ ${xlDate(now).slice(0, 10)} — عدد الطلبات: ${list.length}`, { size: 20 }) }),
+    new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [row(COLS.map(x => x[0]), true), ...body] }),
+  ];
+  // الترويسة بعرض الصفحة الأفقية (1123 × 267 بكسل بنسبة الصورة)
+  const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
+    new ImageRun({ data: letterhead, transformation: { width: 1123, height: 267 },
+      floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+                  verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true } })] })] }) } : undefined;
+  const doc = new Document({ sections: [{ headers, properties: { page: { size: { orientation: PageOrientation.LANDSCAPE },
+    margin: { top: letterhead ? 4300 : 800, bottom: 700, left: 700, right: 700, header: 0 } } }, children: content }] });
+  downloadBlob(await D.Packer.toBlob(doc), filename);
+}
+
 // أعمدة ملف الموسم في Excel: [الحقل في القاعدة، العنوان في الملف، تاريخ؟ (true = تاريخ ووقت، "day" = يوم فقط)] —
 // التصدير والاستيراد يستخدمانها معاً، فأي ملف تصدّره المنصة يمكن إعادته إليها (أرشفة المواسم وفتحها للتعديل).
 // marker: عنوان عمود تُعرف به الورقة إن تغيّر اسمها
@@ -773,7 +844,8 @@ const XL_SHEETS = [
     ["objection_at", "تاريخ الاعتراض", true], ["result_before_objection", "النتيجة قبل الاعتراض"], ["study_url", "رابط دراسة الشكوى المنقّحة"], ["decision_url", "رابط ملف القرار"], ["updated_at", "آخر تعديل", true],
     // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
-    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"]] },
+    ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"],
+    ["archived_at", "تاريخ الأرشفة", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -2597,6 +2669,25 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
     setSelected(new Set()); setKeyName("");
   }
 
+  // أرشفة الطلبات المحددة أو إخراجها (admin_set_archived)؛ غير المغلقة لا تُؤرشف، وتأكيد إن نقصت روابط الملفات
+  async function applyArchive(on) {
+    const sel = rows.filter(r => selected.has(r.id));
+    if (on) {
+      const closedSel = sel.filter(r => isClosed(r.status));
+      if (!closedSel.length) return setMsg({ type: "error", text: "لا يوجد بين المحدد طلب مغلق — الأرشفة للطلبات المغلقة فقط." });
+      const miss = closedSel.filter(r => !r.study_url || !r.decision_url).length;
+      if (miss && !window.confirm(`${miss} من الطلبات المحددة بلا رابط الدراسة أو ملف القرار. متابعة الأرشفة؟`)) return;
+    }
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_archived", { p_secret: secret, p_ids: chosen, p_on: on });
+    setBusy(false);
+    if (error || !data) return setMsg({ type: "error", text: "تعذّر التنفيذ (نفّذ القسم 62 من schema.sql في Supabase)." });
+    onSaved(data);
+    const n = data.filter(r => on ? r.archived_at : !r.archived_at).length;
+    setMsg({ type: "ok", text: on ? `🗄️ نُقل ${n} طلب إلى الأرشيف${n < sel.length ? " (غير المغلقة بقيت كما هي)" : ""}.` : `↩️ أُخرج ${n} طلب من الأرشيف.` });
+    setSelected(new Set());
+  }
+
   // العرض: شريط التغيير الجماعي (عند الاختيار)، شريط الأدوات، الجدول، ثم التنقل بين الصفحات
   return (
     <div>
@@ -2619,6 +2710,13 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
               <datalist id="accused-key-list">{accusedKeys.map(k => <option key={k} value={k} />)}</datalist>
               <button className="btn" disabled={busy || !keyName.trim()} onClick={() => applyKey(keyName)}>🔗 توحيد ({chosen.length})</button>
               <button className="btn secondary" disabled={busy} onClick={() => applyKey("")} title="مسح الاسم الموحّد من الشكاوى المحددة">مسح</button>
+            </div>
+          )}
+          {/* أرشفة المحدد أو إخراجه (للمدير؛ المغلقة فقط تُؤرشف) */}
+          {ADMIN_CTX.manager && (
+            <div className="row" style={{ flexBasis: "100%" }}>
+              <button className="btn secondary" disabled={busy} onClick={() => applyArchive(true)}>🗄️ نقل المحدد إلى الأرشيف</button>
+              <button className="btn secondary" disabled={busy} onClick={() => applyArchive(false)}>↩️ إخراج المحدد من الأرشيف</button>
             </div>
           )}
         </div>
@@ -2700,6 +2798,31 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
 }
 
 // تبويب «المطلوب»: اختيار الفترة (اليوم / الكل / تاريخ محدد) ثم جدول المطلوب فيها، الأهم أولاً
+// تذكير أسبوعي بأرشيف المتابعة (للمدير): إن مرّ أكثر من 7 أيام على آخر تنزيل على هذا الجهاز (أو لم يُنزَّل قط)،
+// شريط بزر يُنزّل ملف Excel للموسم الحالي بورقتين: الشكاوى، والاعتراضات
+function FollowReminder({ secret, rows }) {
+  const [busy, setBusy] = useState(false);
+  const [, setVer] = useState(0);
+  const last = Number(storeGet(localStorage, FOLLOW_KEY) || 0);
+  const days = last ? Math.floor((Date.now() - last) / DAY) : null;
+  if (!ADMIN_CTX.manager || !rows || (days !== null && days < 7)) return null;
+  async function go() {
+    setBusy(true);
+    const cur = rows.filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season);
+    try {
+      await exportFollowExcel(secret, [{ name: "الشكاوى", rows: cur.filter(c => !isDecObj(c)) }, { name: "الاعتراضات", rows: cur.filter(isDecObj) }],
+        `متابعة-موسم-${ADMIN_CTX.season || "الكل"}-${toDateInput(new Date())}.xlsx`);
+    } catch {}
+    setBusy(false); setVer(n => n + 1);
+  }
+  return (
+    <div className="reminder-bar later" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span>🗂️ {days === null ? "لم يُنزَّل ملف Excel للمتابعة على هذا الجهاز بعد." : `آخر ملف Excel للمتابعة نُزّل قبل ${days} يوماً.`} احتفظ بنسخة حديثة على جهازك.</span>
+      <button type="button" className="btn sm" disabled={busy} onClick={go}>{busy ? "…" : "⬇️ تنزيل الآن (الموسم الحالي)"}</button>
+    </div>
+  );
+}
+
 function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
   // الفترة المختارة: today / all / date، والتاريخ المحدد (افتراضياً الغد)
   const [mode, setMode] = useState("today");
@@ -2713,7 +2836,8 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
   const alertsFor = c => mode === "all" ? smartAlerts(c, ref) : dueAlerts(c, ref);
 
   // الشكاوى المطلوبة مرتّبة: الأحمر ثم البرتقالي ثم الأزرق ثم المجدول، وداخل كل لون الأقدم أولاً
-  const due = (rows || [])
+  // (الطلبات المؤرشفة لا تظهر في المطلوب)
+  const due = (rows || []).filter(c => !c.archived_at)
     .map(c => ({ c, alerts: alertsFor(c) }))
     .filter(x => x.alerts.length > 0)
     .sort((a, b) => alertWeight(a.alerts) - alertWeight(b.alerts) || new Date(a.c.received_date) - new Date(b.c.received_date));
@@ -2738,6 +2862,7 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
           <button className="btn secondary sm" onClick={reload} style={{ marginInlineStart: "auto" }}>🔄 تحديث</button>
         </div>
       </div>
+      <FollowReminder secret={secret} rows={rows} />
       <div style={{ marginBottom: 10 }}><b style={{ fontSize: 18 }}>{title}</b></div>
       {due.length > 0 && (
         <div className="row" style={{ marginBottom: 12, gap: 8 }}>
@@ -3812,13 +3937,29 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
   // التصنيف المعروض ("" = كل التصنيفات)
   const [klass, setKlass] = useState("");
   const klasses = [...new Set([...CLASSIFICATIONS, ...(rows || []).map(c => c.classification)].filter(Boolean))];
-  // طلبات هذا القسم فقط (شكاوى أو اعتراضات على قرارات)
-  const inSeason = (rows || []).filter(c => (!season || c.season === season) && (!klass || c.classification === klass)
-    && OBJ === isDecObj(c));
+  // طلبات هذا القسم فقط (شكاوى أو اعتراضات على قرارات)، الحالية أو المؤرشفة («🗄️ الأرشيف»، القسم 62)
+  const [arch, setArch] = useState(false);
+  const ofKind = (rows || []).filter(c => (!season || c.season === season) && (!klass || c.classification === klass) && OBJ === isDecObj(c));
+  const archCount = ofKind.filter(c => c.archived_at).length;
+  const inSeason = ofKind.filter(c => arch === !!c.archived_at);
   // نافذة «➕ اعتراض جديد»
   const [addingObj, setAddingObj] = useState(false);
   // طريقة العرض: بطاقات (الافتراضي) أو جدول — يتذكرها الجهاز
   const [view, setView] = usePref("hajj_requests_view", "cards");
+  // تنزيل أرشيف المتابعة لما يظهر الآن (xl / word)
+  const [exporting, setExporting] = useState("");
+  const [expMsg, setExpMsg] = useState(null);
+  async function runExport(kind) {
+    setExporting(kind); setExpMsg(null);
+    const noun = OBJ ? "الاعتراضات" : "الشكاوى", scope = [season ? `موسم ${season}` : "كل المواسم", filter !== "الكل" ? filter : ""].filter(Boolean).join(" — ");
+    const name = `متابعة-${noun}-${toDateInput(new Date())}`;
+    try {
+      if (kind === "xl") await exportFollowExcel(secret, [{ name: noun, rows: visible }], `${name}.xlsx`);
+      else await exportFollowWord(secret, visible, `سجل متابعة ${noun} — ${scope}`, `${name}.docx`);
+      setExpMsg({ type: "ok", text: `⬇️ نُزّل ملف ${kind === "xl" ? "Excel" : "Word"} بـ ${visible.length} طلب (كما يظهر الآن بعد التصفية).` });
+    } catch (e) { setExpMsg({ type: "error", text: e.message || NET_ERR }); }
+    setExporting("");
+  }
 
   // التصفية بالحالة ونص البحث (الرقم، الأسماء، الموضوع، الرموز)
   const term = search.trim();
@@ -3849,6 +3990,11 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
           {klasses.map(x => <option key={x} value={x}>{x}</option>)}
         </select>
       </div>
+      {/* الطلبات الحالية أو «🗄️ الأرشيف» (المنتهية التي نقلها المدير) */}
+      <div className="chips">
+        <button className={!arch ? "active" : ""} onClick={() => setArch(false)}>📂 الطلبات الحالية ({ofKind.length - archCount})</button>
+        <button className={arch ? "active" : ""} onClick={() => setArch(true)}>🗄️ الأرشيف ({archCount})</button>
+      </div>
       <div className="chips">
         {/* (الاعتراض على قرار بلا حالات «اعتراض المشتكى عليه على النتيجة») */}
         {["الكل", ...STATUSES.filter(s => !OBJ || !/الاعتراض/.test(s))].map(s => (
@@ -3872,11 +4018,17 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
           <button type="button" className={`btn sm ${view === "table" ? "" : "secondary"}`} onClick={() => setView("table")} aria-pressed={view === "table"}>☰ جدول</button>
         </span>
         {OBJ && <button className="btn" onClick={() => setAddingObj(true)}>➕ اعتراض جديد</button>}
+        {/* أرشيف المتابعة على الجهاز (للمدير): ما يظهر الآن بعد التصفية */}
+        {ADMIN_CTX.manager && <>
+          <button className="btn secondary" disabled={!!exporting || !visible.length} onClick={() => runExport("xl")}>{exporting === "xl" ? "…" : "⬇️ Excel للمتابعة"}</button>
+          <button className="btn secondary" disabled={!!exporting || !visible.length} onClick={() => runExport("word")}>{exporting === "word" ? "…" : "🖨️ سجل ورقي"}</button>
+        </>}
         {pastOpen && <button className="btn gold" onClick={() => setAdding(true)}>➕ إضافة شكوى إلى موسم {season}</button>}
       </div>
+      {expMsg && <Alert type={expMsg.type}>{expMsg.text}</Alert>}
       {pastOpen && <p className="muted" style={{ fontSize: 13.5, marginTop: -6 }}>🔓 موسم {season} مفتوح للتعديل. بعد الانتهاء أعد أرشفته من «الإعدادات ← 📚 أرشفة المواسم».</p>}
       {rows === null ? <Loading /> : view === "cards"
-        ? <RequestCards key={season + klass + filter + missing + term} rows={visible} onOpen={onOpen} />
+        ? <RequestCards key={season + klass + filter + missing + term + arch} rows={visible} onOpen={onOpen} />
         : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
@@ -4172,6 +4324,21 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       : `✅ تحوّلت إلى شكوى برقم ${data[0].complaint_number} (في قسم «📋 الشكاوى»).` });
   }
 
+  // «🗄️ نقل إلى الأرشيف» / «↩️ إخراج من الأرشيف» (للمدير؛ المغلقة فقط؛ تأكيد إن نقص رابط الدراسة أو ملف القرار)
+  async function toggleArchive() {
+    const on = !c.archived_at;
+    if (on) {
+      const miss = [!c.study_url && "رابط «الدراسة المنقّحة»", !c.decision_url && "رابط «ملف القرار»"].filter(Boolean);
+      if (miss.length && !window.confirm(`لم يُضَف ${miss.join(" ولا ")}. هل تريد نقل ${c.complaint_number} إلى الأرشيف؟`)) return;
+    }
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_archived", { p_secret: secret, p_ids: [c.id], p_on: on });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التنفيذ (نفّذ القسم 62 من schema.sql في Supabase)." });
+    onSaved(data[0]);
+    setMsg({ type: "ok", text: on ? "🗄️ نُقل إلى الأرشيف — تجده في تصفية «🗄️ الأرشيف» في القسم." : "↩️ أُخرج من الأرشيف وعاد إلى الطلبات الحالية." });
+  }
+
   // هل أُغلقت نهائياً بعد الاعتراض؟ (تُقفل ولا يبقى إلا تعديل الجلسات)
   const finalClosed = c.status === CLOSED_OBJ;
 
@@ -4202,6 +4369,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
           <button type="button" className="btn secondary sm" disabled={wordBusy} onClick={exportWord} title={`تصدير ملف ${L.study} (Word)`}>{wordBusy ? "…" : "📄 Word"}</button>
         </div>
       </div>
+      {c.archived_at && <div className="reminder-bar later">🗄️ في الأرشيف منذ {fmtDate(c.archived_at)} — لا يظهر في القوائم اليومية.</div>}
       {alerts.map((a, i) => <div key={i} className={`reminder-bar ${a.level}`}>{a.level === "later" ? "🗓️" : "⏰"} {a.text}</div>)}
       <dl className="detail-grid info-grid">
         <div><dt>👤 {L.who}</dt><dd>{c.complainant_name}{c.complainant_role && <span className="muted"> ({c.complainant_role})</span>}</dd></div>
@@ -4308,6 +4476,10 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       {/* حذف نهائي (للمدير فقط) */}
       {ADMIN_CTX.manager && onDeleted && (
         <div className="row" style={{ marginTop: 16, justifyContent: "space-between" }}>
+          {(isClosed(c.status) || c.archived_at) && (
+            <button type="button" className="btn secondary sm" disabled={busy} onClick={toggleArchive}>
+              {c.archived_at ? "↩️ إخراج من الأرشيف" : "🗄️ نقل إلى الأرشيف"}</button>
+          )}
           <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} disabled={busy} onClick={convert}>
             🔁 تحويل إلى {isDecObj(c) ? "شكوى" : "اعتراض على قرار إداري"}</button>
           <button type="button" className="btn danger-text" disabled={busy} onClick={remove}>🗑️ حذف {partyLabels(c).noun} نهائياً</button>
