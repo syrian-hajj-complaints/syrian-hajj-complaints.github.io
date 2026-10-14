@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-14  «📋 الشكاوى» و«⚖️ الاعتراضات»: عرض بطاقات (الافتراضي، RequestCards) — الرقم والحالة، العنوان، الطرفان، التصنيف،
+//                والنتيجة، بلون الحالة — وزر «▦ بطاقات / ☰ جدول» يتذكره الجهاز (الجدول للتحديد والتغيير الجماعي).
 //    2026-10-13  «نتيجة الشكوى (قرار اللجنة)» المستقلة (القسم 61): خانة في جلسة الإغلاق وتعديل في «📋 النتائج» (ResultBox، للمدير)،
 //                ومنها بنود القرار في الدراسة والقرار (فارغة = خلاصة آخر جلسة)؛ «نتيجة الجلسة» صارت «خلاصة الجلسة» اختيارية لا تظهر
 //                في Word إن كانت فارغة؛ عمود «النتيجة» في التقارير منها؛ عمود في ملف الموسم.
@@ -3760,6 +3762,38 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
   );
 }
 
+// بطاقات الطلبات (عرض مبسّط بدل الجدول): الرقم والحالة، العنوان، المشتكي والمشتكى عليه، التصنيف، والنتيجة؛
+// لون البطاقة من حالتها؛ الضغط يفتح الطلب؛ 48 بطاقة ثم «عرض المزيد»
+function RequestCards({ rows, onOpen }) {
+  const [shown, setShown] = useState(48);
+  if (!rows.length) return <div className="card empty">لا توجد طلبات</div>;
+  return (
+    <>
+      <div className="req-cards">
+        {rows.slice(0, shown).map(c => {
+          const L = partyLabels(c), res = c.final_result || c.result;
+          return (
+            <button key={c.id} type="button" className={`req-card ${stClass(c.status)}`} onClick={() => onOpen(c)} title="اضغط لفتح الطلب">
+              <div className="req-top"><ReqNo n={c.complaint_number} /><StatusBadge value={c.status} /></div>
+              <div className="req-title">{c.title || <span className="muted">بلا عنوان</span>}</div>
+              <dl className="req-meta">
+                <div><dt>{L.who}</dt><dd>{c.complainant_name || "—"}</dd></div>
+                <div><dt>{L.against}</dt><dd>{c.accused_name || "—"}</dd></div>
+                <div><dt>التصنيف</dt><dd>{c.classification || "—"}</dd></div>
+              </dl>
+              <div className="req-result"><b>النتيجة: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
+            </button>
+          );
+        })}
+      </div>
+      {rows.length > shown && (
+        <button type="button" className="btn secondary block" style={{ marginTop: 12 }} onClick={() => setShown(n => n + 48)}>
+          عرض المزيد ({rows.length - shown} متبقية)</button>
+      )}
+    </>
+  );
+}
+
 // تبويب الشكاوى أو الاعتراضات: تصفية بالحالة وبحث، ثم جدول الطلبات
 // mode: «complaint» = قسم «📋 الشكاوى»، «decobj» = قسم «⚖️ الاعتراضات» (بزر «➕ اعتراض جديد»؛ onAdded بعد الإدخال)
 function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch = "", initialFilter = "الكل", mode = "complaint", onAdded }) {
@@ -3783,6 +3817,8 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
     && OBJ === isDecObj(c));
   // نافذة «➕ اعتراض جديد»
   const [addingObj, setAddingObj] = useState(false);
+  // طريقة العرض: بطاقات (الافتراضي) أو جدول — يتذكرها الجهاز
+  const [view, setView] = usePref("hajj_requests_view", "cards");
 
   // التصفية بالحالة ونص البحث (الرقم، الأسماء، الموضوع، الرموز)
   const term = search.trim();
@@ -3830,11 +3866,18 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="grow" type="text" placeholder="بحث بالرقم أو الاسم أو الهاتف أو الموضوع أو الجهة…" value={search} onChange={e => setSearch(e.target.value)} />
         <button className="btn secondary" onClick={reload}>🔄 تحديث</button>
+        {/* بطاقات أو جدول (الجدول فيه التحديد والتغيير الجماعي والأعمدة) */}
+        <span className="view-switch" role="group" aria-label="طريقة العرض">
+          <button type="button" className={`btn sm ${view === "cards" ? "" : "secondary"}`} onClick={() => setView("cards")} aria-pressed={view === "cards"}>▦ بطاقات</button>
+          <button type="button" className={`btn sm ${view === "table" ? "" : "secondary"}`} onClick={() => setView("table")} aria-pressed={view === "table"}>☰ جدول</button>
+        </span>
         {OBJ && <button className="btn" onClick={() => setAddingObj(true)}>➕ اعتراض جديد</button>}
         {pastOpen && <button className="btn gold" onClick={() => setAdding(true)}>➕ إضافة شكوى إلى موسم {season}</button>}
       </div>
       {pastOpen && <p className="muted" style={{ fontSize: 13.5, marginTop: -6 }}>🔓 موسم {season} مفتوح للتعديل. بعد الانتهاء أعد أرشفته من «الإعدادات ← 📚 أرشفة المواسم».</p>}
-      {rows === null ? <Loading /> : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
+      {rows === null ? <Loading /> : view === "cards"
+        ? <RequestCards key={season + klass + filter + missing + term} rows={visible} onOpen={onOpen} />
+        : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
       {addingObj && ReactDOM.createPortal(

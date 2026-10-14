@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-14  بطاقات الطلبات وزر تبديل العرض (.req-cards / .req-card / .view-switch).
     2026-10-12  شاشة قفل الجهاز برمز PIN ولوحة الأرقام (.pin-lock / .pin-dots / .pin-pad).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
                 الشكوى (.card-tabs)، ورئيسية تملأ الشاشة (.home-hero / .home-grid / .home-list).
@@ -435,6 +436,22 @@
   /* شارة نوع الطلب: اعتراض على قرار إداري (ذهبية، بجانب الرقم) */
   .kind-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #f1ead7; color: #6b5d2f; border: 1px solid #d9c89e;
                 font-size: 12px; font-weight: 700; white-space: nowrap; vertical-align: middle; }
+  /* بطاقات الطلبات في «الشكاوى» و«الاعتراضات»: شبكة تتكيّف مع العرض (عمود واحد على الجوال)، ولون الحافة من حالة الطلب */
+  .req-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 12px; }
+  .req-card { display: flex; flex-direction: column; gap: 8px; text-align: right; font: inherit; color: var(--ink); cursor: pointer; min-width: 0;
+              background: linear-gradient(to left, var(--st-soft), #fff 75%); border: 1px solid var(--line); border-inline-start: 5px solid var(--st);
+              border-radius: var(--radius); padding: 12px 14px; }
+  .req-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, .08); }
+  .req-card:focus-visible { outline: 2px solid var(--st); outline-offset: 2px; }
+  .req-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--st); }
+  .req-title { font-weight: 700; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+  .req-meta { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 0; font-size: 13.5px; }
+  .req-meta div { display: flex; gap: 6px; min-width: 0; }
+  .req-meta dt { color: var(--muted); white-space: nowrap; }
+  .req-meta dt::after { content: ":"; }
+  .req-meta dd { margin: 0; overflow-wrap: anywhere; }
+  .req-result { font-size: 13.5px; border-top: 1px dashed var(--line); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .view-switch { display: inline-flex; gap: 4px; }
   /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
   .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
               align-items: center; justify-content: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; }
@@ -763,6 +780,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=2de0eb4630"></script>
+<script src="app.js?v=2c8169c0a6"></script>
 </body>
 </html>
