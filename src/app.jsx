@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  «💬 ملاحظة سريعة» (القسم 63، يكتبها المدير): فقاعة على بطاقات القوائم تظهر عند الوقوف بالمؤشر وتختفي عند الابتعاد
+//                (وعلى الجوال بلمس 💬)، بكاتبها ووقتها؛ سطر للتعديل في بطاقة الطلب (CardNoteLine)، و💬 بجانب الرقم في الجدول؛
+//                ثلاثة أعمدة في ملف الموسم. البطاقة صارت عنصراً قابلاً للضغط (div role=button) لتحتوي زر 💬.
 //    2026-10-28  «📅 المطلوب اليوم» بالبطاقات (الافتراضي) مع تنبيهات كل طلب في أعلى بطاقته، وزر «▦ بطاقات / ☰ جدول».
 //    2026-10-28  الإعدادات في 6 تبويبات (SETTINGS_TABS، يتذكرها الجهاز): الموسم والأرشفة، النسخ والتصدير، القوائم،
 //                عبارات Word والمهلة، روابط سريعة، التصفير.
@@ -848,7 +851,7 @@ const XL_SHEETS = [
     // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
     ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"],
-    ["archived_at", "تاريخ الأرشفة", true]] },
+    ["archived_at", "تاريخ الأرشفة", true], ["card_note", "ملاحظة سريعة"], ["card_note_by", "كاتب الملاحظة"], ["card_note_at", "وقت الملاحظة", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -2526,7 +2529,7 @@ function NameRole({ name, role }) {
 // تعريف الأعمدة: المفتاح، العنوان، قيمة الفرز، النص (للتصدير)، والعرض داخل الخلية
 const muted = v => v || <span className="muted">—</span>;
 const COLUMNS = [
-  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <ReqNo n={c.complaint_number} /> },
+  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <><ReqNo n={c.complaint_number} />{c.card_note && <span title={c.card_note} style={{ cursor: "help" }}> 💬</span>}</> },
   { key: "date", label: "التاريخ", sort: c => new Date(c.received_date).getTime(), text: c => xlDate(c.received_date), cell: c => fmtDate(c.received_date) },
   { key: "title", label: "العنوان", sort: c => c.title, text: c => c.title, cell: c => c.title ? <b>{c.title}</b> : muted() },
   { key: "name", label: "المشتكي", sort: c => c.complainant_name, text: c => withRole(c.complainant_name, c.complainant_role), cell: c => <NameRole name={c.complainant_name} role={c.complainant_role} /> },
@@ -3920,8 +3923,16 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
 // بطاقات الطلبات (عرض مبسّط بدل الجدول): الرقم والحالة، العنوان، المشتكي والمشتكى عليه، التصنيف، والنتيجة؛
 // لون البطاقة من حالتها؛ الضغط يفتح الطلب؛ 48 بطاقة ثم «عرض المزيد»
 // alertsFor (اختياري): تنبيهات كل طلب تظهر في أعلى بطاقته (في «المطلوب اليوم»)
+// «💬 ملاحظة سريعة» (القسم 63): فقاعة تظهر عند الوقوف بالمؤشر على البطاقة وتختفي عند الابتعاد؛ وعلى الجوال بلمس 💬
 function RequestCards({ rows, onOpen, alertsFor }) {
   const [shown, setShown] = useState(48);
+  const [noteOpen, setNoteOpen] = useState(null);   // بطاقة فقاعتها مفتوحة باللمس (الجوال)
+  useEffect(() => {
+    if (!noteOpen) return;
+    const close = () => setNoteOpen(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [noteOpen]);
   if (!rows.length) return <div className="card empty">لا توجد طلبات</div>;
   return (
     <>
@@ -3929,7 +3940,18 @@ function RequestCards({ rows, onOpen, alertsFor }) {
         {rows.slice(0, shown).map(c => {
           const L = partyLabels(c), res = c.final_result || c.result;
           return (
-            <button key={c.id} type="button" className={`req-card ${stClass(c.status)}`} onClick={() => onOpen(c)} title="اضغط لفتح الطلب">
+            <div key={c.id} role="button" tabIndex={0} className={`req-card ${stClass(c.status)} ${noteOpen === c.id ? "note-on" : ""}`}
+              onClick={() => onOpen(c)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); } }}>
+              {c.card_note && (
+                <>
+                  <button type="button" className="req-note-btn" aria-label="عرض الملاحظة السريعة"
+                    onClick={e => { e.stopPropagation(); setNoteOpen(noteOpen === c.id ? null : c.id); }}>💬</button>
+                  <div className="req-note-pop" role="note" onClick={e => e.stopPropagation()}>
+                    <div className="req-note-text">{c.card_note}</div>
+                    <div className="req-note-meta">{[c.card_note_by, c.card_note_at && fmtDateTime(c.card_note_at)].filter(Boolean).join(" · ")}</div>
+                  </div>
+                </>
+              )}
               <div className="req-top"><ReqNo n={c.complaint_number} /><StatusBadge value={c.status} /></div>
               {alertsFor && <div className="req-alerts">{alertsFor(c).map((a, i) => <span key={i} className={`alert-tag ${a.level}`}>{a.text}</span>)}</div>}
               <div className="req-title">{c.title || <span className="muted">بلا عنوان</span>}</div>
@@ -3939,7 +3961,7 @@ function RequestCards({ rows, onOpen, alertsFor }) {
                 <div><dt>التصنيف</dt><dd>{c.classification || "—"}</dd></div>
               </dl>
               <div className="req-result"><b>النتيجة: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -4073,6 +4095,43 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
 
 // معلومات الاعتراض على قرار إداري في البطاقة: رقم القرار وتاريخه والجهة المحيلة، وفحص المهلة القانونية؛
 // المدير يعدّلها (مع تاريخ تقديم الاعتراض) عبر admin_set_decision_objection؛ onSaved غائب = للاطلاع فقط
+// «💬 ملاحظة سريعة» في بطاقة الطلب (القسم 63): تظهر فقاعةً على بطاقات القوائم؛ يكتبها ويعدّلها ويمسحها المدير فقط
+function CardNoteLine({ secret, c, onSaved }) {
+  const [edit, setEdit] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function save() {
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_card_note", { p_secret: secret, p_id: c.id, p_note: edit });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 63 من schema.sql في Supabase).");
+    onSaved(data[0]); setEdit(null);
+  }
+  if (!ADMIN_CTX.manager && !c.card_note) return null;
+  return (
+    <div className="links-line">
+      <b>💬 ملاحظة سريعة:</b>
+      {edit !== null ? (
+        <>
+          <input type="text" className="grow" autoFocus value={edit} onChange={e => setEdit(e.target.value)} maxLength={300}
+            placeholder="مثال: اتصلت به صباحاً ولم يرد" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); save(); } }} />
+          <button type="button" className="btn sm" disabled={busy} onClick={save}>{busy ? "…" : "حفظ"}</button>
+          <button type="button" className="btn secondary sm" onClick={() => { setEdit(null); setErr(""); }}>إلغاء</button>
+          <small className="muted" style={{ width: "100%" }}>تظهر عند الوقوف بالمؤشر على بطاقة الطلب؛ امسح النص واحفظ لحذفها.</small>
+          {err && <small style={{ color: "var(--danger)", width: "100%" }}>{err}</small>}
+        </>
+      ) : (
+        <>
+          {c.card_note ? <span>{c.card_note} <small className="muted">({[c.card_note_by, c.card_note_at && fmtDateTime(c.card_note_at)].filter(Boolean).join(" · ")})</small></span>
+                       : <span className="muted">—</span>}
+          {ADMIN_CTX.manager && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setEdit(c.card_note || "")}>
+            {c.card_note ? "✏️ تعديل" : "➕ إضافة"}</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
 // «🔗 الاسم الموحّد للمشتكى عليه» في بطاقة الشكوى: داخلي للمؤشرات والتقارير (لا يغيّر الاسم المكتوب)؛ المدير يعدّله
 // (يُختار من الأسماء الموحّدة السابقة أو يُكتب)؛ onSaved غائب = للاطلاع فقط
 function AccusedKeyLine({ secret, c, onSaved }) {
@@ -4412,6 +4471,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div><dt>🗒️ ملاحظة عن {L.who}</dt><PartyNote secret={secret} complaint={c} party="complainant" onSaved={onSaved} /></div>
         <div><dt>🗒️ ملاحظة عن {L.against}</dt><PartyNote secret={secret} complaint={c} party="accused" onSaved={onSaved} /></div>
       </dl>
+      <CardNoteLine secret={secret} c={c} onSaved={onSaved} />
       {isDecObj(c) ? <DecObjInfo secret={secret} c={c} onSaved={onSaved} /> : <AccusedKeyLine secret={secret} c={c} onSaved={onSaved} />}
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>

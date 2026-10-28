@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-28  «💬 ملاحظة سريعة» على البطاقة: الأيقونة والفقاعة (.req-note-btn / .req-note-pop).
     2026-10-28  تبويبات الإعدادات تلتف على أكثر من سطر (.settings-tabs).
     2026-10-14  بطاقات الطلبات وزر تبديل العرض (.req-cards / .req-card / .view-switch).
     2026-10-12  شاشة قفل الجهاز برمز PIN ولوحة الأرقام (.pin-lock / .pin-dots / .pin-pad).
@@ -457,6 +458,18 @@
   .req-result { font-size: 13.5px; border-top: 1px dashed var(--line); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .view-switch { display: inline-flex; gap: 4px; }
   .req-alerts { display: flex; flex-wrap: wrap; gap: 4px; }
+  /* «💬 ملاحظة سريعة»: أيقونة في زاوية البطاقة، وفقاعة تظهر عند الوقوف بالمؤشر (أو بلمس الأيقونة على الجوال) */
+  .req-card { position: relative; }
+  .req-note-btn { position: absolute; top: 8px; inset-inline-end: 8px; border: 0; background: #fff; border-radius: 50%; width: 30px; height: 30px;
+                  font-size: 15px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); z-index: 2; }
+  .req-card .req-top { padding-inline-end: 34px; }
+  .req-note-pop { display: none; position: absolute; top: 44px; inset-inline: 10px; z-index: 5; background: #333132; color: #fff;
+                  border-radius: 10px; padding: 10px 12px; font-size: 13.5px; line-height: 1.6; box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: default; }
+  .req-note-pop::before { content: ""; position: absolute; top: -6px; inset-inline-end: 16px; border: 6px solid transparent; border-top: 0; border-bottom-color: #333132; }
+  .req-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .req-note-meta { color: #d9c89e; font-size: 12px; margin-top: 4px; }
+  @media (hover: hover) { .req-card:hover .req-note-pop, .req-card:focus-within .req-note-pop { display: block; } }
+  .req-card.note-on .req-note-pop { display: block; }
   /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
   .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
               align-items: center; justify-content: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; }
@@ -785,6 +798,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=ab7ae17f8b"></script>
+<script src="app.js?v=13defdeb1e"></script>
 </body>
 </html>
