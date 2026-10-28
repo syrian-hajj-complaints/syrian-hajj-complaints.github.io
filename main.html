@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-28  تصفيات الشكاوى والاعتراضات قوائم منسدلة (.filter-bar / .filter-item / .filter-reset).
     2026-10-28  صفحة «🔍 فحص المطابقة» (.check-group / .check-chip).
     2026-10-28  «💬 ملاحظة سريعة» على البطاقة: الأيقونة والفقاعة (.req-note-btn / .req-note-pop).
     2026-10-28  تبويبات الإعدادات تلتف على أكثر من سطر (.settings-tabs).
@@ -459,6 +460,13 @@
   .req-result { font-size: 13.5px; border-top: 1px dashed var(--line); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .view-switch { display: inline-flex; gap: 4px; }
   .req-alerts { display: flex; flex-wrap: wrap; gap: 4px; }
+  /* تصفيات «الشكاوى» و«الاعتراضات»: قوائم منسدلة بعناوين صغيرة، تلتف على الجوال (عمودان) */
+  .filter-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 8px 10px; align-items: end; margin-bottom: 12px; }
+  .filter-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .filter-item > span { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+  .filter-item select { width: 100%; }
+  .filter-reset { align-self: end; min-height: 40px; }
+  @media (max-width: 520px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
   /* «🔍 فحص المطابقة»: مجموعة لكل بند بعدده، وأرقام الطلبات أزراراً بلون حالتها */
   .check-group { padding: 14px; }
   .check-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
@@ -807,6 +815,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=f24676c00f"></script>
+<script src="app.js?v=4d76f1a25c"></script>
 </body>
 </html>

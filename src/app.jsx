@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  تصفيات «الشكاوى» و«الاعتراضات» قوائم منسدلة بعناوينها وأعدادها (الموسم، القائمة: الحالية / الأرشيف، الحالة، التصنيف،
+//                الملفات) بقيم افتراضية، وزر «↺ الافتراضي» عند تغييرها (بدل صفوف الأزرار).
 //    2026-10-28  «🔍 فحص المطابقة»: بند «بلا نتيجة» لا يشمل الشكاوى التي لها خلاصة جلسة (كانت تظهر خطأً لأن «نتيجة الشكوى» المستقلة جديدة).
 //    2026-10-28  قسم «🔍 فحص المطابقة» (AdminCheck، للمدير والمسؤول): ما ينقصه شيء في الموسم الحالي في صفحة واحدة — مغلقة بلا رابط
 //                دراسة أو قرار أو بلا نتيجة، اعتراض بلا رقم القرار، رابط بشكل خاطئ، ومغلقة منذ 14 يوماً لم تُؤرشف — وعددها في القائمة.
@@ -4091,36 +4093,49 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
   // العرض: أزرار التصفية مع الأعداد، البحث، ثم الجدول
   return (
     <div>
-      <div className="row season-row">
+      {/* التصفيات قوائم منسدلة بعناوينها وأعدادها: الموسم، التصنيف، الطلبات الحالية / الأرشيف، الحالة، الملفات الناقصة؛
+          والقيم الافتراضية: الموسم الحالي، كل التصنيفات، الطلبات الحالية، كل الحالات، كل الملفات */}
+      <div className="filter-bar">
         {seasons.length > 0 && (
-          <select value={season} onChange={e => setSeason(e.target.value)} aria-label="الموسم">
-            <option value="">كل المواسم</option>
-            {seasons.map(x => <option key={x} value={x}>موسم {x}{x === current ? " (الحالي)" : ""}</option>)}
-          </select>
+          <label className="filter-item"><span>الموسم</span>
+            <select value={season} onChange={e => setSeason(e.target.value)}>
+              <option value="">كل المواسم</option>
+              {seasons.map(x => <option key={x} value={x}>موسم {x}{x === current ? " (الحالي)" : ""}</option>)}
+            </select>
+          </label>
         )}
-        <select value={klass} onChange={e => setKlass(e.target.value)} aria-label="التصنيف">
-          <option value="">كل التصنيفات</option>
-          {klasses.map(x => <option key={x} value={x}>{x}</option>)}
-        </select>
-      </div>
-      {/* الطلبات الحالية أو «🗄️ الأرشيف» (المنتهية التي نقلها المدير) */}
-      <div className="chips">
-        <button className={!arch ? "active" : ""} onClick={() => setArch(false)}>📂 الطلبات الحالية ({ofKind.length - archCount})</button>
-        <button className={arch ? "active" : ""} onClick={() => setArch(true)}>🗄️ الأرشيف ({archCount})</button>
-      </div>
-      <div className="chips">
-        {/* (الاعتراض على قرار بلا حالات «اعتراض المشتكى عليه على النتيجة») */}
-        {["الكل", ...STATUSES.filter(s => !OBJ || !/الاعتراض/.test(s))].map(s => (
-          <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{s} ({count(s)})</button>
-        ))}
-      </div>
-      {/* الملفات الناقصة (مع تصفية الحالة: مثلاً «مغلقة» + «بلا ملف القرار») */}
-      <div className="chips">
-        <button className={!missing ? "active" : ""} onClick={() => setMissing("")}>📂 كل الملفات</button>
-        <button className={missing === "study" ? "active" : ""} onClick={() => setMissing("study")}>
-          ⚠️ بلا {OBJ ? "دراسة اعتراض" : "دراسة شكوى"} ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.study_url).length})</button>
-        <button className={missing === "decision" ? "active" : ""} onClick={() => setMissing("decision")}>
-          ⚠️ بلا ملف قرار ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.decision_url).length})</button>
+        <label className="filter-item"><span>القائمة</span>
+          <select value={arch ? "arch" : "cur"} onChange={e => setArch(e.target.value === "arch")}>
+            <option value="cur">📂 الطلبات الحالية ({ofKind.length - archCount})</option>
+            <option value="arch">🗄️ الأرشيف ({archCount})</option>
+          </select>
+        </label>
+        <label className="filter-item"><span>الحالة</span>
+          {/* (الاعتراض على قرار بلا حالات «اعتراض المشتكى عليه على النتيجة») */}
+          <select value={filter} onChange={e => setFilter(e.target.value)}>
+            {["الكل", ...STATUSES.filter(s => !OBJ || !/الاعتراض/.test(s))].map(s =>
+              <option key={s} value={s}>{s === "الكل" ? "كل الحالات" : s} ({count(s)})</option>)}
+          </select>
+        </label>
+        <label className="filter-item"><span>التصنيف</span>
+          <select value={klass} onChange={e => setKlass(e.target.value)}>
+            <option value="">كل التصنيفات</option>
+            {klasses.map(x => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <label className="filter-item"><span>الملفات</span>
+          {/* الملفات الناقصة (مع تصفية الحالة: مثلاً «مغلقة» + «بلا ملف القرار») */}
+          <select value={missing} onChange={e => setMissing(e.target.value)}>
+            <option value="">📂 كل الملفات</option>
+            <option value="study">⚠️ بلا {OBJ ? "دراسة اعتراض" : "دراسة شكوى"} ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.study_url).length})</option>
+            <option value="decision">⚠️ بلا ملف قرار ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.decision_url).length})</option>
+          </select>
+        </label>
+        {/* العودة إلى القيم الافتراضية (تظهر عند تغيير أي تصفية) */}
+        {(arch || filter !== "الكل" || klass || missing || (current && season !== current)) && (
+          <button type="button" className="btn secondary sm filter-reset"
+            onClick={() => { setArch(false); setFilter("الكل"); setKlass(""); setMissing(""); if (current) setSeason(current); }}>↺ الافتراضي</button>
+        )}
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="grow" type="text" placeholder="بحث بالرقم أو الاسم أو الهاتف أو الموضوع أو الجهة…" value={search} onChange={e => setSearch(e.target.value)} />
