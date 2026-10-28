@@ -84,6 +84,10 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  تصنيفات قرار الطلب (أكثر من تصنيف): المقترح «شكاوى» أو «اعتراضات» مع تصنيف الطلب نفسه، تُختار بأزرار وتُضاف
+//                الجديدة إلى «تصنيفات القرارات».
+//    2026-10-28  عنوان قرار الطلب يكتبه المدير (ملخصه) قبل التسجيل وبعده، بمقترح «أول سطر من النتيجة - شكوى مقدمة من فلان»،
+//                ولا يُستبدل عند «حفظ العنوان والتحديث من الطلب».
 //    2026-10-28  قرار الطلب في «📑 قرارات الشكاوى» من تبويب «📜 القرار» (RequestDecisionBox، القسم 64، للمدير): تسجيل بضغطة برقم الطلب
 //                وتصنيف «شكاوى» أو «اعتراضات» ورابط «ملف القرار» (يتحدث تلقائياً)، و«🔄 تحديث من الطلب»، والمصادقة بقرار إدارة من
 //                البطاقة؛ وفي الاعتراض «اعتراض على قرار الإدارة رقم …» في موضوعه؛ وبندان في «فحص المطابقة»: لم يُسجَّل، وبانتظار المصادقة.
@@ -772,31 +776,46 @@ function RequestDecisionBox({ secret, c, items }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [ref, setRef] = useState(null);   // رقم قرار الإدارة المصادِق قيد التعديل
+  const [title, setTitle] = useState(null); // عنوان القرار (ملخصه) قيد الكتابة
+  const [classes, setClasses] = useState(null); // تصنيفات القرار المختارة
   const load = useCallback(() => sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setAll(data || [])), [secret]);
   useEffect(() => { load(); }, [load]);
   if (all === null) return null;
   const number = complaintRef(c);
   const mine = all.find(d => d.request_id === c.id) || all.find(d => (d.kind || "complaints") === "complaints" && d.decision_number === number && d.season === c.season);
+  // العنوان المقترح: «ملخص القرار - شكوى مقدمة من فلان» (الملخص من أول سطر في النتيجة، ويُعدَّل)
+  const firstLine = String(c.final_result || c.result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).find(Boolean) || "";
+  const suffix = `${isDecObj(c) ? "اعتراض مقدم" : "شكوى مقدمة"} من ${c.complainant_name || ""}`.trim();
+  const suggested = [firstLine.length > 90 ? firstLine.slice(0, 89) + "…" : firstLine, suffix].filter(Boolean).join(" - ");
+  const curTitle = title !== null ? title : (mine ? mine.title : suggested);
+  // تصنيفات القرار (أكثر من تصنيف): المقترح «شكاوى» أو «اعتراضات» مع تصنيف الطلب نفسه (مثل «أمور مالية» أو «تقييم»)
+  const suggestedClasses = [REQ_DEC_CLASS(c), c.classification].map(x => String(x || "").trim()).filter(Boolean);
+  const curClasses = classes !== null ? classes : (mine ? classesOf(mine) : suggestedClasses);
+  const classChoices = [...new Set([...suggestedClasses, ...DECISION_CLASSES, ...curClasses])];
+  const toggleClass = k => setClasses(curClasses.includes(k) ? curClasses.filter(x => x !== k) : [...curClasses, k]);
   const adminDecs = all.filter(d => d.kind === "admin");
   const approver = mine && mine.approval_ref && (adminDecs.find(a => a.decision_number === mine.approval_ref && a.season === mine.season) || adminDecs.find(a => a.decision_number === mine.approval_ref));
   const manager = ADMIN_CTX.manager;
 
   // التسجيل أو التحديث من بيانات الطلب
   async function register() {
+    if (!curTitle.trim()) return setMsg({ type: "error", text: "اكتب عنوان القرار (ملخصه)." });
+    if (!curClasses.length) return setMsg({ type: "error", text: "اختر تصنيفاً واحداً على الأقل للقرار." });
     setBusy(true); setMsg(null);
-    const klass = REQ_DEC_CLASS(c);
-    // التصنيف في قائمة «تصنيفات القرارات» إن لم يكن فيها
-    if (!DECISION_CLASSES.includes(klass)) {
-      const next = [...DECISION_CLASSES, klass];
+    // التصنيفات الجديدة تُضاف إلى قائمة «تصنيفات القرارات» إن لم تكن فيها
+    const missing = curClasses.filter(k => !DECISION_CLASSES.includes(k));
+    if (missing.length) {
+      const next = [...DECISION_CLASSES, ...missing];
       const r = await sb.rpc("admin_set_list", { p_secret: secret, p_key: "decision_classes", p_items: next });
       if (r.data === "OK") replaceList(DECISION_CLASSES, next);
     }
+    const klass = curClasses.join("، ");
     const subject = [isDecObj(c) && c.decision_ref ? `اعتراض على قرار الإدارة رقم ${c.decision_ref}` : "", String(items || "").trim()].filter(Boolean).join("\n");
     const { data, error } = await sb.rpc("admin_register_request_decision", {
       p_secret: secret, p_id: c.id, p_number: number, p_date: c.closed_date ? toDateInput(new Date(c.closed_date)) : toDateInput(new Date()),
-      p_title: `قرار في ${partyLabels(c).noun} رقم ${c.complaint_number}${c.title ? " — " + c.title : ""}`, p_subject: subject, p_classification: klass,
+      p_title: curTitle.trim(), p_subject: subject, p_classification: klass,
     });
-    setBusy(false);
+    setBusy(false); setTitle(null); setClasses(null);
     if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التسجيل (نفّذ القسم 64 من schema.sql في Supabase)." });
     setMsg({ type: "ok", text: mine ? "🔄 حُدّث القرار في «📑 قرارات الشكاوى» من بيانات الطلب." : "📑 سُجّل القرار في «📑 قرارات الشكاوى»." });
     load();
@@ -812,15 +831,32 @@ function RequestDecisionBox({ secret, c, items }) {
     setMsg({ type: "ok", text: ref.trim() ? `✅ تمت المصادقة بقرار الإدارة رقم ${ref.trim()}.` : "أُلغيت المصادقة." });
   }
 
+  // خانتا عنوان القرار وتصنيفاته (للمدير): قبل التسجيل، وعند تعديلهما بعده
+  const titleField = manager && (
+    <>
+      <Field label="📝 عنوان القرار (ملخصه)" hint="مثال: حسم 5 نقاط من التقييم - شكوى مقدمة من فلان" full>
+        <input type="text" value={curTitle} onChange={e => { setTitle(e.target.value); setMsg(null); }} maxLength={300} />
+      </Field>
+      <div className="field full">
+        <span className="field-label">🏷️ تصنيفات القرار</span>
+        <div className="chips" style={{ margin: 0 }}>
+          {classChoices.map(k => <button key={k} type="button" className={curClasses.includes(k) ? "active" : ""} onClick={() => { toggleClass(k); setMsg(null); }}>
+            {curClasses.includes(k) ? "✓ " : ""}{k}</button>)}
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div className={`approval-box ${mine && mine.approved ? "ok" : ""}`} style={{ marginTop: 14 }}>
       <b>📑 القرار في «قرارات الشكاوى»</b>
       {!mine ? (
         <>
           <div className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>
-            لم يُسجَّل بعد. يُسجَّل برقم <span dir="ltr">{number}</span>، وتصنيف «{REQ_DEC_CLASS(c)}»، وبرابط «ملف القرار» من البطاقة{!c.decision_url ? " (لم يُلصق بعد؛ يُضاف للقرار تلقائياً حين تلصقه)" : ""}.
+            لم يُسجَّل بعد. يُسجَّل برقم <span dir="ltr">{number}</span>، وبالتصنيفات المختارة أدناه، وبرابط «ملف القرار» من البطاقة{!c.decision_url ? " (لم يُلصق بعد؛ يُضاف للقرار تلقائياً حين تلصقه)" : ""}.
           </div>
-          {manager && <button type="button" className="btn sm" disabled={busy || !isClosed(c.status)} onClick={register}>
+          {titleField}
+          {manager && <button type="button" className="btn sm" style={{ marginTop: 6 }} disabled={busy || !isClosed(c.status)} onClick={register}>
             {busy ? "…" : "📑 تسجيل في قرارات الشكاوى"}</button>}
           {manager && !isClosed(c.status) && <small className="muted" style={{ display: "block", marginTop: 4 }}>يُسجَّل بعد إغلاق الطلب.</small>}
         </>
@@ -832,6 +868,7 @@ function RequestDecisionBox({ secret, c, items }) {
             {mine.approved ? <b>✅ تمت المصادقة{mine.approval_ref ? ` بقرار الإدارة رقم ${mine.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
             {approver && <div className="muted" style={{ fontSize: 13.5 }}>{approver.title}{approver.decision_date ? ` (${fmtDate(approver.decision_date)})` : ""}</div>}
           </div>
+          {titleField}
           {manager && (ref !== null ? (
             <div className="row" style={{ flexWrap: "nowrap" }}>
               <input type="text" dir="ltr" list="req-approval-list" className="grow" autoFocus value={ref} onChange={e => setRef(e.target.value)}
@@ -843,7 +880,7 @@ function RequestDecisionBox({ secret, c, items }) {
           ) : (
             <div className="row">
               <button type="button" className="btn sm" onClick={() => setRef(mine.approval_ref || "")}>{mine.approved ? "✏️ تعديل المصادقة" : "✅ المصادقة بقرار إدارة"}</button>
-              <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="تحديث العنوان والموضوع والتاريخ من بيانات الطلب">🔄 تحديث من الطلب</button>
+              <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="حفظ العنوان والتصنيفات المختارة أعلاه، وتحديث الموضوع والتاريخ والرابط من بيانات الطلب">💾 حفظ العنوان والتصنيفات والتحديث من الطلب</button>
             </div>
           ))}
         </>
