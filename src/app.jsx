@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  الإعدادات في 6 تبويبات (SETTINGS_TABS، يتذكرها الجهاز): الموسم والأرشفة، النسخ والتصدير، القوائم،
+//                عبارات Word والمهلة، روابط سريعة، التصفير.
 //    2026-10-14  «🗄️ الأرشيف» داخل الموسم (القسم 62، للمدير): «نقل إلى الأرشيف / إخراج منه» في البطاقة ولعدة طلبات من الجدول
 //                (المغلقة فقط، وتأكيد إن نقص رابط الدراسة أو القرار)؛ تصفية «📂 الطلبات الحالية / 🗄️ الأرشيف» في القسمين؛
 //                المؤرشفة لا تظهر في «المطلوب اليوم»، وتبقى في المؤشرات والتقارير؛ عمود «تاريخ الأرشفة» في ملف الموسم.
@@ -2881,6 +2883,10 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
 
 // تبويب الإعدادات: تصفير المنصة (حذف كل الشكاوى والجلسات والسجل وكلمات مرور المشتكين، وإعادة الترقيم)
 // محمي بثلاثة أقفال: كلمة مرور الأدمن + رمز التصفير الخاص (يُعيَّن من SQL Editor) + كتابة كلمة «تصفير»
+// تبويبات الإعدادات: [المفتاح، الاسم]
+const SETTINGS_TABS = [["season", "🕋 الموسم والأرشفة"], ["backup", "💾 النسخ والتصدير"], ["lists", "📋 القوائم"],
+                       ["texts", "📝 عبارات Word والمهلة"], ["links", "🔗 روابط سريعة"], ["reset", "⚠️ التصفير"]];
+
 function AdminSettings({ secret, rows, reload }) {
   // رمز التصفير وإظهاره، كلمة التأكيد، وحالة التنفيذ والرسائل
   const [code, setCode] = useState("");
@@ -2931,24 +2937,38 @@ function AdminSettings({ secret, rows, reload }) {
     reload();
   }
 
-  // العرض: بطاقة الموسم، ثم بطاقة حمراء تحذيرية بما سيُحذف وما يبقى، وزر النسخة الاحتياطية والخانات
+  // التبويب المعروض (يتذكره الجهاز)
+  const [tab, setTab] = usePref("hajj_settings_tab", "season");
+
+  // العرض: تبويبات الإعدادات، ثم بطاقات التبويب المختار؛ و«⚠️ التصفير» بطاقة حمراء بما سيُحذف وما يبقى والخانات
   return (
     <div>
-    <ExportCard secret={secret} rows={rows} />
-    <SeasonArchiveCard secret={secret} rows={rows} reload={reload} />
-    <QuickLinksCard secret={secret} />
-    <DocTextsCard secret={secret} />
-    <SeasonCard secret={secret} reload={reload} />
-    <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
-      hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
-    <ListCard secret={secret} listKey="referral_targets" list={REFERRAL_TARGETS} title="↗️ جهات الإحالة"
-      hint="تظهر في قائمة «ترحيل / مُحالة إلى» في الشكوى والجلسة (ويمكن إضافة جهة جديدة من القائمة نفسها)" />
-    <ListCard secret={secret} listKey="decision_classes" list={DECISION_CLASSES} title="📑 تصنيفات القرارات"
-      hint="تظهر في «قرارات الشكاوى» و«قرارات الإدارة» عند إضافة قرار وفي التصفية" />
-    <ListCard secret={secret} listKey="roles" list={ROLES} title="🪪 الصفات"
-      hint="تظهر للمشتكي في نموذج الشكوى لاختيار صفته وصفة المشتكى عليه (مع خيار «أخرى»)" />
-    <ExcelLockCard secret={secret} />
-    <div className="card danger-zone">
+    <div className="tabs settings-tabs" role="tablist">
+      {SETTINGS_TABS.map(([k, t]) => (
+        <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{t}</button>
+      ))}
+    </div>
+    {tab === "season" && <>
+      <SeasonCard secret={secret} reload={reload} />
+      <SeasonArchiveCard secret={secret} rows={rows} reload={reload} />
+    </>}
+    {tab === "backup" && <>
+      <ExportCard secret={secret} rows={rows} />
+      <ExcelLockCard secret={secret} />
+    </>}
+    {tab === "lists" && <>
+      <ListCard secret={secret} listKey="classifications" list={CLASSIFICATIONS} title="🏷️ التصنيفات"
+        hint="تظهر في تفاصيل الشكوى وفي تصفية جدول الشكاوى، مثل: تقييم المجموعات" />
+      <ListCard secret={secret} listKey="referral_targets" list={REFERRAL_TARGETS} title="↗️ جهات الإحالة"
+        hint="تظهر في قائمة «ترحيل / مُحالة إلى» في الشكوى والجلسة (ويمكن إضافة جهة جديدة من القائمة نفسها)" />
+      <ListCard secret={secret} listKey="decision_classes" list={DECISION_CLASSES} title="📑 تصنيفات القرارات"
+        hint="تظهر في «قرارات الشكاوى» و«قرارات الإدارة» عند إضافة قرار وفي التصفية" />
+      <ListCard secret={secret} listKey="roles" list={ROLES} title="🪪 الصفات"
+        hint="تظهر للمشتكي في نموذج الشكوى لاختيار صفته وصفة المشتكى عليه (مع خيار «أخرى»)" />
+    </>}
+    {tab === "texts" && <DocTextsCard secret={secret} />}
+    {tab === "links" && <QuickLinksCard secret={secret} />}
+    {tab === "reset" && <div className="card danger-zone">
       <h2>⚠️ تصفير المنصة</h2>
       <ul>
         <li>يُحذف: جميع الشكاوى، وجلساتها، وسجلها، وكلمات مرور المشتكين الخاصة.</li>
@@ -2980,7 +3000,7 @@ function AdminSettings({ secret, rows, reload }) {
         disabled={busy || !code || confirm.trim() !== "تصفير"} onClick={reset}>
         {busy ? "جارٍ التنفيذ…" : "🗑️ تصفير المنصة نهائياً"}
       </button>
-    </div>
+    </div>}
     </div>
   );
 }

@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-28  تبويبات الإعدادات تلتف على أكثر من سطر (.settings-tabs).
     2026-10-14  بطاقات الطلبات وزر تبديل العرض (.req-cards / .req-card / .view-switch).
     2026-10-12  شاشة قفل الجهاز برمز PIN ولوحة الأرقام (.pin-lock / .pin-dots / .pin-pad).
     2026-10-01  الترويسة أعلى القائمة والمستخدم أسفلها (.side-user)، شريط المحتوى العلوي (.admin-top)، تبويبات بطاقة
@@ -269,6 +270,9 @@
   .tabs::-webkit-scrollbar { display: none; }
   .tabs button { flex: 1 0 auto; border: 0; background: transparent; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; color: var(--muted); white-space: nowrap; }
   .tabs button.active { background: #fff; color: var(--ink); box-shadow: var(--shadow); }
+  /* تبويبات الإعدادات: تلتف على أكثر من سطر (حتى تظهر كلها على الجوال) */
+  .settings-tabs { flex-wrap: wrap; overflow-x: visible; }
+  .settings-tabs button { flex: 1 1 auto; }
   .tab-count { display: inline-block; min-width: 22px; padding: 0 6px; margin-inline-start: 6px; border-radius: 999px; background: #c0262d; color: #fff; font-size: 12.5px; line-height: 20px; }
   .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-bottom: 12px; }
   .chips::-webkit-scrollbar { display: none; }
@@ -780,6 +784,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=271c0e2297"></script>
+<script src="app.js?v=7d6b57c1a0"></script>
 </body>
 </html>
