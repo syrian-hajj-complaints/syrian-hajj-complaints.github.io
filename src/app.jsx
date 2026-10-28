@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  نوع المصادقة (القسم 67): ✅ كاملة / ✏️ مع تعديل («ما صودق عليه»، مثل حسم 5 نقاط بدل 15) / ❌ عدم مصادقة / ⏳ بانتظار؛
+//                في تبويب «📜 القرار» وتفاصيل القرار وعمود «المصادقة» وتصفيتها وفي «قرارات الإدارة»، وسطر على بطاقة الطلب للمعدّلة
+//                وغير المصادَقة؛ عمودان في ورقتي القرارات في ملف الموسم.
 //    2026-10-28  القرار المشترك لأكثر من طلب (القسم 66): رقم القرار يُكتب يدوياً عند التسجيل، و«🔗 ربط بقرار مسجّل» في الطلبات الأخرى
 //                (و«فك الربط»)؛ المصادقة والرابط واحدة؛ «يشمل الطلبات» في بطاقة الطلب، و«📋 صدر في الطلبات» في تفاصيل القرار؛
 //                «فحص المطابقة» يعدّ المرتبط مسجّلاً ويقبل رابط القرار المشترك؛ عمود «رقم القرار (المشترك)» في ملف الموسم.
@@ -784,6 +787,15 @@ const REQ_DEC_CLASS = c => isDecObj(c) ? "اعتراضات" : "شكاوى";
 const requestDecision = (all, c) => (all || []).find(d => c.linked_decision_id && d.id === c.linked_decision_id)
   || (all || []).find(d => d.request_id === c.id)
   || (all || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
+// نوع المصادقة (القسم 67): «كاملة» / «مع تعديل» / «عدم مصادقة»، وفارغ = بانتظار المصادقة (القرارات القديمة المصادَقة = كاملة)
+const APPROVAL = { "كاملة": ["✅", "صودق"], "مع تعديل": ["✏️", "صودق مع تعديل"], "عدم مصادقة": ["❌", "لم يُصادق"] };
+const approvalKind = d => !d ? "" : (d.approval_kind || (d.approved ? "كاملة" : ""));
+const approvalText = d => {
+  const k = approvalKind(d);
+  if (!k) return "⏳ بانتظار المصادقة";
+  return `${APPROVAL[k][0]} ${APPROVAL[k][1]}${d.approval_ref ? ` بقرار الإدارة رقم ${d.approval_ref}` : ""}${d.approval_note ? `: ${d.approval_note}` : ""}`;
+};
+const approvalShort = d => { const k = approvalKind(d); return k ? `${APPROVAL[k][0]}${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"; };
 // الطلبات المرتبطة بقرار (المشترك)
 const decisionRequests = (rows, d) => (rows || []).filter(r => r.linked_decision_id ? r.linked_decision_id === d.id : d.request_id === r.id);
 function RequestDecisionBox({ secret, c, items, onSaved }) {
@@ -867,14 +879,16 @@ function RequestDecisionBox({ secret, c, items, onSaved }) {
     setMsg({ type: "ok", text: decisionId ? "🔗 رُبط الطلب بالقرار المشترك." : "فُكّ ربط الطلب بالقرار." });
   }
 
-  // حفظ المصادقة (الفارغ يلغيها)
+  // حفظ المصادقة بنوعها (ref = { kind, num, note }؛ النوع الفارغ = بانتظار المصادقة)
   async function saveApproval() {
+    if (ref.kind === "مع تعديل" && !ref.note.trim()) return setMsg({ type: "error", text: "اكتب «ما صودق عليه»، مثل: حسم 5 نقاط بدل 15." });
+    if (ref.kind && !ref.num.trim()) return setMsg({ type: "error", text: "اكتب رقم قرار الإدارة أو اختره من القائمة." });
     setBusy(true); setMsg(null);
-    const { data, error } = await sb.rpc("admin_set_decision_approval", { p_secret: secret, p_decision_id: mine.id, p_approved: !!ref.trim(), p_ref: ref });
+    const { data, error } = await sb.rpc("admin_set_decision_approval", { p_secret: secret, p_decision_id: mine.id, p_kind: ref.kind, p_ref: ref.num, p_note: ref.note });
     setBusy(false);
-    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر حفظ المصادقة (نفّذ القسم 64 من schema.sql في Supabase)." });
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر حفظ المصادقة (نفّذ القسم 67 من schema.sql في Supabase)." });
     setRef(null); load();
-    setMsg({ type: "ok", text: ref.trim() ? `✅ تمت المصادقة بقرار الإدارة رقم ${ref.trim()}.` : "أُلغيت المصادقة." });
+    setMsg({ type: "ok", text: approvalText(data[0]) });
   }
 
   // خانتا عنوان القرار وتصنيفاته (للمدير): قبل التسجيل، وعند تعديلهما بعده
@@ -897,7 +911,7 @@ function RequestDecisionBox({ secret, c, items, onSaved }) {
   );
 
   return (
-    <div className={`approval-box ${mine && mine.approved ? "ok" : ""}`} style={{ marginTop: 14 }}>
+    <div className={`approval-box ${mine && approvalKind(mine) && approvalKind(mine) !== "عدم مصادقة" ? "ok" : ""}`} style={{ marginTop: 14 }}>
       <b>📑 القرار في «قرارات الشكاوى»</b>
       {!mine && notJustified(c) ? (
         <div className="muted" style={{ fontSize: 13.5, margin: "4px 0" }}>
@@ -931,7 +945,7 @@ function RequestDecisionBox({ secret, c, items, onSaved }) {
             {mine.url ? <> · <a href={mine.url} target="_blank" rel="noopener">🔗 فتح الملف</a></> : <span className="muted"> · بلا رابط ملف بعد</span>}</div>
           {shared.length > 1 && <div className="muted" style={{ fontSize: 13.5 }}>يشمل الطلبات: {shared.map(r => r.complaint_number).join("، ")}</div>}
           <div style={{ margin: "6px 0" }}>
-            {mine.approved ? <b>✅ تمت المصادقة{mine.approval_ref ? ` بقرار الإدارة رقم ${mine.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
+            <b>{approvalText(mine)}</b>
             {approver && <div className="muted" style={{ fontSize: 13.5 }}>{approver.title}{approver.decision_date ? ` (${fmtDate(approver.decision_date)})` : ""}</div>}
           </div>
           {!linkedOnly && titleField}
@@ -942,16 +956,36 @@ function RequestDecisionBox({ secret, c, items, onSaved }) {
             </div>
           )}
           {manager && (ref !== null ? (
-            <div className="row" style={{ flexWrap: "nowrap" }}>
-              <input type="text" dir="ltr" list="req-approval-list" className="grow" autoFocus value={ref} onChange={e => setRef(e.target.value)}
-                maxLength={60} placeholder="رقم قرار الإدارة المصادِق (فارغ = إلغاء)" />
-              <datalist id="req-approval-list">{adminDecs.map(a => <option key={a.id} value={a.decision_number}>{a.title}</option>)}</datalist>
-              <button type="button" className="btn sm" disabled={busy} onClick={saveApproval}>حفظ</button>
-              <button type="button" className="btn secondary sm" onClick={() => setRef(null)}>إلغاء</button>
+            <div className="grid" style={{ marginTop: 6 }}>
+              <Field label="حالة المصادقة">
+                <select value={ref.kind} onChange={e => { const v = e.target.value; setRef(x => ({ ...x, kind: v })); setMsg(null); }}>
+                  <option value="">⏳ بانتظار المصادقة</option>
+                  <option value="كاملة">✅ مصادقة كاملة</option>
+                  <option value="مع تعديل">✏️ مصادقة مع تعديل</option>
+                  <option value="عدم مصادقة">❌ عدم مصادقة</option>
+                </select>
+              </Field>
+              {ref.kind && (
+                <Field label="رقم قرار الإدارة" hint="اختر من «قرارات الإدارة» أو اكتب الرقم">
+                  <input type="text" dir="ltr" list="req-approval-list" value={ref.num} onChange={e => setRef(x => ({ ...x, num: e.target.value }))} maxLength={60} />
+                  <datalist id="req-approval-list">{adminDecs.map(a => <option key={a.id} value={a.decision_number}>{a.title}</option>)}</datalist>
+                </Field>
+              )}
+              {(ref.kind === "مع تعديل" || ref.kind === "عدم مصادقة") && (
+                <Field label={ref.kind === "مع تعديل" ? "ما صودق عليه" : "سبب عدم المصادقة (اختياري)"} required={ref.kind === "مع تعديل"} full
+                  hint={ref.kind === "مع تعديل" ? "مثال: حسم 5 نقاط بدل 15 — قرار اللجنة الأصلي يبقى كما هو" : undefined}>
+                  <input type="text" value={ref.note} onChange={e => setRef(x => ({ ...x, note: e.target.value }))} maxLength={2000} />
+                </Field>
+              )}
+              <div className="row field full">
+                <button type="button" className="btn sm" disabled={busy} onClick={saveApproval}>💾 حفظ المصادقة</button>
+                <button type="button" className="btn secondary sm" onClick={() => setRef(null)}>إلغاء</button>
+              </div>
             </div>
           ) : (
             <div className="row">
-              <button type="button" className="btn sm" onClick={() => setRef(mine.approval_ref || "")}>{mine.approved ? "✏️ تعديل المصادقة" : "✅ المصادقة بقرار إدارة"}</button>
+              <button type="button" className="btn sm" onClick={() => setRef({ kind: approvalKind(mine) || "كاملة", num: mine.approval_ref || "", note: mine.approval_note || "" })}>
+                {approvalKind(mine) ? "✏️ تعديل المصادقة" : "✅ المصادقة بقرار إدارة"}</button>
               {!linkedOnly && <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="حفظ الرقم والعنوان والتصنيفات المختارة أعلاه، وتحديث الموضوع والتاريخ والرابط من بيانات الطلب">💾 حفظ والتحديث من الطلب</button>}
             </div>
           ))}
@@ -1076,10 +1110,12 @@ const XL_SHEETS = [
     ["complaint_number", "رقم الشكوى"], ["referred_at", "تاريخ الإحالة", true], ["referred_to", "مُحالة إلى"]] },
   { name: "قرارات الشكاوى", key: "decisions", marker: "رقم القرار", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
-    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"]] },
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"],
+    ["approval_kind", "نوع المصادقة"], ["approval_note", "ما صودق عليه"]] },
   { name: "قرارات الإدارة", key: "admindecisions", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
-    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"]] },
+    ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"],
+    ["approval_kind", "نوع المصادقة"], ["approval_note", "ما صودق عليه"]] },
 ];
 
 // جلب جلسات وإحالات مجموعة شكاوى من القاعدة، وقرارات موسمها (season فارغ = كل القرارات)
@@ -2284,12 +2320,14 @@ function AdminPage({ secret, onLogout }) {
   // جلب كل الشكاوى، والموسم الحالي (للتنبيهات)
   const load = useCallback(async () => {
     setError("");
-    const [{ data, error }, season] = await Promise.all([
+    const [{ data, error }, season, decs] = await Promise.all([
       sb.rpc("admin_list_complaints", { p_secret: secret }),
       sb.rpc("admin_get_season", { p_secret: secret }),
+      sb.rpc("admin_list_decisions", { p_secret: secret }),
     ]);
     if (error) return setError(NET_ERR);
     ADMIN_CTX.season = (season.data && season.data.current) || "";
+    ADMIN_CTX.decisions = decs.data || [];   // القرارات (لسطر المصادقة على بطاقات الطلبات)
     setRows(data || []);
   }, [secret]);
   useEffect(() => { load(); }, [load]);
@@ -3053,7 +3091,7 @@ function AdminCheck({ secret, rows, onOpen }) {
     // (رابط ملف القرار: في الطلب نفسه، أو في قراره المشترك)
     { key: "dec",     icon: "📜", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُلصق رابط «ملف القرار»", test: c => isClosed(c.status) && !notJustified(c) && !c.decision_url && !(decOf(c) && decOf(c).url) },
     { key: "unreg",   icon: "📑", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُسجَّل قرارها في «قرارات الشكاوى» (من تبويب «📜 القرار»)", test: c => isClosed(c.status) && !notJustified(c) && !decOf(c) },
-    { key: "unappr",  icon: "⏳", label: "قرارها مسجَّل وبانتظار المصادقة بقرار إدارة", test: c => { const d = decOf(c); return !!d && !d.approved; } },
+    { key: "unappr",  icon: "⏳", label: "قرارها مسجَّل وبانتظار المصادقة بقرار إدارة", test: c => { const d = decOf(c); return !!d && !approvalKind(d); } },
   ];
   const groups = [...CHECKS, ...decChecks].map(k => ({ ...k, list: cur.filter(k.test) }));
   const total = groups.reduce((n, g) => n + g.list.length, 0);
@@ -4236,6 +4274,9 @@ function RequestCards({ rows, onOpen, alertsFor }) {
                 <div><dt>التصنيف</dt><dd>{c.classification || "—"}</dd></div>
               </dl>
               <div className="req-result"><b>النتيجة{c.justified ? ` (${justLabel(c, c.justified)})` : ""}: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
+              {/* المصادقة مع تعديل أو عدمها تظهر على البطاقة (القرار الأصلي يبقى في النتيجة) */}
+              {(() => { const d = requestDecision(ADMIN_CTX.decisions, c), k = approvalKind(d);
+                return (k === "مع تعديل" || k === "عدم مصادقة") ? <div className="req-approval">{approvalText(d)}</div> : null; })()}
             </div>
           );
         })}
@@ -5511,7 +5552,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
     (!term || inField(d).some(v => (v || "").includes(term))) &&
     (!range.from || (d.decision_date || "") >= range.from) &&
     (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)) &&
-    (!appr || (appr === "yes" ? d.approved : !d.approved)) &&
+    (!appr || ({ yes: "كاملة", mod: "مع تعديل", rej: "عدم مصادقة", no: "" })[appr] === approvalKind(d)) &&
     (!objF || objectionsOf(d).length > 0));
   // القرار يُحسب في كل تصنيف من تصنيفاته
   const count = k => base.filter(d => !k || classesOf(d).includes(k)).length;
@@ -5637,7 +5678,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
       )}
       {kind === "complaints" && (
         <div className="chips">
-          {[["", "كل القرارات"], ["yes", "✅ مصادَق عليها"], ["no", "⏳ بانتظار المصادقة"]].map(([k, t]) =>
+          {[["", "كل القرارات"], ["yes", "✅ مصادقة كاملة"], ["mod", "✏️ مع تعديل"], ["rej", "❌ غير مصادَق"], ["no", "⏳ بانتظار المصادقة"]].map(([k, t]) =>
             <button key={k} className={appr === k ? "active" : ""} onClick={() => setAppr(k)}>{t}</button>)}
         </div>
       )}
@@ -5668,7 +5709,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                     <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}</td>
                     <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
                     <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
-                    {kind === "complaints" && <td>{d.approved ? `✅${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"}</td>}
+                    {kind === "complaints" && <td title={approvalText(d)}>{approvalShort(d)}</td>}
                     <td className="wrap"><span className="clip">{d.subject || "—"}</span></td>
                     <td>{d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—"}</td>
                   </tr>
@@ -5697,8 +5738,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
               {kind === "complaints" && (() => {
                 const a = approverOf(shown);
                 return (
-                  <div className={`approval-box ${shown.approved ? "ok" : ""}`}>
-                    {shown.approved ? <b>✅ تمت المصادقة{shown.approval_ref ? ` بقرار الإدارة رقم ${shown.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
+                  <div className={`approval-box ${approvalKind(shown) && approvalKind(shown) !== "عدم مصادقة" ? "ok" : ""}`}>
+                    <b>{approvalText(shown)}</b>
                     {a && <div>{a.title}{a.decision_date ? ` (${fmtDate(a.decision_date)})` : ""} {a.url && <a href={a.url} target="_blank" rel="noopener">🔗 فتح قرار المصادقة</a>}</div>}
                     {shown.approved && shown.approval_ref && !a && <div className="muted">لم يُعثر على قرار إدارة بهذا الرقم.</div>}
                   </div>
@@ -5719,7 +5760,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
               {kind === "admin" && approvedBy(shown).length > 0 && (
                 <div className="approval-box ok">
                   <b>✅ يصادق على قرارات الشكاوى:</b>
-                  {approvedBy(shown).map(d => <div key={d.id}>رقم {d.decision_number} — {d.title}</div>)}
+                  {approvedBy(shown).map(d => <div key={d.id}>{approvalShort(d).split(" ")[0]} رقم {d.decision_number} — {d.title}{d.approval_note ? ` (${d.approval_note})` : ""}</div>)}
                 </div>
               )}
               {/* الاعتراضات على هذا القرار (اعتراض على قرار إداري برقمه): الرقم والحالة والنتيجة، والضغط يفتح الاعتراض */}
