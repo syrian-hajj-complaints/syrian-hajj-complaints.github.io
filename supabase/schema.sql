@@ -120,6 +120,8 @@
 --    2026-10-28  القسم 64: قرار الطلب في «قرارات الشكاوى» من البطاقة (decisions.request_id، admin_register_request_decision)، والرابط يتزامن
 --                تلقائياً، والمصادقة من البطاقة (admin_set_decision_approval)؛ كلمة مرور الأدمن الأولى صارت القسم 65.
 --    2026-10-28  القسم 65: «هل الطلب محق؟» (justified، admin_set_justified، للمدير)؛ غير المحق بلا قرار ولا مصادقة؛ كلمة مرور الأدمن الأولى صارت القسم 66.
+--    2026-10-28  القسم 66: القرار المشترك لأكثر من طلب (complaints.linked_decision_id / linked_decision_ref، admin_link_request_decision)؛
+--                كلمة مرور الأدمن الأولى صارت القسم 67.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -7383,7 +7385,210 @@ grant execute on function public.admin_set_justified(text, uuid, text)          
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 66) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 66) القرار المشترك لأكثر من طلب: كل طلب يُربط بقراره في «قرارات الشكاوى» (linked_decision_id، ومعه رقم القرار
+--     linked_decision_ref ليُعاد الربط بعد أرشفة الموسم وفتحه)؛ يُسجَّل القرار من طلب برقم يُكتب يدوياً، وتُربط به الطلبات
+--     الأخرى؛ المصادقة ورابط الملف واحدة للجميع
+--     يحتاج الأقسام حتى 65 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+alter table public.complaints add column if not exists linked_decision_id  uuid references public.decisions (id) on delete set null;
+alter table public.complaints add column if not exists linked_decision_ref text;
+
+-- مرة واحدة: الطلبات المسجَّل قرارها من قبل (القسم 64) تُربط به
+update public.complaints c set linked_decision_id = d.id, linked_decision_ref = d.decision_number
+  from public.decisions d where d.request_id = c.id and c.linked_decision_id is null;
+
+-- ربط طلب بقرار من «قرارات الشكاوى» أو فكّه (فارغ) — للمدير فقط؛ تُرجع الطلب
+create or replace function public.admin_link_request_decision(p_secret text, p_id uuid, p_decision_id uuid)
+returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_ref text;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  if p_decision_id is not null then
+    select decision_number into v_ref from public.decisions where id = p_decision_id and kind = 'complaints';
+    if v_ref is null then
+      return;
+    end if;
+  end if;
+  update public.complaints set linked_decision_id = p_decision_id, linked_decision_ref = v_ref where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+-- تسجيل قرار الطلب (نسخة تربط الطلب بقراره أيضاً)؛ تُرجع القرار
+create or replace function public.admin_register_request_decision(
+  p_secret text, p_id uuid, p_number text, p_date date, p_title text, p_subject text, p_classification text
+) returns setof public.decisions
+language plpgsql security definer set search_path = public as $$
+declare
+  c    public.complaints;
+  v_id uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(btrim(p_number), '') = '' or coalesce(btrim(p_title), '') = '' then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null then
+    return;
+  end if;
+  -- القرار الحالي للطلب: المرتبط به، أو المسجَّل منه، أو المسجَّل يدوياً برقمه في موسمه
+  v_id := c.linked_decision_id;
+  if v_id is null then
+    select id into v_id from public.decisions where request_id = p_id;
+  end if;
+  if v_id is null then
+    select id into v_id from public.decisions
+     where request_id is null and kind = 'complaints' and season = c.season and decision_number = btrim(left(p_number, 60))
+     order by created_at limit 1;
+  end if;
+  if v_id is null then
+    insert into public.decisions (season, decision_number, decision_date, title, subject, url, classification, kind, secrecy, request_id)
+    values (c.season, btrim(left(p_number, 60)), p_date, btrim(left(p_title, 300)), nullif(btrim(left(p_subject, 5000)), ''),
+            case when c.decision_url ~* '^https?://' then left(btrim(c.decision_url), 1000) end,
+            nullif(btrim(left(p_classification, 300)), ''), 'complaints', 'عادي', p_id)
+    returning id into v_id;
+  else
+    update public.decisions set
+      decision_number = btrim(left(p_number, 60)), decision_date = p_date, title = btrim(left(p_title, 300)),
+      subject = nullif(btrim(left(p_subject, 5000)), ''), classification = nullif(btrim(left(p_classification, 300)), ''),
+      url = case when c.decision_url ~* '^https?://' then left(btrim(c.decision_url), 1000) else url end,
+      request_id = coalesce(request_id, p_id)
+    where id = v_id;
+  end if;
+  -- ربط الطلب بقراره، وتحديث رقم القرار في كل الطلبات المرتبطة به (إن تغيّر)
+  update public.complaints set linked_decision_id = v_id, linked_decision_ref = btrim(left(p_number, 60)) where id = p_id;
+  update public.complaints set linked_decision_ref = btrim(left(p_number, 60)) where linked_decision_id = v_id;
+  return query select * from public.decisions where id = v_id;
+end $$;
+
+-- رابط «ملف القرار» في أي طلب مرتبط ← رابط القرار المشترك (تلقائياً عند كل تغيير)
+create or replace function public.complaints_sync_decision_url()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.decision_url is distinct from old.decision_url and coalesce(btrim(new.decision_url), '') <> '' then
+    update public.decisions set url = case when new.decision_url ~* '^https?://' then left(btrim(new.decision_url), 1000) end
+     where request_id = new.id or id = new.linked_decision_id;
+  end if;
+  return null;
+end $$;
+
+-- استعادة موسم (نسخة بالقرار المشترك)
+create or replace function public.admin_restore_season(p_secret text, p_season text, p_complaints json, p_sessions json, p_referrals json, p_decisions json)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_n int;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(p_season, '') !~ '^\d{4}$'
+     or json_typeof(coalesce(p_complaints, 'null'::json)) <> 'array' or json_array_length(p_complaints) = 0 then
+    return 'INVALID';
+  end if;
+  if p_season = public.setting('season') then
+    return 'CURRENT';
+  end if;
+  if exists (select 1 from public.complaints where season = p_season)
+     or exists (select 1 from public.decisions where season = p_season) then
+    return 'EXISTS';
+  end if;
+  -- رقم شكوى موجود في موسم آخر
+  if exists (select 1 from json_array_elements(p_complaints) e
+               join public.complaints c on c.complaint_number = btrim(e->>'complaint_number')) then
+    return 'DUPLICATE';
+  end if;
+
+  -- إيقاف المشغّلات أثناء الإدخال (تعود عند نهاية الدالة؛ وأي خطأ يلغي كل شيء ويعيدها كما كانت)
+  alter table public.complaints disable trigger user;
+  alter table public.sessions   disable trigger user;
+  alter table public.referrals  disable trigger user;
+
+  -- الشكاوى (النوع الفارغ أو غير المعروف = «شكوى»؛ الحكم غير المعروف = فارغ)
+  insert into public.complaints (season, complaint_number, tracking_code, received_date, status, title,
+         complainant_name, complainant_role, phone_number, contact_number, accused_name, accused_role, subject,
+         classification, referred_to, result, complainant_result, accused_result, closed_date, reminder_at, reminder_note,
+         objection_summary, objection_deadline, objection_extension_reason, objection_text, objection_at,
+         result_before_objection, updated_at, links, objection_links, accused_phone, complainant_note, accused_note, study_url, decision_url,
+         kind, decision_ref, decision_date, referred_by, obj_form, obj_merit, accused_key, final_result, archived_at, card_note, card_note_by, card_note_at, justified, linked_decision_ref)
+  select p_season, btrim(r.complaint_number), coalesce(nullif(btrim(r.tracking_code), ''), public.random_password(6, true)),
+         coalesce(r.received_date, now()), coalesce(nullif(btrim(r.status), ''), 'مغلقة'), r.title,
+         coalesce(nullif(btrim(r.complainant_name), ''), '—'), r.complainant_role, r.phone_number, r.contact_number,
+         coalesce(nullif(btrim(r.accused_name), ''), '—'), r.accused_role, coalesce(nullif(btrim(r.subject), ''), '—'),
+         r.classification, r.referred_to, r.result, r.complainant_result, r.accused_result, r.closed_date, r.reminder_at, r.reminder_note,
+         r.objection_summary, r.objection_deadline, r.objection_extension_reason, r.objection_text, r.objection_at,
+         r.result_before_objection, coalesce(r.updated_at, r.closed_date, r.received_date, now()),
+         public.clean_links(string_to_array(r.links, E'\n')), public.clean_links(string_to_array(r.objection_links, E'\n')),
+         public.normalize_phone(r.accused_phone), nullif(btrim(left(r.complainant_note, 300)), ''), nullif(btrim(left(r.accused_note, 300)), ''),
+         case when r.study_url ~* '^https?://\S+$' then left(btrim(r.study_url), 1000) end,
+         case when r.decision_url ~* '^https?://\S+$' then left(btrim(r.decision_url), 1000) end,
+         case when btrim(r.kind) = 'اعتراض على قرار إداري' then 'اعتراض على قرار إداري' else 'شكوى' end,
+         nullif(btrim(left(r.decision_ref, 60)), ''), r.decision_date, nullif(btrim(left(r.referred_by, 200)), ''),
+         case when btrim(r.obj_form) in ('قبول', 'رد') then btrim(r.obj_form) end,
+         case when btrim(r.obj_merit) in ('تصديق', 'إلغاء', 'تعديل') then btrim(r.obj_merit) end,
+         nullif(btrim(left(r.accused_key, 200)), ''),
+         nullif(btrim(left(r.final_result, 10000)), ''),
+         r.archived_at,
+         nullif(btrim(left(r.card_note, 300)), ''), nullif(btrim(left(r.card_note_by, 100)), ''), r.card_note_at,
+         case when btrim(r.justified) in ('محق', 'غير محق') then btrim(r.justified) end,
+         nullif(btrim(left(r.linked_decision_ref, 60)), '')
+  from json_to_recordset(p_complaints) as r(
+         complaint_number text, tracking_code text, received_date timestamptz, status text, title text,
+         complainant_name text, complainant_role text, phone_number text, contact_number text, accused_name text, accused_role text,
+         subject text, classification text, referred_to text, result text, complainant_result text, accused_result text,
+         closed_date timestamptz, reminder_at timestamptz, reminder_note text, objection_summary text, objection_deadline timestamptz,
+         objection_extension_reason text, objection_text text, objection_at timestamptz, result_before_objection text, updated_at timestamptz,
+         links text, objection_links text, accused_phone text, complainant_note text, accused_note text, study_url text, decision_url text,
+         kind text, decision_ref text, decision_date date, referred_by text, obj_form text, obj_merit text, accused_key text, final_result text, archived_at timestamptz,
+         card_note text, card_note_by text, card_note_at timestamptz, justified text, linked_decision_ref text);
+  get diagnostics v_n = row_count;
+
+  -- الجلسات (حالة الجلسة الفارغة = حالة شكواها)
+  insert into public.sessions (complaint_id, session_at, title, location, topic, referred_to, result, status, links, opinion)
+  select c.id, coalesce(s.session_at, c.received_date), s.title, s.location, s.topic, s.referred_to, s.result,
+         coalesce(nullif(btrim(s.status), ''), c.status), public.clean_links(string_to_array(s.links, E'\n')),
+         nullif(btrim(left(s.opinion, 10000)), '')
+  from json_to_recordset(coalesce(p_sessions, '[]'::json)) as s(
+         complaint_number text, session_at timestamptz, title text, location text, topic text, referred_to text, result text, status text,
+         links text, opinion text)
+  join public.complaints c on c.complaint_number = btrim(s.complaint_number) and c.season = p_season;
+
+  -- الإحالات
+  insert into public.referrals (complaint_id, referred_to, referred_at)
+  select c.id, btrim(x.referred_to), coalesce(x.referred_at, c.received_date)
+  from json_to_recordset(coalesce(p_referrals, '[]'::json)) as x(complaint_number text, referred_to text, referred_at timestamptz)
+  join public.complaints c on c.complaint_number = btrim(x.complaint_number) and c.season = p_season
+  where coalesce(btrim(x.referred_to), '') <> '';
+
+  -- القرارات (رقم القرار وعنوانه إلزاميان؛ الرابط يجب أن يبدأ بـ http:// أو https://)
+  insert into public.decisions (season, decision_number, decision_date, title, subject, url, classification, kind, secrecy, approved, approval_ref)
+  select p_season, btrim(left(d.decision_number, 60)), d.decision_date, btrim(left(d.title, 300)), nullif(btrim(left(d.subject, 5000)), ''),
+         case when d.url ~* '^https?://' then left(btrim(d.url), 1000) end, nullif(btrim(left(d.classification, 300)), ''),
+         case when d.kind = 'admin' then 'admin' else 'complaints' end, nullif(btrim(left(d.secrecy, 40)), ''),
+         coalesce(btrim(d.approved) in ('نعم', 'true', '1', 'TRUE'), false), nullif(btrim(left(d.approval_ref, 60)), '')
+  from json_to_recordset(coalesce(p_decisions, '[]'::json)) as d(
+         decision_number text, decision_date date, title text, subject text, url text, classification text, kind text, secrecy text, approved text, approval_ref text)
+  where coalesce(btrim(d.decision_number), '') <> '' and coalesce(btrim(d.title), '') <> '';
+
+  -- ربط الطلبات بقراراتها (المشتركة) برقم القرار في الموسم نفسه
+  update public.complaints c set linked_decision_id = d.id
+    from public.decisions d
+   where c.season = p_season and d.season = p_season and d.kind = 'complaints'
+     and c.linked_decision_ref is not null and d.decision_number = c.linked_decision_ref;
+
+  -- إعادة المشغّلات
+  alter table public.complaints enable trigger user;
+  alter table public.sessions   enable trigger user;
+  alter table public.referrals  enable trigger user;
+  return 'OK:' || v_n;
+end $$;
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_link_request_decision(text, uuid, uuid)                     to anon, authenticated;
+grant execute on function public.admin_register_request_decision(text, uuid, text, date, text, text, text) to anon, authenticated;
+grant execute on function public.admin_restore_season(text, text, json, json, json, json)         to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 67) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

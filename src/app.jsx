@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  القرار المشترك لأكثر من طلب (القسم 66): رقم القرار يُكتب يدوياً عند التسجيل، و«🔗 ربط بقرار مسجّل» في الطلبات الأخرى
+//                (و«فك الربط»)؛ المصادقة والرابط واحدة؛ «يشمل الطلبات» في بطاقة الطلب، و«📋 صدر في الطلبات» في تفاصيل القرار؛
+//                «فحص المطابقة» يعدّ المرتبط مسجّلاً ويقبل رابط القرار المشترك؛ عمود «رقم القرار (المشترك)» في ملف الموسم.
 //    2026-10-28  «هل الطلب محق؟» (القسم 65، للمدير): في جلسة الإغلاق وفي «📋 النتائج»؛ غير المحق لا يحتاج قراراً ولا مصادقة (لا يُعرض
 //                تسجيله في «قرارات الشكاوى»، ولا يُطلب في «فحص المطابقة»)، وبند «لم يُحدَّد هل الطلب محق»؛ ويظهر في نتيجة البطاقة.
 //    2026-10-28  تصنيفات قرار الطلب (أكثر من تصنيف): المقترح «شكاوى» أو «اعتراضات» مع تصنيف الطلب نفسه، تُختار بأزرار وتُضاف
@@ -703,7 +706,7 @@ function buildDecisionDoc(D, f, letterhead) {
 }
 
 // تبويب «📜 القرار» في بطاقة الشكوى: معاينة القرار بقيمه المولَّدة، وتعديلها اختيارياً، ثم توليده Word
-function DecisionTab({ secret, c }) {
+function DecisionTab({ secret, c, onSaved }) {
   const [f, setF] = useState(() => decisionDefaults(c));
   const [edit, setEdit] = useState(false);
   const [busy, setBusy] = useState(true);   // حتى جلب رأي اللجنة من الجلسات
@@ -769,7 +772,7 @@ function DecisionTab({ secret, c }) {
       <small className="hint" style={{ display: "block", marginTop: 6 }}>
         القيم تُولَّد من الشكوى: الرقم من تسلسلها وموسمها، والتاريخ من تاريخ إغلاقها (أو اليوم)، والبند الأول رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) ثم قرار اللجنة من نتيجتها. التعديل لا يُحفظ في الشكوى، والملف قابل للتعديل في Word.
       </small>
-      <RequestDecisionBox secret={secret} c={c} items={f.items} />
+      <RequestDecisionBox secret={secret} c={c} items={f.items} onSaved={onSaved} />
     </div>
   );
 }
@@ -777,18 +780,30 @@ function DecisionTab({ secret, c }) {
 // قرار الطلب في «📑 قرارات الشكاوى» (القسم 64): تسجيله من البطاقة بضغطة — رقمه رقم الطلب، تصنيفه «شكاوى» أو «اعتراضات»،
 // رابطه رابط «ملف القرار» في البطاقة (ويتحدث تلقائياً) — ثم المصادقة بقرار إدارة؛ يُعرف بربطه بالطلب، أو برقمه في موسم الطلب
 const REQ_DEC_CLASS = c => isDecObj(c) ? "اعتراضات" : "شكاوى";
-function RequestDecisionBox({ secret, c, items }) {
+// قرار الطلب من قائمة القرارات: المرتبط به (القسم 66، ويكون مشتركاً)، أو المسجَّل منه (64)، أو المسجَّل يدوياً برقمه في موسمه
+const requestDecision = (all, c) => (all || []).find(d => c.linked_decision_id && d.id === c.linked_decision_id)
+  || (all || []).find(d => d.request_id === c.id)
+  || (all || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
+// الطلبات المرتبطة بقرار (المشترك)
+const decisionRequests = (rows, d) => (rows || []).filter(r => r.linked_decision_id ? r.linked_decision_id === d.id : d.request_id === r.id);
+function RequestDecisionBox({ secret, c, items, onSaved }) {
   const [all, setAll] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [ref, setRef] = useState(null);   // رقم قرار الإدارة المصادِق قيد التعديل
   const [title, setTitle] = useState(null); // عنوان القرار (ملخصه) قيد الكتابة
   const [classes, setClasses] = useState(null); // تصنيفات القرار المختارة
+  const [num, setNum] = useState(null);         // رقم القرار (يُكتب يدوياً؛ للقرار المشترك يتضمن أرقام الطلبات)
+  const [linkRef, setLinkRef] = useState("");   // رقم قرار مسجّل لربط الطلب به (القرار المشترك)
   const load = useCallback(() => sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setAll(data || [])), [secret]);
   useEffect(() => { load(); }, [load]);
   if (all === null) return null;
-  const number = complaintRef(c);
-  const mine = all.find(d => d.request_id === c.id) || all.find(d => (d.kind || "complaints") === "complaints" && d.decision_number === number && d.season === c.season);
+  const mine = requestDecision(all, c);
+  const number = num !== null ? num : (mine ? mine.decision_number : complaintRef(c));
+  // القرار المشترك: الطلبات المرتبطة به؛ وهذا الطلب «مرتبط» إن سُجّل القرار من طلب آخر
+  const shared = mine ? decisionRequests(ADMIN_CTX.allRows, mine) : [];
+  const linkedOnly = !!(mine && mine.request_id && mine.request_id !== c.id);
+  const complaintDecs = all.filter(d => (d.kind || "complaints") === "complaints" && (!c.season || !d.season || d.season === c.season));
   // العنوان المقترح: «ملخص القرار - شكوى مقدمة من فلان» (الملخص من أول سطر في النتيجة، ويُعدَّل)
   const firstLine = String(c.final_result || c.result || "").split("\n").map(x => x.trim().replace(/^\d+\s*[-–.)]\s*/, "")).find(Boolean) || "";
   const suffix = `${isDecObj(c) ? "اعتراض مقدم" : "شكوى مقدمة"} من ${c.complainant_name || ""}`.trim();
@@ -805,6 +820,7 @@ function RequestDecisionBox({ secret, c, items }) {
 
   // التسجيل أو التحديث من بيانات الطلب
   async function register() {
+    if (!String(number).trim()) return setMsg({ type: "error", text: "اكتب رقم القرار." });
     if (!curTitle.trim()) return setMsg({ type: "error", text: "اكتب عنوان القرار (ملخصه)." });
     if (!curClasses.length) return setMsg({ type: "error", text: "اختر تصنيفاً واحداً على الأقل للقرار." });
     setBusy(true); setMsg(null);
@@ -818,13 +834,37 @@ function RequestDecisionBox({ secret, c, items }) {
     const klass = curClasses.join("، ");
     const subject = [isDecObj(c) && c.decision_ref ? `اعتراض على قرار الإدارة رقم ${c.decision_ref}` : "", String(items || "").trim()].filter(Boolean).join("\n");
     const { data, error } = await sb.rpc("admin_register_request_decision", {
-      p_secret: secret, p_id: c.id, p_number: number, p_date: c.closed_date ? toDateInput(new Date(c.closed_date)) : toDateInput(new Date()),
+      p_secret: secret, p_id: c.id, p_number: String(number).trim(), p_date: c.closed_date ? toDateInput(new Date(c.closed_date)) : toDateInput(new Date()),
       p_title: curTitle.trim(), p_subject: subject, p_classification: klass,
     });
-    setBusy(false); setTitle(null); setClasses(null);
+    setBusy(false); setTitle(null); setClasses(null); setNum(null);
     if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التسجيل (نفّذ القسم 64 من schema.sql في Supabase)." });
     setMsg({ type: "ok", text: mine ? "🔄 حُدّث القرار في «📑 قرارات الشكاوى» من بيانات الطلب." : "📑 سُجّل القرار في «📑 قرارات الشكاوى»." });
-    load();
+    load(); refreshReq();
+  }
+
+  // تحديث الطلب في القائمة بعد ربطه بقراره
+  async function refreshReq() {
+    if (!onSaved) return;
+    const { data } = await sb.rpc("admin_list_complaints", { p_secret: secret });
+    const me = (data || []).find(r => r.id === c.id);
+    if (me) onSaved(me);
+  }
+
+  // ربط الطلب بقرار مسجّل (القرار المشترك) أو فكّه (null)
+  async function link(decisionId) {
+    if (decisionId === undefined) {
+      const d = complaintDecs.find(x => x.decision_number === linkRef.trim());
+      if (!d) return setMsg({ type: "error", text: "لا يوجد في «قرارات الشكاوى» قرار بهذا الرقم — اختره من القائمة." });
+      decisionId = d.id;
+    }
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_link_request_decision", { p_secret: secret, p_id: c.id, p_decision_id: decisionId });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الربط (نفّذ القسم 66 من schema.sql في Supabase)." });
+    if (onSaved) onSaved(data[0]);
+    setLinkRef(""); load();
+    setMsg({ type: "ok", text: decisionId ? "🔗 رُبط الطلب بالقرار المشترك." : "فُكّ ربط الطلب بالقرار." });
   }
 
   // حفظ المصادقة (الفارغ يلغيها)
@@ -840,6 +880,9 @@ function RequestDecisionBox({ secret, c, items }) {
   // خانتا عنوان القرار وتصنيفاته (للمدير): قبل التسجيل، وعند تعديلهما بعده
   const titleField = manager && (
     <>
+      <Field label="🔢 رقم القرار" hint="للقرار المشترك اكتب أرقام الطلبات كلها، مثل: 12-13-14/48/ ق.ش">
+        <input type="text" dir="ltr" value={number} onChange={e => { setNum(e.target.value); setMsg(null); }} maxLength={60} />
+      </Field>
       <Field label="📝 عنوان القرار (ملخصه)" hint="مثال: حسم 5 نقاط من التقييم - شكوى مقدمة من فلان" full>
         <input type="text" value={curTitle} onChange={e => { setTitle(e.target.value); setMsg(null); }} maxLength={300} />
       </Field>
@@ -869,16 +912,35 @@ function RequestDecisionBox({ secret, c, items }) {
           {manager && <button type="button" className="btn sm" style={{ marginTop: 6 }} disabled={busy || !isClosed(c.status)} onClick={register}>
             {busy ? "…" : "📑 تسجيل في قرارات الشكاوى"}</button>}
           {manager && !isClosed(c.status) && <small className="muted" style={{ display: "block", marginTop: 4 }}>يُسجَّل بعد إغلاق الطلب.</small>}
+          {/* أو: ربطه بقرار مسجّل من طلب آخر (قرار مشترك لأكثر من طلب) */}
+          {manager && (
+            <div style={{ marginTop: 10, borderTop: "1px dashed var(--line)", paddingTop: 8 }}>
+              <div className="muted" style={{ fontSize: 13.5, marginBottom: 4 }}>أو، إن كان له قرار مشترك مع طلبات أخرى سُجّل من قبل:</div>
+              <div className="row" style={{ flexWrap: "nowrap" }}>
+                <input type="text" dir="ltr" list="req-link-list" className="grow" value={linkRef} onChange={e => { setLinkRef(e.target.value); setMsg(null); }}
+                  placeholder="رقم القرار المشترك (اختر من القائمة)" />
+                <datalist id="req-link-list">{complaintDecs.map(d => <option key={d.id} value={d.decision_number}>{d.title}</option>)}</datalist>
+                <button type="button" className="btn secondary sm" disabled={busy || !linkRef.trim()} onClick={() => link()}>🔗 ربط بقرار مسجّل</button>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <>
-          <div style={{ margin: "4px 0" }}>✔️ مسجّل برقم <b dir="ltr">{mine.decision_number}</b> — {mine.title}
+          <div style={{ margin: "4px 0" }}>{linkedOnly ? "🔗 مرتبط بالقرار المشترك" : "✔️ مسجّل"} برقم <b dir="ltr">{mine.decision_number}</b> — {mine.title}
             {mine.url ? <> · <a href={mine.url} target="_blank" rel="noopener">🔗 فتح الملف</a></> : <span className="muted"> · بلا رابط ملف بعد</span>}</div>
+          {shared.length > 1 && <div className="muted" style={{ fontSize: 13.5 }}>يشمل الطلبات: {shared.map(r => r.complaint_number).join("، ")}</div>}
           <div style={{ margin: "6px 0" }}>
             {mine.approved ? <b>✅ تمت المصادقة{mine.approval_ref ? ` بقرار الإدارة رقم ${mine.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
             {approver && <div className="muted" style={{ fontSize: 13.5 }}>{approver.title}{approver.decision_date ? ` (${fmtDate(approver.decision_date)})` : ""}</div>}
           </div>
-          {titleField}
+          {!linkedOnly && titleField}
+          {manager && linkedOnly && (
+            <div className="row" style={{ marginBottom: 6 }}>
+              <small className="muted">يُعدَّل رقمه وعنوانه وتصنيفاته من الطلب الذي سُجّل منه.</small>
+              <button type="button" className="btn danger-text" disabled={busy} onClick={() => { if (window.confirm("فك ربط هذا الطلب بالقرار المشترك؟")) link(null); }}>فك الربط</button>
+            </div>
+          )}
           {manager && (ref !== null ? (
             <div className="row" style={{ flexWrap: "nowrap" }}>
               <input type="text" dir="ltr" list="req-approval-list" className="grow" autoFocus value={ref} onChange={e => setRef(e.target.value)}
@@ -890,7 +952,7 @@ function RequestDecisionBox({ secret, c, items }) {
           ) : (
             <div className="row">
               <button type="button" className="btn sm" onClick={() => setRef(mine.approval_ref || "")}>{mine.approved ? "✏️ تعديل المصادقة" : "✅ المصادقة بقرار إدارة"}</button>
-              <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="حفظ العنوان والتصنيفات المختارة أعلاه، وتحديث الموضوع والتاريخ والرابط من بيانات الطلب">💾 حفظ العنوان والتصنيفات والتحديث من الطلب</button>
+              {!linkedOnly && <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="حفظ الرقم والعنوان والتصنيفات المختارة أعلاه، وتحديث الموضوع والتاريخ والرابط من بيانات الطلب">💾 حفظ والتحديث من الطلب</button>}
             </div>
           ))}
         </>
@@ -1006,7 +1068,7 @@ const XL_SHEETS = [
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
     ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"],
     ["archived_at", "تاريخ الأرشفة", true], ["card_note", "ملاحظة سريعة"], ["card_note_by", "كاتب الملاحظة"], ["card_note_at", "وقت الملاحظة", true],
-    ["justified", "هل الطلب محق؟"]] },
+    ["justified", "هل الطلب محق؟"], ["linked_decision_ref", "رقم القرار (المشترك)"]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -2288,7 +2350,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "home" && <AdminHome me={me} isManager={isManager} rows={rows} go={go} secret={secret} onOpen={openComplaint} />}
         {current === "today" && <AdminDue secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c, true)} />}
         {current === "links" && <AdminLinks secret={secret} isManager={isManager} />}
-        {current === "decisions" && <AdminDecisions key="complaints" secret={secret} isManager={isManager} kind="complaints" />}
+        {current === "decisions" && <AdminDecisions key="complaints" secret={secret} isManager={isManager} kind="complaints" requests={rows || []} onOpenRequest={c => openComplaint(c)} />}
         {current === "admindec" && <AdminDecisions key="admin" secret={secret} isManager={isManager} kind="admin" requests={rows || []} onOpenRequest={c => openComplaint(c)} />}
         {current === "notes" && <AdminNotes secret={secret} isManager={isManager} />}
         {current === "guide" && <AdminGuide isManager={isManager} />}
@@ -2968,7 +3030,6 @@ const STALE_DAYS = 14;   // مغلقة منذ أكثر من هذه المدة و
 const badFileLink = u => !!u && (!/^https?:\/\/\S+$/i.test(u) || /drive\.google\.com\/(drive\/)?(u\/\d+\/)?folders\//i.test(u));
 const CHECKS = [
   { key: "study",   icon: "📄", label: "مغلقة، ولم يُلصق رابط «الدراسة المنقّحة»",        test: c => isClosed(c.status) && !c.study_url },
-  { key: "dec",     icon: "📜", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُلصق رابط «ملف القرار»", test: c => isClosed(c.status) && !c.decision_url && !notJustified(c) },
   { key: "just",    icon: "❔", label: "مغلقة، ولم يُحدَّد «هل الطلب محق؟» (من «📋 النتائج»)", test: c => isClosed(c.status) && !c.justified },
   // (بلا نتيجة إطلاقاً: لا نتيجة الشكوى المستقلة، ولا خلاصة آخر جلسة التي تُستعمل بدلها، ولا حكم في الاعتراض)
   { key: "result",  icon: "⚖️", label: "مغلقة بلا نتيجة (لا «نتيجة الشكوى» ولا خلاصة جلسة ولا حكم)",
@@ -2987,8 +3048,10 @@ function AdminCheck({ secret, rows, onOpen }) {
   if (rows === null) return <Loading />;
   const cur = (rows || []).filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season);
   // قرار الطلب: بربطه، أو برقمه في موسمه
-  const decOf = c => (decs || []).find(d => d.request_id === c.id) || (decs || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
+  const decOf = c => requestDecision(decs, c);
   const decChecks = decs === null ? [] : [
+    // (رابط ملف القرار: في الطلب نفسه، أو في قراره المشترك)
+    { key: "dec",     icon: "📜", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُلصق رابط «ملف القرار»", test: c => isClosed(c.status) && !notJustified(c) && !c.decision_url && !(decOf(c) && decOf(c).url) },
     { key: "unreg",   icon: "📑", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُسجَّل قرارها في «قرارات الشكاوى» (من تبويب «📜 القرار»)", test: c => isClosed(c.status) && !notJustified(c) && !decOf(c) },
     { key: "unappr",  icon: "⏳", label: "قرارها مسجَّل وبانتظار المصادقة بقرار إدارة", test: c => { const d = decOf(c); return !!d && !d.approved; } },
   ];
@@ -4787,7 +4850,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       )}
 
       {cardTab === "objection" && <ObjectionSection secret={secret} complaint={c} onSaved={onSaved} />}
-      {cardTab === "decision" && <DecisionTab key={c.updated_at} secret={secret} c={c} />}
+      {cardTab === "decision" && <DecisionTab key={c.updated_at} secret={secret} c={c} onSaved={onSaved} />}
 
       {finalClosed && <div className="locked-note">🔒 أُغلقت الشكوى نهائياً بعد الاعتراض — يمكن تعديل الجلسات فقط.</div>}
       {/* حذف نهائي (للمدير فقط) */}
@@ -5641,6 +5704,18 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   </div>
                 );
               })()}
+              {/* الطلبات التي صدر فيها هذا القرار (قرار مشترك لأكثر من طلب)، والضغط يفتح الطلب */}
+              {kind === "complaints" && decisionRequests(requests, shown).length > 0 && (
+                <div className="approval-box">
+                  <b>📋 صدر في الطلبات:</b>
+                  {decisionRequests(requests, shown).map(r => (
+                    <div key={r.id} className={onOpenRequest ? "clickable" : ""} style={{ marginTop: 4 }}
+                      onClick={onOpenRequest ? () => { setShown(null); onOpenRequest(r); } : undefined}>
+                      <ReqNo n={r.complaint_number} /> — {r.complainant_name} <StatusBadge value={r.status} />
+                    </div>
+                  ))}
+                </div>
+              )}
               {kind === "admin" && approvedBy(shown).length > 0 && (
                 <div className="approval-box ok">
                   <b>✅ يصادق على قرارات الشكاوى:</b>
