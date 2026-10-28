@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  «🔍 فحص المطابقة»: بند «بلا نتيجة» لا يشمل الشكاوى التي لها خلاصة جلسة (كانت تظهر خطأً لأن «نتيجة الشكوى» المستقلة جديدة).
 //    2026-10-28  قسم «🔍 فحص المطابقة» (AdminCheck، للمدير والمسؤول): ما ينقصه شيء في الموسم الحالي في صفحة واحدة — مغلقة بلا رابط
 //                دراسة أو قرار أو بلا نتيجة، اعتراض بلا رقم القرار، رابط بشكل خاطئ، ومغلقة منذ 14 يوماً لم تُؤرشف — وعددها في القائمة.
 //    2026-10-28  النوافذ (بطاقة الطلب وغيرها) لا تُغلق إلا إن بدأ الضغط وانتهى على الخلفية الداكنة (backdrop): تحديد نص ثم
@@ -2825,7 +2826,9 @@ const badFileLink = u => !!u && (!/^https?:\/\/\S+$/i.test(u) || /drive\.google\
 const CHECKS = [
   { key: "study",   icon: "📄", label: "مغلقة، ولم يُلصق رابط «الدراسة المنقّحة»",        test: c => isClosed(c.status) && !c.study_url },
   { key: "dec",     icon: "📜", label: "مغلقة، ولم يُلصق رابط «ملف القرار»",              test: c => isClosed(c.status) && !c.decision_url },
-  { key: "result",  icon: "⚖️", label: "مغلقة بلا «نتيجة الشكوى (قرار اللجنة)» ولا حكم", test: c => isClosed(c.status) && !c.final_result && !(isDecObj(c) && (c.obj_form || c.obj_merit)) },
+  // (بلا نتيجة إطلاقاً: لا نتيجة الشكوى المستقلة، ولا خلاصة آخر جلسة التي تُستعمل بدلها، ولا حكم في الاعتراض)
+  { key: "result",  icon: "⚖️", label: "مغلقة بلا نتيجة (لا «نتيجة الشكوى» ولا خلاصة جلسة ولا حكم)",
+    test: c => isClosed(c.status) && !String(c.final_result || "").trim() && !String(c.result || "").trim() && !(isDecObj(c) && (c.obj_form || c.obj_merit)) },
   { key: "decobj",  icon: "📑", label: "اعتراض على قرار بلا رقم القرار أو تاريخه",         test: c => isDecObj(c) && (!c.decision_ref || !c.decision_date) },
   { key: "badlink", icon: "🔗", label: "رابط ملف بشكل خاطئ (رابط مجلد بدل ملف، أو لا يبدأ بـ https://)", test: c => badFileLink(c.study_url) || badFileLink(c.decision_url) },
   { key: "stale",   icon: "🗄️", label: `مغلقة منذ أكثر من ${STALE_DAYS} يوماً ولم تُنقل إلى الأرشيف`, test: c => isClosed(c.status) && !c.archived_at && c.closed_date && Date.now() - new Date(c.closed_date) > STALE_DAYS * DAY },
