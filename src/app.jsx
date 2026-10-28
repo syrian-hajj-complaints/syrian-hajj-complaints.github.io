@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  «هل الطلب محق؟» (القسم 65، للمدير): في جلسة الإغلاق وفي «📋 النتائج»؛ غير المحق لا يحتاج قراراً ولا مصادقة (لا يُعرض
+//                تسجيله في «قرارات الشكاوى»، ولا يُطلب في «فحص المطابقة»)، وبند «لم يُحدَّد هل الطلب محق»؛ ويظهر في نتيجة البطاقة.
 //    2026-10-28  تصنيفات قرار الطلب (أكثر من تصنيف): المقترح «شكاوى» أو «اعتراضات» مع تصنيف الطلب نفسه، تُختار بأزرار وتُضاف
 //                الجديدة إلى «تصنيفات القرارات».
 //    2026-10-28  عنوان قرار الطلب يكتبه المدير (ملخصه) قبل التسجيل وبعده، بمقترح «أول سطر من النتيجة - شكوى مقدمة من فلان»،
@@ -243,6 +245,10 @@ const isDecObj = c => !!c && String(c.kind || "").trim() === DEC_OBJ;
 const partyLabels = c => isDecObj(c)
   ? { who: "المعترض", against: "المعترض عليه", noun: "الاعتراض", study: "دراسة اعتراض" }
   : { who: "المشتكي", against: "المشتكى عليه", noun: "الشكوى", study: "دراسة شكوى" };
+// «هل الطلب محق؟» (القسم 65): 'محق' / 'غير محق' / فارغ؛ غير المحق لا يحتاج قراراً ولا مصادقة
+const notJustified = c => !!c && c.justified === "غير محق";
+const justLabel = (c, v) => !v ? "لم يُحدَّد" : isDecObj(c) ? v : (v === "محق" ? "محقة" : "غير محقة");
+
 // شارة النوع (للاعتراض على قرار فقط؛ في البطاقة، لا في الجداول — لكل نوع قسمه)
 const KindBadge = ({ c }) => isDecObj(c) ? <span className="kind-badge" title={DEC_OBJ}>⚖️ اعتراض على قرار</span> : null;
 // رقم الطلب بترتيب حروفه كما هي (1448-ع-001): بلا إعادة ترتيب حرف «ع» العربي بين الأرقام
@@ -850,7 +856,11 @@ function RequestDecisionBox({ secret, c, items }) {
   return (
     <div className={`approval-box ${mine && mine.approved ? "ok" : ""}`} style={{ marginTop: 14 }}>
       <b>📑 القرار في «قرارات الشكاوى»</b>
-      {!mine ? (
+      {!mine && notJustified(c) ? (
+        <div className="muted" style={{ fontSize: 13.5, margin: "4px 0" }}>
+          🚫 {partyLabels(c).noun} {justLabel(c, "غير محق")} — لا تحتاج قراراً ولا مصادقة. (يُغيَّر من «📋 النتائج» إن لزم.)
+        </div>
+      ) : !mine ? (
         <>
           <div className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>
             لم يُسجَّل بعد. يُسجَّل برقم <span dir="ltr">{number}</span>، وبالتصنيفات المختارة أدناه، وبرابط «ملف القرار» من البطاقة{!c.decision_url ? " (لم يُلصق بعد؛ يُضاف للقرار تلقائياً حين تلصقه)" : ""}.
@@ -995,7 +1005,8 @@ const XL_SHEETS = [
     // الاعتراض على قرار إداري (القسم 53): النوع الفارغ في الملفات القديمة = «شكوى»؛ والحكم شكلاً وموضوعاً (القسم 56)
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
     ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"],
-    ["archived_at", "تاريخ الأرشفة", true], ["card_note", "ملاحظة سريعة"], ["card_note_by", "كاتب الملاحظة"], ["card_note_at", "وقت الملاحظة", true]] },
+    ["archived_at", "تاريخ الأرشفة", true], ["card_note", "ملاحظة سريعة"], ["card_note_by", "كاتب الملاحظة"], ["card_note_at", "وقت الملاحظة", true],
+    ["justified", "هل الطلب محق؟"]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -2957,7 +2968,8 @@ const STALE_DAYS = 14;   // مغلقة منذ أكثر من هذه المدة و
 const badFileLink = u => !!u && (!/^https?:\/\/\S+$/i.test(u) || /drive\.google\.com\/(drive\/)?(u\/\d+\/)?folders\//i.test(u));
 const CHECKS = [
   { key: "study",   icon: "📄", label: "مغلقة، ولم يُلصق رابط «الدراسة المنقّحة»",        test: c => isClosed(c.status) && !c.study_url },
-  { key: "dec",     icon: "📜", label: "مغلقة، ولم يُلصق رابط «ملف القرار»",              test: c => isClosed(c.status) && !c.decision_url },
+  { key: "dec",     icon: "📜", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُلصق رابط «ملف القرار»", test: c => isClosed(c.status) && !c.decision_url && !notJustified(c) },
+  { key: "just",    icon: "❔", label: "مغلقة، ولم يُحدَّد «هل الطلب محق؟» (من «📋 النتائج»)", test: c => isClosed(c.status) && !c.justified },
   // (بلا نتيجة إطلاقاً: لا نتيجة الشكوى المستقلة، ولا خلاصة آخر جلسة التي تُستعمل بدلها، ولا حكم في الاعتراض)
   { key: "result",  icon: "⚖️", label: "مغلقة بلا نتيجة (لا «نتيجة الشكوى» ولا خلاصة جلسة ولا حكم)",
     test: c => isClosed(c.status) && !String(c.final_result || "").trim() && !String(c.result || "").trim() && !(isDecObj(c) && (c.obj_form || c.obj_merit)) },
@@ -2977,7 +2989,7 @@ function AdminCheck({ secret, rows, onOpen }) {
   // قرار الطلب: بربطه، أو برقمه في موسمه
   const decOf = c => (decs || []).find(d => d.request_id === c.id) || (decs || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
   const decChecks = decs === null ? [] : [
-    { key: "unreg",   icon: "📑", label: "مغلقة، ولم يُسجَّل قرارها في «قرارات الشكاوى» (من تبويب «📜 القرار»)", test: c => isClosed(c.status) && !decOf(c) },
+    { key: "unreg",   icon: "📑", label: "مغلقة ومحقة (أو لم يُحدَّد)، ولم يُسجَّل قرارها في «قرارات الشكاوى» (من تبويب «📜 القرار»)", test: c => isClosed(c.status) && !notJustified(c) && !decOf(c) },
     { key: "unappr",  icon: "⏳", label: "قرارها مسجَّل وبانتظار المصادقة بقرار إدارة", test: c => { const d = decOf(c); return !!d && !d.approved; } },
   ];
   const groups = [...CHECKS, ...decChecks].map(k => ({ ...k, list: cur.filter(k.test) }));
@@ -4160,7 +4172,7 @@ function RequestCards({ rows, onOpen, alertsFor }) {
                 <div><dt>{L.against}</dt><dd>{c.accused_name || "—"}</dd></div>
                 <div><dt>التصنيف</dt><dd>{c.classification || "—"}</dd></div>
               </dl>
-              <div className="req-result"><b>النتيجة: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
+              <div className="req-result"><b>النتيجة{c.justified ? ` (${justLabel(c, c.justified)})` : ""}: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
             </div>
           );
         })}
@@ -4833,6 +4845,24 @@ function ResultBox({ c, secret, onSaved }) {
         </>
       )}
       <div className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>📝 خلاصة آخر جلسة: {c.result || "—"}</div>
+      {/* «هل الطلب محق؟»: يعدّله المدير هنا مباشرة (يُحفظ عند الاختيار) */}
+      <div className="row" style={{ marginTop: 8, alignItems: "center" }}>
+        <b>⚖️ هل {L.noun} {isDecObj(c) ? "محق" : "محقة"}؟</b>
+        {onSaved && ADMIN_CTX.manager ? (
+          <select value={c.justified || ""} disabled={busy} style={{ width: "auto" }} onChange={async e => {
+            setBusy(true); setErr("");
+            const { data, error } = await sb.rpc("admin_set_justified", { p_secret: secret, p_id: c.id, p_value: e.target.value });
+            setBusy(false);
+            if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 65 من schema.sql في Supabase).");
+            onSaved(data[0]);
+          }}>
+            <option value="">— لم يُحدَّد —</option>
+            <option value="محق">{justLabel(c, "محق")}</option>
+            <option value="غير محق">{justLabel(c, "غير محق")} (بلا قرار ولا مصادقة)</option>
+          </select>
+        ) : <span>{justLabel(c, c.justified)}</span>}
+      </div>
+      {err && edit === null && <Alert type="error">{err}</Alert>}
       {afterObjection && c.result_before_objection && (
         <div className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>النتيجة قبل الاعتراض: {c.result_before_objection}</div>
       )}
@@ -5068,7 +5098,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   // سجل الجلسات، النموذج (جلسة جديدة أو تعديل جلسة: editId)، والرسائل
   const blank = () => ({ at: toDateTimeInput(new Date()), title: "", location: "", topic: "", referred_to: complaint.referred_to || "", result: "", opinion: "", links: [],
                          status: sessionStatus(complaint, complaint.status),
-                         cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "" });
+                         cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "", just: complaint.justified || "" });
   const [list, setList] = useState(null);
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
@@ -5096,7 +5126,7 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
     setForm({ at: toDateTimeInput(s.session_at), title: s.title || "", location: s.location || "", topic: s.topic || "", referred_to: s.referred_to || "", result: s.result || "",
               links: cleanLinks(s.links), opinion: s.opinion || "",
               status: sessionStatus(complaint, s.status, s.session_at),
-              cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "" });
+              cresult: complaint.complainant_result || "", aresult: complaint.accused_result || "", fresult: complaint.final_result || "", just: complaint.justified || "" });
     setMsg(null);
   }
 
@@ -5154,6 +5184,11 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
         p_closed_date: u.closed_date, p_reminder_at: null, p_reminder_note: null,
       });
       if (r2.data && r2.data.length) u = r2.data[0];
+      // «هل الطلب محق؟»، إن تغيّر
+      if ((form.just || "") !== (complaint.justified || "")) {
+        const r4 = await sb.rpc("admin_set_justified", { p_secret: secret, p_id: u.id, p_value: form.just || "" });
+        if (r4.data && r4.data.length) u = r4.data[0];
+      }
       // نتيجة الشكوى (قرار اللجنة) المستقلة، إن تغيّرت
       if ((form.fresult || "").trim() !== (complaint.final_result || "").trim()) {
         const r3 = await sb.rpc("admin_set_final_result", { p_secret: secret, p_id: u.id, p_text: form.fresult });
@@ -5223,6 +5258,16 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <VoiceArea mic={false} label="خلاصة الجلسة" hint={`اختيارية — ما انتهت إليه هذه الجلسة؛ ${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
+          {/* «هل الطلب محق؟» (للمدير): غير المحق لا يحتاج قراراً ولا مصادقة */}
+          {isClosed(form.status) && ADMIN_CTX.manager && (
+            <Field label={`⚖️ هل ${partyLabels(complaint).noun} ${isDecObj(complaint) ? "محق" : "محقة"}؟`} hint="غير المحق لا يحتاج قراراً ولا مصادقة">
+              <select value={form.just || ""} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, just: v })); setMsg(null); }}>
+                <option value="">— لم يُحدَّد —</option>
+                <option value="محق">{justLabel(complaint, "محق")}</option>
+                <option value="غير محق">{justLabel(complaint, "غير محق")}</option>
+              </select>
+            </Field>
+          )}
           {/* نتيجة الشكوى (قرار اللجنة) المستقلة: منها تُبنى بنود القرار في الدراسة والقرار (للمدير) */}
           {isClosed(form.status) && ADMIN_CTX.manager && (
             <VoiceArea mic={false} label={`⚖️ نتيجة ${partyLabels(complaint).noun} (قرار اللجنة)`} minHeight={110}
