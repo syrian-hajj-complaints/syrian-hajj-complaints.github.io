@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-28  صفحة «🔍 فحص المطابقة» (.check-group / .check-chip).
     2026-10-28  «💬 ملاحظة سريعة» على البطاقة: الأيقونة والفقاعة (.req-note-btn / .req-note-pop).
     2026-10-28  تبويبات الإعدادات تلتف على أكثر من سطر (.settings-tabs).
     2026-10-14  بطاقات الطلبات وزر تبديل العرض (.req-cards / .req-card / .view-switch).
@@ -458,6 +459,14 @@
   .req-result { font-size: 13.5px; border-top: 1px dashed var(--line); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .view-switch { display: inline-flex; gap: 4px; }
   .req-alerts { display: flex; flex-wrap: wrap; gap: 4px; }
+  /* «🔍 فحص المطابقة»: مجموعة لكل بند بعدده، وأرقام الطلبات أزراراً بلون حالتها */
+  .check-group { padding: 14px; }
+  .check-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .check-head .side-count { background: var(--danger, #a12d1f); color: #fff; }
+  .check-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .check-chip { border: 1px solid var(--st); background: var(--st-soft); color: var(--ink); border-radius: 999px; padding: 4px 12px;
+                font: inherit; font-size: 13.5px; cursor: pointer; }
+  .check-chip:hover { box-shadow: 0 1px 6px rgba(0,0,0,.12); }
   /* «💬 ملاحظة سريعة»: أيقونة في زاوية البطاقة، وفقاعة تظهر عند الوقوف بالمؤشر (أو بلمس الأيقونة على الجوال) */
   .req-card { position: relative; }
   .req-note-btn { position: absolute; top: 8px; inset-inline-end: 8px; border: 0; background: #fff; border-radius: 50%; width: 30px; height: 30px;
@@ -798,6 +807,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=d8ae53b6f4"></script>
+<script src="app.js?v=704f012dd3"></script>
 </body>
 </html>

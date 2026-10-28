@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  قسم «🔍 فحص المطابقة» (AdminCheck، للمدير والمسؤول): ما ينقصه شيء في الموسم الحالي في صفحة واحدة — مغلقة بلا رابط
+//                دراسة أو قرار أو بلا نتيجة، اعتراض بلا رقم القرار، رابط بشكل خاطئ، ومغلقة منذ 14 يوماً لم تُؤرشف — وعددها في القائمة.
 //    2026-10-28  النوافذ (بطاقة الطلب وغيرها) لا تُغلق إلا إن بدأ الضغط وانتهى على الخلفية الداكنة (backdrop): تحديد نص ثم
 //                إفلات الفأرة خارج النافذة لم يعد يغلقها فتضيع البيانات المدخلة.
 //    2026-10-28  «💬 ملاحظة سريعة» (القسم 63، يكتبها المدير): فقاعة على بطاقات القوائم تظهر عند الوقوف بالمؤشر وتختفي عند الابتعاد
@@ -1987,6 +1989,7 @@ const SECTIONS = {
   today:      { title: "📅 المطلوب" },
   complaints: { title: "📋 الشكاوى" },
   objections: { title: "⚖️ الاعتراضات على القرارات" },
+  check:      { title: "🔍 فحص المطابقة" },
   sessions:   { title: "🗓️ الجلسات" },
   links:      { title: "🔗 إرسال رابط", manager: true },
   decisions:  { title: "📑 قرارات الشكاوى" },
@@ -2113,7 +2116,8 @@ function AdminPage({ secret, onLogout }) {
   // الأعداد على عناصر القائمة: المطلوب اليوم، والشكاوى الجديدة
   const counts = { today: (rows || []).filter(c => dueAlerts(c).length > 0).length,
                    complaints: (rows || []).filter(c => c.status === "جديد" && !isDecObj(c)).length,
-                   objections: (rows || []).filter(c => c.status === "جديد" && isDecObj(c)).length };
+                   objections: (rows || []).filter(c => c.status === "جديد" && isDecObj(c)).length,
+                   check: checkIssues(rows) };
   const current = allowed ? tab : "home";
   const pick = key => { setMenuOpen(false); if (key === "home") goHome(); else go(key); };
 
@@ -2151,6 +2155,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "objections" && <AdminComplaints key={"o" + start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
                                    initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} mode="decobj"
                                    onAdded={c => { setRows(r => [c, ...(r || [])]); openComplaint(c); }} />}
+        {current === "check" && <AdminCheck rows={rows} onOpen={c => openComplaint(c)} />}
         {current === "sessions" && <AdminSessions secret={secret} version={sessVer} onOpen={c => openComplaint(c)} />}
         {current === "access" && <AdminAccess secret={secret} />}
         {current === "viewers" && <AdminViewers secret={secret} />}
@@ -2265,7 +2270,7 @@ function EnterComplaintButton({ secret }) {
 }
 
 // عناصر القائمة الجانبية: المفتاح، الأيقونة، والاسم (الأقسام العامة، ثم أقسام المدير)
-const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"], ["objections", "⚖️", "الاعتراضات"],
+const NAV_MAIN = [["home", "🏠", "الرئيسية"], ["indicators", "📈", "المؤشرات"], ["today", "📅", "المطلوب اليوم"], ["complaints", "📋", "الشكاوى"], ["objections", "⚖️", "الاعتراضات"], ["check", "🔍", "فحص المطابقة"],
                   ["sessions", "🗓️", "الجلسات"], ["decisions", "📑", "قرارات الشكاوى"], ["admindec", "🏛️", "قرارات الإدارة"], ["archive", "📚", "المواسم السابقة"]];
 const NAV_MANAGER = [["notes", "🗒️", "الملاحظات"], ["links", "🔗", "إرسال رابط"], ["access", "🔐", "دخول المشتكين"], ["viewers", "📊", "كلمات مرور الإدارة"],
                      ["staff", "👥", "المسؤولون"], ["settings", "⚙️", "الإعدادات"]];
@@ -2813,6 +2818,48 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
 }
 
 // تبويب «المطلوب»: اختيار الفترة (اليوم / الكل / تاريخ محدد) ثم جدول المطلوب فيها، الأهم أولاً
+// «🔍 فحص المطابقة»: ما ينقصه شيء في الموسم الحالي في صفحة واحدة (للروتين الأسبوعي)؛ لكل بند عدده وأرقام طلباته، والضغط يفتح الطلب
+// (لا تُفحص ملفات Drive نفسها: Google يمنع ذلك من موقع آخر؛ يُكشف الرابط الخاطئ بشكله فقط، مثل رابط مجلد بدل ملف)
+const STALE_DAYS = 14;   // مغلقة منذ أكثر من هذه المدة ولم تُؤرشف
+const badFileLink = u => !!u && (!/^https?:\/\/\S+$/i.test(u) || /drive\.google\.com\/(drive\/)?(u\/\d+\/)?folders\//i.test(u));
+const CHECKS = [
+  { key: "study",   icon: "📄", label: "مغلقة، ولم يُلصق رابط «الدراسة المنقّحة»",        test: c => isClosed(c.status) && !c.study_url },
+  { key: "dec",     icon: "📜", label: "مغلقة، ولم يُلصق رابط «ملف القرار»",              test: c => isClosed(c.status) && !c.decision_url },
+  { key: "result",  icon: "⚖️", label: "مغلقة بلا «نتيجة الشكوى (قرار اللجنة)» ولا حكم", test: c => isClosed(c.status) && !c.final_result && !(isDecObj(c) && (c.obj_form || c.obj_merit)) },
+  { key: "decobj",  icon: "📑", label: "اعتراض على قرار بلا رقم القرار أو تاريخه",         test: c => isDecObj(c) && (!c.decision_ref || !c.decision_date) },
+  { key: "badlink", icon: "🔗", label: "رابط ملف بشكل خاطئ (رابط مجلد بدل ملف، أو لا يبدأ بـ https://)", test: c => badFileLink(c.study_url) || badFileLink(c.decision_url) },
+  { key: "stale",   icon: "🗄️", label: `مغلقة منذ أكثر من ${STALE_DAYS} يوماً ولم تُنقل إلى الأرشيف`, test: c => isClosed(c.status) && !c.archived_at && c.closed_date && Date.now() - new Date(c.closed_date) > STALE_DAYS * DAY },
+];
+const checkIssues = rows => (rows || []).filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season)
+  .reduce((n, c) => n + CHECKS.filter(k => k.test(c)).length, 0);
+
+function AdminCheck({ rows, onOpen }) {
+  if (rows === null) return <Loading />;
+  const cur = (rows || []).filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season);
+  const groups = CHECKS.map(k => ({ ...k, list: cur.filter(k.test) }));
+  const total = groups.reduce((n, g) => n + g.list.length, 0);
+  return (
+    <div>
+      <p className="muted" style={{ marginTop: 0 }}>
+        ما ينقصه شيء في موسم {ADMIN_CTX.season || "—"} (الشكاوى والاعتراضات). اضغط على أي رقم لفتح الطلب وإكمال الناقص.
+        الصفحة تفحص ما في المنصة فقط، لا ملفات Drive نفسها.
+      </p>
+      {total === 0 ? <div className="card empty">✅ المنصة مطابقة لملفاتك — لا يوجد ما ينقص.</div> : groups.filter(g => g.list.length).map(g => (
+        <div key={g.key} className="card check-group">
+          <div className="check-head"><b>{g.icon} {g.label}</b><span className="side-count">{g.list.length}</span></div>
+          <div className="check-list">
+            {g.list.map(c => (
+              <button key={c.id} type="button" className={`check-chip ${stClass(c.status)}`} onClick={() => onOpen(c)} title={`${c.title || ""} — ${c.complainant_name || ""}`}>
+                <ReqNo n={c.complaint_number} /> <span className="muted">{(c.complainant_name || "").split(" ").slice(0, 2).join(" ")}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // تذكير أسبوعي بأرشيف المتابعة (للمدير): إن مرّ أكثر من 7 أيام على آخر تنزيل على هذا الجهاز (أو لم يُنزَّل قط)،
 // شريط بزر يُنزّل ملف Excel للموسم الحالي بورقتين: الشكاوى، والاعتراضات
 function FollowReminder({ secret, rows }) {
