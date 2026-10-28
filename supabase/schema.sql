@@ -117,6 +117,8 @@
 --    2026-10-13  القسم 61: «نتيجة الشكوى (قرار اللجنة)» المستقلة (final_result، admin_set_final_result)؛ كلمة مرور الأدمن الأولى صارت القسم 62.
 --    2026-10-14  القسم 62: «🗄️ الأرشيف» للطلبات المنتهية (archived_at، admin_set_archived، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 63.
 --    2026-10-28  القسم 63: «💬 ملاحظة سريعة» على البطاقة (card_note، admin_set_card_note، للمدير)؛ كلمة مرور الأدمن الأولى صارت القسم 64.
+--    2026-10-28  القسم 64: قرار الطلب في «قرارات الشكاوى» من البطاقة (decisions.request_id، admin_register_request_decision)، والرابط يتزامن
+--                تلقائياً، والمصادقة من البطاقة (admin_set_decision_approval)؛ كلمة مرور الأدمن الأولى صارت القسم 65.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -7170,7 +7172,91 @@ grant execute on function public.admin_set_card_note(text, uuid, text)          
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 64) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 64) قرار الطلب في «📑 قرارات الشكاوى» من بطاقة الطلب: يُسجَّل بضغطة (رقمه رقم الطلب، تصنيفه «شكاوى» أو «اعتراضات»، رابطه
+--     رابط «ملف القرار» في البطاقة) ويبقى مرتبطاً بالطلب (decisions.request_id): تغيير رابط ملف القرار في البطاقة يغيّره في
+--     القرار تلقائياً؛ والمصادقة بقرار إدارة من البطاقة نفسها (للمدير)
+--     يحتاج الأقسام حتى 63 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+alter table public.decisions add column if not exists request_id uuid references public.complaints (id) on delete set null;
+create unique index if not exists decisions_request_id_key on public.decisions (request_id) where request_id is not null;
+
+-- تسجيل قرار الطلب أو تحديثه (للمدير فقط)؛ الرابط من «ملف القرار» في البطاقة؛ تُرجع القرار
+create or replace function public.admin_register_request_decision(
+  p_secret text, p_id uuid, p_number text, p_date date, p_title text, p_subject text, p_classification text
+) returns setof public.decisions
+language plpgsql security definer set search_path = public as $$
+declare
+  c    public.complaints;
+  v_id uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(btrim(p_number), '') = '' or coalesce(btrim(p_title), '') = '' then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if c.id is null then
+    return;
+  end if;
+  select id into v_id from public.decisions where request_id = p_id;
+  -- قرار مسجَّل يدوياً من قبل برقم الطلب في موسمه (بلا ربط): يُربط بالطلب بدل إنشاء قرار مكرر
+  if v_id is null then
+    select id into v_id from public.decisions
+     where request_id is null and kind = 'complaints' and season = c.season and decision_number = btrim(left(p_number, 60))
+     order by created_at limit 1;
+    if v_id is not null then
+      update public.decisions set request_id = p_id where id = v_id;
+    end if;
+  end if;
+  if v_id is null then
+    insert into public.decisions (season, decision_number, decision_date, title, subject, url, classification, kind, secrecy, request_id)
+    values (c.season, btrim(left(p_number, 60)), p_date, btrim(left(p_title, 300)), nullif(btrim(left(p_subject, 5000)), ''),
+            case when c.decision_url ~* '^https?://' then left(btrim(c.decision_url), 1000) end,
+            nullif(btrim(left(p_classification, 300)), ''), 'complaints', 'عادي', p_id)
+    returning id into v_id;
+  else
+    update public.decisions set
+      decision_number = btrim(left(p_number, 60)), decision_date = p_date, title = btrim(left(p_title, 300)),
+      subject = nullif(btrim(left(p_subject, 5000)), ''), classification = nullif(btrim(left(p_classification, 300)), ''),
+      url = case when c.decision_url ~* '^https?://' then left(btrim(c.decision_url), 1000) else url end
+    where id = v_id;
+  end if;
+  return query select * from public.decisions where id = v_id;
+end $$;
+
+-- المصادقة على قرار (للمدير فقط): تمت المصادقة ورقم قرار الإدارة المصادِق؛ تُرجع القرار
+create or replace function public.admin_set_decision_approval(p_secret text, p_decision_id uuid, p_approved boolean, p_ref text)
+returns setof public.decisions
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  update public.decisions set approved = coalesce(p_approved, false) or coalesce(btrim(p_ref), '') <> '',
+                              approval_ref = nullif(btrim(left(p_ref, 60)), '')
+   where id = p_decision_id;
+  return query select * from public.decisions where id = p_decision_id;
+end $$;
+
+-- رابط «ملف القرار» في الطلب ← رابط قراره المسجَّل (تلقائياً عند كل تغيير)
+create or replace function public.complaints_sync_decision_url()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.decision_url is distinct from old.decision_url then
+    update public.decisions set url = case when new.decision_url ~* '^https?://' then left(btrim(new.decision_url), 1000) end
+     where request_id = new.id;
+  end if;
+  return null;
+end $$;
+drop trigger if exists trg_complaints_sync_decision_url on public.complaints;
+create trigger trg_complaints_sync_decision_url
+  after update of decision_url on public.complaints
+  for each row execute function public.complaints_sync_decision_url();
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_register_request_decision(text, uuid, text, date, text, text, text) to anon, authenticated;
+grant execute on function public.admin_set_decision_approval(text, uuid, boolean, text)                  to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 65) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

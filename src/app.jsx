@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  قرار الطلب في «📑 قرارات الشكاوى» من تبويب «📜 القرار» (RequestDecisionBox، القسم 64، للمدير): تسجيل بضغطة برقم الطلب
+//                وتصنيف «شكاوى» أو «اعتراضات» ورابط «ملف القرار» (يتحدث تلقائياً)، و«🔄 تحديث من الطلب»، والمصادقة بقرار إدارة من
+//                البطاقة؛ وفي الاعتراض «اعتراض على قرار الإدارة رقم …» في موضوعه؛ وبندان في «فحص المطابقة»: لم يُسجَّل، وبانتظار المصادقة.
 //    2026-10-28  تصفيات «الشكاوى» و«الاعتراضات» قوائم منسدلة بعناوينها وأعدادها (الموسم، القائمة: الحالية / الأرشيف، الحالة، التصنيف،
 //                الملفات) بقيم افتراضية، وزر «↺ الافتراضي» عند تغييرها (بدل صفوف الأزرار).
 //    2026-10-28  «🔍 فحص المطابقة»: بند «بلا نتيجة» لا يشمل الشكاوى التي لها خلاصة جلسة (كانت تظهر خطأً لأن «نتيجة الشكوى» المستقلة جديدة).
@@ -756,6 +759,96 @@ function DecisionTab({ secret, c }) {
       <small className="hint" style={{ display: "block", marginTop: 6 }}>
         القيم تُولَّد من الشكوى: الرقم من تسلسلها وموسمها، والتاريخ من تاريخ إغلاقها (أو اليوم)، والبند الأول رأي لجنة الشكاوى والصلح (من آخر جلسة فيها رأي) ثم قرار اللجنة من نتيجتها. التعديل لا يُحفظ في الشكوى، والملف قابل للتعديل في Word.
       </small>
+      <RequestDecisionBox secret={secret} c={c} items={f.items} />
+    </div>
+  );
+}
+
+// قرار الطلب في «📑 قرارات الشكاوى» (القسم 64): تسجيله من البطاقة بضغطة — رقمه رقم الطلب، تصنيفه «شكاوى» أو «اعتراضات»،
+// رابطه رابط «ملف القرار» في البطاقة (ويتحدث تلقائياً) — ثم المصادقة بقرار إدارة؛ يُعرف بربطه بالطلب، أو برقمه في موسم الطلب
+const REQ_DEC_CLASS = c => isDecObj(c) ? "اعتراضات" : "شكاوى";
+function RequestDecisionBox({ secret, c, items }) {
+  const [all, setAll] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [ref, setRef] = useState(null);   // رقم قرار الإدارة المصادِق قيد التعديل
+  const load = useCallback(() => sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setAll(data || [])), [secret]);
+  useEffect(() => { load(); }, [load]);
+  if (all === null) return null;
+  const number = complaintRef(c);
+  const mine = all.find(d => d.request_id === c.id) || all.find(d => (d.kind || "complaints") === "complaints" && d.decision_number === number && d.season === c.season);
+  const adminDecs = all.filter(d => d.kind === "admin");
+  const approver = mine && mine.approval_ref && (adminDecs.find(a => a.decision_number === mine.approval_ref && a.season === mine.season) || adminDecs.find(a => a.decision_number === mine.approval_ref));
+  const manager = ADMIN_CTX.manager;
+
+  // التسجيل أو التحديث من بيانات الطلب
+  async function register() {
+    setBusy(true); setMsg(null);
+    const klass = REQ_DEC_CLASS(c);
+    // التصنيف في قائمة «تصنيفات القرارات» إن لم يكن فيها
+    if (!DECISION_CLASSES.includes(klass)) {
+      const next = [...DECISION_CLASSES, klass];
+      const r = await sb.rpc("admin_set_list", { p_secret: secret, p_key: "decision_classes", p_items: next });
+      if (r.data === "OK") replaceList(DECISION_CLASSES, next);
+    }
+    const subject = [isDecObj(c) && c.decision_ref ? `اعتراض على قرار الإدارة رقم ${c.decision_ref}` : "", String(items || "").trim()].filter(Boolean).join("\n");
+    const { data, error } = await sb.rpc("admin_register_request_decision", {
+      p_secret: secret, p_id: c.id, p_number: number, p_date: c.closed_date ? toDateInput(new Date(c.closed_date)) : toDateInput(new Date()),
+      p_title: `قرار في ${partyLabels(c).noun} رقم ${c.complaint_number}${c.title ? " — " + c.title : ""}`, p_subject: subject, p_classification: klass,
+    });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر التسجيل (نفّذ القسم 64 من schema.sql في Supabase)." });
+    setMsg({ type: "ok", text: mine ? "🔄 حُدّث القرار في «📑 قرارات الشكاوى» من بيانات الطلب." : "📑 سُجّل القرار في «📑 قرارات الشكاوى»." });
+    load();
+  }
+
+  // حفظ المصادقة (الفارغ يلغيها)
+  async function saveApproval() {
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_set_decision_approval", { p_secret: secret, p_decision_id: mine.id, p_approved: !!ref.trim(), p_ref: ref });
+    setBusy(false);
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر حفظ المصادقة (نفّذ القسم 64 من schema.sql في Supabase)." });
+    setRef(null); load();
+    setMsg({ type: "ok", text: ref.trim() ? `✅ تمت المصادقة بقرار الإدارة رقم ${ref.trim()}.` : "أُلغيت المصادقة." });
+  }
+
+  return (
+    <div className={`approval-box ${mine && mine.approved ? "ok" : ""}`} style={{ marginTop: 14 }}>
+      <b>📑 القرار في «قرارات الشكاوى»</b>
+      {!mine ? (
+        <>
+          <div className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>
+            لم يُسجَّل بعد. يُسجَّل برقم <span dir="ltr">{number}</span>، وتصنيف «{REQ_DEC_CLASS(c)}»، وبرابط «ملف القرار» من البطاقة{!c.decision_url ? " (لم يُلصق بعد؛ يُضاف للقرار تلقائياً حين تلصقه)" : ""}.
+          </div>
+          {manager && <button type="button" className="btn sm" disabled={busy || !isClosed(c.status)} onClick={register}>
+            {busy ? "…" : "📑 تسجيل في قرارات الشكاوى"}</button>}
+          {manager && !isClosed(c.status) && <small className="muted" style={{ display: "block", marginTop: 4 }}>يُسجَّل بعد إغلاق الطلب.</small>}
+        </>
+      ) : (
+        <>
+          <div style={{ margin: "4px 0" }}>✔️ مسجّل برقم <b dir="ltr">{mine.decision_number}</b> — {mine.title}
+            {mine.url ? <> · <a href={mine.url} target="_blank" rel="noopener">🔗 فتح الملف</a></> : <span className="muted"> · بلا رابط ملف بعد</span>}</div>
+          <div style={{ margin: "6px 0" }}>
+            {mine.approved ? <b>✅ تمت المصادقة{mine.approval_ref ? ` بقرار الإدارة رقم ${mine.approval_ref}` : ""}</b> : <b>⏳ بانتظار المصادقة</b>}
+            {approver && <div className="muted" style={{ fontSize: 13.5 }}>{approver.title}{approver.decision_date ? ` (${fmtDate(approver.decision_date)})` : ""}</div>}
+          </div>
+          {manager && (ref !== null ? (
+            <div className="row" style={{ flexWrap: "nowrap" }}>
+              <input type="text" dir="ltr" list="req-approval-list" className="grow" autoFocus value={ref} onChange={e => setRef(e.target.value)}
+                maxLength={60} placeholder="رقم قرار الإدارة المصادِق (فارغ = إلغاء)" />
+              <datalist id="req-approval-list">{adminDecs.map(a => <option key={a.id} value={a.decision_number}>{a.title}</option>)}</datalist>
+              <button type="button" className="btn sm" disabled={busy} onClick={saveApproval}>حفظ</button>
+              <button type="button" className="btn secondary sm" onClick={() => setRef(null)}>إلغاء</button>
+            </div>
+          ) : (
+            <div className="row">
+              <button type="button" className="btn sm" onClick={() => setRef(mine.approval_ref || "")}>{mine.approved ? "✏️ تعديل المصادقة" : "✅ المصادقة بقرار إدارة"}</button>
+              <button type="button" className="btn secondary sm" disabled={busy} onClick={register} title="تحديث العنوان والموضوع والتاريخ من بيانات الطلب">🔄 تحديث من الطلب</button>
+            </div>
+          ))}
+        </>
+      )}
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
     </div>
   );
 }
@@ -2158,7 +2251,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "objections" && <AdminComplaints key={"o" + start.search + start.filter} secret={secret} rows={rows} onSaved={onSaved} reload={reload} onOpen={c => openComplaint(c)}
                                    initialSearch={start.search || ""} initialFilter={start.filter || "الكل"} mode="decobj"
                                    onAdded={c => { setRows(r => [c, ...(r || [])]); openComplaint(c); }} />}
-        {current === "check" && <AdminCheck rows={rows} onOpen={c => openComplaint(c)} />}
+        {current === "check" && <AdminCheck secret={secret} rows={rows} onOpen={c => openComplaint(c)} />}
         {current === "sessions" && <AdminSessions secret={secret} version={sessVer} onOpen={c => openComplaint(c)} />}
         {current === "access" && <AdminAccess secret={secret} />}
         {current === "viewers" && <AdminViewers secret={secret} />}
@@ -2838,10 +2931,19 @@ const CHECKS = [
 const checkIssues = rows => (rows || []).filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season)
   .reduce((n, c) => n + CHECKS.filter(k => k.test(c)).length, 0);
 
-function AdminCheck({ rows, onOpen }) {
+function AdminCheck({ secret, rows, onOpen }) {
+  // القرارات (لبندي «لم يُسجَّل في قرارات الشكاوى» و«بانتظار المصادقة»)
+  const [decs, setDecs] = useState(null);
+  useEffect(() => { sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setDecs(data || [])); }, [secret]);
   if (rows === null) return <Loading />;
   const cur = (rows || []).filter(c => !ADMIN_CTX.season || c.season === ADMIN_CTX.season);
-  const groups = CHECKS.map(k => ({ ...k, list: cur.filter(k.test) }));
+  // قرار الطلب: بربطه، أو برقمه في موسمه
+  const decOf = c => (decs || []).find(d => d.request_id === c.id) || (decs || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
+  const decChecks = decs === null ? [] : [
+    { key: "unreg",   icon: "📑", label: "مغلقة، ولم يُسجَّل قرارها في «قرارات الشكاوى» (من تبويب «📜 القرار»)", test: c => isClosed(c.status) && !decOf(c) },
+    { key: "unappr",  icon: "⏳", label: "قرارها مسجَّل وبانتظار المصادقة بقرار إدارة", test: c => { const d = decOf(c); return !!d && !d.approved; } },
+  ];
+  const groups = [...CHECKS, ...decChecks].map(k => ({ ...k, list: cur.filter(k.test) }));
   const total = groups.reduce((n, g) => n + g.list.length, 0);
   return (
     <div>
