@@ -456,6 +456,7 @@
   .req-meta dd { margin: 0; overflow-wrap: anywhere; }
   .req-result { font-size: 13.5px; border-top: 1px dashed var(--line); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .view-switch { display: inline-flex; gap: 4px; }
+  .req-alerts { display: flex; flex-wrap: wrap; gap: 4px; }
   /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
   .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
               align-items: center; justify-content: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; }
@@ -784,6 +785,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=7d6b57c1a0"></script>
+<script src="app.js?v=ab7ae17f8b"></script>
 </body>
 </html>

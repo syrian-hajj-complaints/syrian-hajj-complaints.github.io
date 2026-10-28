@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  «📅 المطلوب اليوم» بالبطاقات (الافتراضي) مع تنبيهات كل طلب في أعلى بطاقته، وزر «▦ بطاقات / ☰ جدول».
 //    2026-10-28  الإعدادات في 6 تبويبات (SETTINGS_TABS، يتذكرها الجهاز): الموسم والأرشفة، النسخ والتصدير، القوائم،
 //                عبارات Word والمهلة، روابط سريعة، التصفير.
 //    2026-10-14  «🗄️ الأرشيف» داخل الموسم (القسم 62، للمدير): «نقل إلى الأرشيف / إخراج منه» في البطاقة ولعدة طلبات من الجدول
@@ -2829,6 +2830,8 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
   // الفترة المختارة: today / all / date، والتاريخ المحدد (افتراضياً الغد)
   const [mode, setMode] = useState("today");
   const [day, setDay] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return toDateInput(d); });
+  // طريقة العرض: بطاقات (الافتراضي) أو جدول — يتذكرها الجهاز
+  const [view, setView] = usePref("hajj_due_view", "cards");
 
   // الوقت المرجعي: الآن لليوم والكل؛ وللتاريخ المحدد نهاية ذلك اليوم (أو الآن إن كان هو اليوم)
   const todayStr = toDateInput(new Date());
@@ -2861,7 +2864,12 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
             <button className={mode === "date" ? "active" : ""} onClick={() => setMode("date")}>تاريخ محدد</button>
           </div>
           {mode === "date" && <input type="date" className="grow" value={day} onChange={e => setDay(e.target.value)} style={{ maxWidth: 200 }} />}
-          <button className="btn secondary sm" onClick={reload} style={{ marginInlineStart: "auto" }}>🔄 تحديث</button>
+          {/* بطاقات أو جدول */}
+          <span className="view-switch" role="group" aria-label="طريقة العرض" style={{ marginInlineStart: "auto" }}>
+            <button type="button" className={`btn sm ${view === "cards" ? "" : "secondary"}`} onClick={() => setView("cards")} aria-pressed={view === "cards"}>▦ بطاقات</button>
+            <button type="button" className={`btn sm ${view === "table" ? "" : "secondary"}`} onClick={() => setView("table")} aria-pressed={view === "table"}>☰ جدول</button>
+          </span>
+          <button className="btn secondary sm" onClick={reload}>🔄 تحديث</button>
         </div>
       </div>
       <FollowReminder secret={secret} rows={rows} />
@@ -2876,7 +2884,9 @@ function AdminDue({ secret, rows, onSaved, reload, onOpen }) {
       )}
       {rows === null ? <Loading /> : due.length === 0 ? (
         <div className="card empty">✅ لا توجد أمور مطلوبة {mode === "all" ? "حالياً" : mode === "date" ? "في هذا اليوم" : "اليوم"} — كل الشكاوى في وضع جيد.</div>
-      ) : <ComplaintsTable secret={secret} rows={due.map(x => x.c)} onSaved={onSaved} onOpen={onOpen} alertsFor={alertsFor} />}
+      ) : view === "cards"
+        ? <RequestCards key={mode + day} rows={due.map(x => x.c)} onOpen={onOpen} alertsFor={alertsFor} />
+        : <ComplaintsTable secret={secret} rows={due.map(x => x.c)} onSaved={onSaved} onOpen={onOpen} alertsFor={alertsFor} />}
     </div>
   );
 }
@@ -3909,7 +3919,8 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
 
 // بطاقات الطلبات (عرض مبسّط بدل الجدول): الرقم والحالة، العنوان، المشتكي والمشتكى عليه، التصنيف، والنتيجة؛
 // لون البطاقة من حالتها؛ الضغط يفتح الطلب؛ 48 بطاقة ثم «عرض المزيد»
-function RequestCards({ rows, onOpen }) {
+// alertsFor (اختياري): تنبيهات كل طلب تظهر في أعلى بطاقته (في «المطلوب اليوم»)
+function RequestCards({ rows, onOpen, alertsFor }) {
   const [shown, setShown] = useState(48);
   if (!rows.length) return <div className="card empty">لا توجد طلبات</div>;
   return (
@@ -3920,6 +3931,7 @@ function RequestCards({ rows, onOpen }) {
           return (
             <button key={c.id} type="button" className={`req-card ${stClass(c.status)}`} onClick={() => onOpen(c)} title="اضغط لفتح الطلب">
               <div className="req-top"><ReqNo n={c.complaint_number} /><StatusBadge value={c.status} /></div>
+              {alertsFor && <div className="req-alerts">{alertsFor(c).map((a, i) => <span key={i} className={`alert-tag ${a.level}`}>{a.text}</span>)}</div>}
               <div className="req-title">{c.title || <span className="muted">بلا عنوان</span>}</div>
               <dl className="req-meta">
                 <div><dt>{L.who}</dt><dd>{c.complainant_name || "—"}</dd></div>
