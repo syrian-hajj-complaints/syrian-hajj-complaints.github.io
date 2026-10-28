@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-28  النوافذ (بطاقة الطلب وغيرها) لا تُغلق إلا إن بدأ الضغط وانتهى على الخلفية الداكنة (backdrop): تحديد نص ثم
+//                إفلات الفأرة خارج النافذة لم يعد يغلقها فتضيع البيانات المدخلة.
 //    2026-10-28  «💬 ملاحظة سريعة» (القسم 63، يكتبها المدير): فقاعة على بطاقات القوائم تظهر عند الوقوف بالمؤشر وتختفي عند الابتعاد
 //                (وعلى الجوال بلمس 💬)، بكاتبها ووقتها؛ سطر للتعديل في بطاقة الطلب (CardNoteLine)، و💬 بجانب الرقم في الجدول؛
 //                ثلاثة أعمدة في ملف الموسم. البطاقة صارت عنصراً قابلاً للضغط (div role=button) لتحتوي زر 💬.
@@ -206,6 +208,13 @@ const REFERRAL_TARGETS = [];   // جهات الإحالة (من الإعدادا
 const ADMIN_CTX = { secret: null, manager: false, used: [], season: "", objDays: 3 };   // objDays: مهلة الاعتراض على قرار
 const replaceList = (list, items) => { if (Array.isArray(items) && items.length) list.splice(0, list.length, ...items); };
 
+// إغلاق النافذة بالضغط على الخلفية الداكنة فقط إن بدأ الضغط وانتهى عليها: تحديد نص داخل النافذة ثم إفلات الفأرة خارجها
+// (أو السحب من الخانة إلى الخارج) لا يغلقها، فلا تضيع البيانات المدخلة
+let backdropDown = null;
+const backdrop = close => ({
+  onMouseDown: e => { backdropDown = e.target === e.currentTarget ? e.currentTarget : null; },
+  onClick: e => { const ok = backdropDown === e.currentTarget && e.target === e.currentTarget; backdropDown = null; if (ok) close(); },
+});
 // حالات الشكوى (تطابق القيد في schema.sql) واسم لاتيني لكل حالة لاستخدامه في الألوان
 const STATUSES = ["جديد", "قيد المراجعة", "جاري المتابعة", "قيد مراجعة الاعتراض", "جاري متابعة الاعتراض", "مغلقة", "مغلقة بعد الاعتراض"];
 const ST_KEY = { "جديد": "new", "قيد المراجعة": "review", "جاري المتابعة": "follow",
@@ -2149,7 +2158,7 @@ function AdminPage({ secret, onLogout }) {
         {current === "settings" && <AdminSettings secret={secret} rows={rows} reload={reload} />}
       </div>
       {opened && ReactDOM.createPortal(
-        <div className="modal-back" onClick={() => setOpenId(null)}>
+        <div className="modal-back" {...backdrop(() => setOpenId(null))}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-close"><button className="btn sm" onClick={() => setOpenId(null)}>✕ إغلاق</button></div>
             <ComplaintCard key={opened.id} secret={secret} complaint={opened} onSaved={onSaved} onSessionsChanged={() => setSessVer(n => n + 1)} fromDue={openFromDue}
@@ -2189,7 +2198,7 @@ function AddDecisionObjection({ secret, onClose, onDone }) {
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <form className="card" onSubmit={save}>
@@ -2277,7 +2286,7 @@ function InstallButton() {
     <>
       <button type="button" className="btn secondary sm" onClick={install} title="أيقونة المنصة على شاشة الجوال">📲 <span className="hide-xs">تثبيت</span></button>
       {help && ReactDOM.createPortal(
-        <div className="modal-back" onClick={() => setHelp(false)}>
+        <div className="modal-back" {...backdrop(() => setHelp(false))}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="card">
               <h2>📲 أيقونة المنصة على شاشة الجوال</h2>
@@ -3742,7 +3751,7 @@ function ExcelViewer({ onClose, source }) {
 
   // العرض: نافذة فيها اختيار الملف، تبويبات الأوراق، أدوات العرض، الجدول، الصفحات، ثم البطاقة
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal xl-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <h2 style={{ marginTop: 0 }}>{source ? `📚 ${source.title}` : "📂 استعراض نسخة محفوظة"} <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
@@ -3836,7 +3845,7 @@ function ExcelViewer({ onClose, source }) {
         )}
 
         {card && (
-          <div className="modal-back" onClick={() => setCardAt(null)}>
+          <div className="modal-back" {...backdrop(() => setCardAt(null))}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <div className="card">
                 <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
@@ -3884,7 +3893,7 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <form className="card" onSubmit={save}>
@@ -5360,7 +5369,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
       {list && list.length > 0 && <p className="muted center" style={{ fontSize: 13 }}>{visible.length} من {list.length} قرار · اضغط على أي قرار لعرض تفاصيله</p>}
 
       {shown && !form && (
-        <div className="modal-back" onClick={() => setShown(null)}>
+        <div className="modal-back" {...backdrop(() => setShown(null))}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-close"><button className="btn secondary sm" onClick={() => setShown(null)}>✕ إغلاق</button></div>
             <div className="card">
@@ -5416,7 +5425,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
       )}
 
       {form && (
-        <div className="modal-back" onClick={() => setForm(null)}>
+        <div className="modal-back" {...backdrop(() => setForm(null))}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-close"><button className="btn secondary sm" onClick={() => setForm(null)}>✕ إغلاق</button></div>
             <form className="card" onSubmit={save}>
@@ -6642,7 +6651,7 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
 
   // العرض: نافذة فيها العنوان ورابط Google، ثم تبويبا الشكاوى والقرارات، ثم بطاقة الشكوى المفتوحة
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal xl-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <h2 style={{ marginTop: 0 }}>📚 {source.title} <span className="muted" style={{ fontSize: 13 }}>(للاطلاع فقط)</span></h2>
@@ -6703,7 +6712,7 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
         )}
 
         {open && (
-          <div className="modal-back" onClick={() => setOpen(null)}>
+          <div className="modal-back" {...backdrop(() => setOpen(null))}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <div className="modal-close"><button className="btn sm" onClick={() => setOpen(null)}>✕ إغلاق</button></div>
               <ComplaintView c={open} sessions={book.sessions.filter(s => s.complaint_number === open.complaint_number)} />
@@ -6732,7 +6741,7 @@ function ReportCard({ code, number, onClose }) {
 
   // العرض: نافذة فوق الصفحة فيها البطاقة للقراءة فقط
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className="modal-back" {...backdrop(onClose)}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         {error ? <Alert type="error">{error}</Alert> : !card ? <div className="card"><Loading /></div>
@@ -6878,7 +6887,7 @@ function PinButton() {
         🔒 <span className="hide-xs">{cur ? "القفل" : "رمز القفل"}</span>
       </button>
       {open && ReactDOM.createPortal(
-        <div className="modal-back" onClick={close}>
+        <div className="modal-back" {...backdrop(close)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
             <div className="modal-close"><button className="btn secondary sm" onClick={close}>✕ إغلاق</button></div>
             <div className="card center">
