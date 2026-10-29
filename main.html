@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-28  ألوان القوائم المنسدلة: «القائمة» (حالية / أرشيف)، «الحالة» بلون الحالة، والتصفية المغيَّرة بحدّ واضح (.is-set / .fi-*).
     2026-10-28  تصفيات الشكاوى والاعتراضات قوائم منسدلة (.filter-bar / .filter-item / .filter-reset).
     2026-10-28  صفحة «🔍 فحص المطابقة» (.check-group / .check-chip).
     2026-10-28  «💬 ملاحظة سريعة» على البطاقة: الأيقونة والفقاعة (.req-note-btn / .req-note-pop).
@@ -467,6 +468,19 @@
   .filter-item > span { font-size: 12.5px; font-weight: 700; color: var(--muted); }
   .filter-item select { width: 100%; }
   .filter-reset { align-self: end; min-height: 40px; }
+  /* تمييز القوائم بالألوان: التصفية المغيَّرة عن الافتراضي بحدّ واضح؛ «القائمة» أزرق للحالية وذهبي رمادي للأرشيف؛
+     «الحالة» بلون الحالة المختارة (كالبطاقات)؛ و«الملفات» الناقصة بلون التحذير */
+  .filter-item select { border-width: 2px; }
+  .filter-item.is-set > span { color: var(--brand); }
+  .filter-item.is-set select { border-color: var(--brand); background: #eef6f4; font-weight: 700; }
+  .fi-list.is-cur select { background: #eaf2fd; border-color: #b9d1f3; }
+  .fi-list.is-arch select { background: #efe9dc; border-color: #ad9e6e; color: #5f5640; }
+  .fi-list.is-arch > span { color: #8a7a4a; }
+  .fi-status.is-set select { background: var(--st-soft); border-color: var(--st); color: var(--st); }
+  .fi-status.is-set > span { color: var(--st); }
+  .fi-status option[class^="st-"] { background: var(--st-soft); color: var(--st); font-weight: 700; }
+  .fi-files.is-set select { background: #fdf3e2; border-color: #c2610c; color: #8a4508; }
+  .fi-files.is-set > span { color: #c2610c; }
   @media (max-width: 520px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
   /* «🔍 فحص المطابقة»: مجموعة لكل بند بعدده، وأرقام الطلبات أزراراً بلون حالتها */
   .check-group { padding: 14px; }
@@ -816,6 +830,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=6680341442"></script>
+<script src="app.js?v=3d51ddf7dd"></script>
 </body>
 </html>

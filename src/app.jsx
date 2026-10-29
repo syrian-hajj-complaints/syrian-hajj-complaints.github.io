@@ -84,6 +84,10 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  فتح أكثر من طلب معاً: زر «↗️ نافذة جديدة» في رأس بطاقة الطلب، وCtrl+ضغطة (أو زر الفأرة الأوسط) على بطاقة أو صف
+//                يفتح الطلب في تبويب جديد (رابط ‎?open=الرقم#/admin يفتح الطلب عند التحميل).
+//    2026-10-28  تمييز القوائم المنسدلة في «الشكاوى» و«الاعتراضات» بالألوان: «القائمة» أزرق للحالية وذهبي للأرشيف، «الحالة» بلون
+//                الحالة المختارة، و«الملفات» الناقصة بلون التحذير، وأي تصفية مغيَّرة عن الافتراضي بحدّ واضح.
 //    2026-10-28  نوع المصادقة (القسم 67): ✅ كاملة / ✏️ مع تعديل («ما صودق عليه»، مثل حسم 5 نقاط بدل 15) / ❌ عدم مصادقة / ⏳ بانتظار؛
 //                في تبويب «📜 القرار» وتفاصيل القرار وعمود «المصادقة» وتصفيتها وفي «قرارات الإدارة»، وسطر على بطاقة الطلب للمعدّلة
 //                وغير المصادَقة؛ عمودان في ورقتي القرارات في ملف الموسم.
@@ -257,6 +261,12 @@ const justLabel = (c, v) => !v ? "لم يُحدَّد" : isDecObj(c) ? v : (v ==
 
 // شارة النوع (للاعتراض على قرار فقط؛ في البطاقة، لا في الجداول — لكل نوع قسمه)
 const KindBadge = ({ c }) => isDecObj(c) ? <span className="kind-badge" title={DEC_OBJ}>⚖️ اعتراض على قرار</span> : null;
+// فتح طلب في نافذة (تبويب) جديدة: رابط اللوحة نفسها مع ‎?open=الرقم فيفتح الطلب وحده عند التحميل؛ والنافذة الجديدة تنسخ
+// كلمة المرور المحفوظة للنافذة (sessionStorage) لأنها تُفتح من هذه النافذة
+const openInNewWindow = number => window.open(`${location.pathname}?open=${encodeURIComponent(number)}#/admin`, "_blank");
+// الضغط مع Ctrl (أو ⌘) أو بزر الفأرة الأوسط يفتح الطلب في نافذة جديدة بدل هذه
+const newWindowClick = (e, c) => { if (e.ctrlKey || e.metaKey || e.button === 1) { e.preventDefault(); e.stopPropagation(); openInNewWindow(c.complaint_number); return true; } return false; };
+
 // رقم الطلب بترتيب حروفه كما هي (1448-ع-001): بلا إعادة ترتيب حرف «ع» العربي بين الأرقام
 const ReqNo = ({ n, bold = true }) => React.createElement(bold ? "b" : "span", { dir: "ltr", style: { unicodeBidi: "bidi-override" } }, n);
 
@@ -2340,6 +2350,16 @@ function AdminPage({ secret, onLogout }) {
   const reload = () => { setRows(null); load(); };
   const opened = (rows || []).find(r => r.id === openId);
 
+  // فُتحت اللوحة برابط ‎?open=الرقم (من «↗️ نافذة جديدة»): يُفتح ذلك الطلب بعد جلب الطلبات، ثم يُمسح من الرابط
+  const toOpen = React.useRef(new URLSearchParams(location.search).get("open"));
+  useEffect(() => {
+    if (!rows || !toOpen.current) return;
+    const c = rows.find(r => r.complaint_number === toOpen.current);
+    toOpen.current = null;
+    try { history.replaceState(history.state, "", location.pathname + location.hash); } catch {}
+    if (c) openComplaint(c);
+  }, [rows]);
+
   // القسم المطلوب غير مسموح لهذا الدور ← الرئيسية
   const section = SECTIONS[tab];
   const allowed = tab === "home" || (section && (isManager || !section.manager));
@@ -3035,7 +3055,8 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
               </thead>
               <tbody>
                 {pageRows.map(r => (
-                  <tr key={r.id} className={`status-row ${stClass(r.status)} ${selected.has(r.id) ? "selected" : ""}`} onClick={() => onOpen(r)}>
+                  <tr key={r.id} className={`status-row ${stClass(r.status)} ${selected.has(r.id) ? "selected" : ""}`}
+                    onClick={e => { if (!newWindowClick(e, r)) onOpen(r); }} onAuxClick={e => newWindowClick(e, r)}>
                     <td className="chk" onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
                     {alertsFor && <td className="wrap">{alertsFor(r).map((a, i) => <span key={i} className={`alert-tag ${a.level}`}>{a.text}</span>)}</td>}
                     {cols.map(c => <td key={c.key} className={c.wrap ? "wrap" : ""}>{sized(c.key, c.cell(r))}</td>)}
@@ -4254,7 +4275,9 @@ function RequestCards({ rows, onOpen, alertsFor }) {
           const L = partyLabels(c), res = c.final_result || c.result;
           return (
             <div key={c.id} role="button" tabIndex={0} className={`req-card ${stClass(c.status)} ${noteOpen === c.id ? "note-on" : ""}`}
-              onClick={() => onOpen(c)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); } }}>
+              onClick={e => { if (!newWindowClick(e, c)) onOpen(c); }} onAuxClick={e => newWindowClick(e, c)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); } }}
+              title="اضغط لفتح الطلب — ومع Ctrl (أو بزر الفأرة الأوسط) في نافذة جديدة">
               {c.card_note && (
                 <>
                   <button type="button" className="req-note-btn" aria-label="عرض الملاحظة السريعة"
@@ -4352,33 +4375,33 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
           والقيم الافتراضية: الموسم الحالي، كل التصنيفات، الطلبات الحالية، كل الحالات، كل الملفات */}
       <div className="filter-bar">
         {seasons.length > 0 && (
-          <label className="filter-item"><span>الموسم</span>
+          <label className={`filter-item ${current && season !== current ? "is-set" : ""}`}><span>الموسم</span>
             <select value={season} onChange={e => setSeason(e.target.value)}>
               <option value="">كل المواسم</option>
               {seasons.map(x => <option key={x} value={x}>موسم {x}{x === current ? " (الحالي)" : ""}</option>)}
             </select>
           </label>
         )}
-        <label className="filter-item"><span>القائمة</span>
+        <label className={`filter-item fi-list ${arch ? "is-arch is-set" : "is-cur"}`}><span>القائمة</span>
           <select value={arch ? "arch" : "cur"} onChange={e => setArch(e.target.value === "arch")}>
             <option value="cur">📂 الطلبات الحالية ({ofKind.length - archCount})</option>
             <option value="arch">🗄️ الأرشيف ({archCount})</option>
           </select>
         </label>
-        <label className="filter-item"><span>الحالة</span>
+        <label className={`filter-item fi-status ${filter !== "الكل" ? "is-set " + stClass(filter) : ""}`}><span>الحالة</span>
           {/* (الاعتراض على قرار بلا حالات «اعتراض المشتكى عليه على النتيجة») */}
           <select value={filter} onChange={e => setFilter(e.target.value)}>
             {["الكل", ...STATUSES.filter(s => !OBJ || !/الاعتراض/.test(s))].map(s =>
-              <option key={s} value={s}>{s === "الكل" ? "كل الحالات" : s} ({count(s)})</option>)}
+              <option key={s} value={s} className={s === "الكل" ? "" : stClass(s)}>{s === "الكل" ? "كل الحالات" : s} ({count(s)})</option>)}
           </select>
         </label>
-        <label className="filter-item"><span>التصنيف</span>
+        <label className={`filter-item ${klass ? "is-set" : ""}`}><span>التصنيف</span>
           <select value={klass} onChange={e => setKlass(e.target.value)}>
             <option value="">كل التصنيفات</option>
             {klasses.map(x => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
-        <label className="filter-item"><span>الملفات</span>
+        <label className={`filter-item fi-files ${missing ? "is-set" : ""}`}><span>الملفات</span>
           {/* الملفات الناقصة (مع تصفية الحالة: مثلاً «مغلقة» + «بلا ملف القرار») */}
           <select value={missing} onChange={e => setMissing(e.target.value)}>
             <option value="">📂 كل الملفات</option>
@@ -4787,6 +4810,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div className="c-head-actions">
           <StatusBadge value={c.status} />
           <button type="button" className="btn secondary sm" disabled={wordBusy} onClick={exportWord} title={`تصدير ملف ${L.study} (Word)`}>{wordBusy ? "…" : "📄 Word"}</button>
+          <button type="button" className="btn secondary sm" onClick={() => openInNewWindow(c.complaint_number)} title="فتح هذا الطلب في نافذة (تبويب) جديدة — لفتح أكثر من طلب معاً">↗️ <span className="hide-xs">نافذة جديدة</span></button>
         </div>
       </div>
       {c.archived_at && <div className="reminder-bar later">🗄️ في الأرشيف منذ {fmtDate(c.archived_at)} — لا يظهر في القوائم اليومية.</div>}
