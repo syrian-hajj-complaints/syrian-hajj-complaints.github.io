@@ -84,6 +84,10 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  توثيق مدير الإدارة لقرارات اللجنة (القسم 70؛ القرار الورقي يبقى الأساس): «✍️ يوثّق القرارات» لكلمة مرور إدارة في
+//                «كلمات مرور الإدارة»؛ تبويب «✍️ للتوثيق» في التقارير (EndorseBox): موافق / مع تعديل / غير موافق باسمه ووقته، وسجل
+//                المواقف السابقة؛ في اللوحة: سطر التوثيق في القرار وبطاقة الطلب، وتصفية «التوثيق»، وتنبيه في «المطلوب اليوم» إن وُثّق
+//                القرار بلا مصادقة مسجّلة أو خالفته المصادقة؛ والتوثيق في ملف أرشيف الموسم وعارض المواسم السابقة.
 //    2026-10-29  خانة «الموسم» في نموذج القرار (القسم 69): تظهر إن كان في القاعدة أكثر من موسم مفتوح (الحالي + سابق مفتوح للتعديل)،
 //                فيُحفظ القرار ثم يُنقل إلى الموسم المختار (admin_set_decision_season) ليُؤرشف معه؛ قرار الطلب يبقى بموسم الطلب.
 //    2026-10-29  إصلاح اختفاء الشاشة بعد «➕ إضافة شكوى إلى موسم …»: فتح الشكوى الجديدة («جديد» ← «قيد المراجعة») كان يعدّل قائمة
@@ -821,6 +825,13 @@ const approvalText = d => {
   if (!k) return "⏳ بانتظار المصادقة";
   return `${APPROVAL[k][0]} ${APPROVAL[k][1]}${d.approval_ref ? ` بقرار الإدارة رقم ${d.approval_ref}` : ""}${d.approval_note ? `: ${d.approval_note}` : ""}`;
 };
+// توثيق مدير الإدارة (القسم 70): موقفه من القرار (القرار الورقي يبقى الأساس)، ومقابله في نوع المصادقة الرسمية
+const ENDORSE = { "موافق": "✅", "موافق مع تعديل": "✏️", "غير موافق": "❌" };
+const ENDORSE_APPROVAL = { "موافق": "كاملة", "موافق مع تعديل": "مع تعديل", "غير موافق": "عدم مصادقة" };
+const endorseText = d => !d || !d.endorse_kind ? "✍️ لم يوثّقه مدير الإدارة بعد"
+  : `✍️ ${ENDORSE[d.endorse_kind]} ${d.endorse_kind}${d.endorse_note ? `: ${d.endorse_note}` : ""} — ${d.endorsed_by || "الإدارة"}${d.endorsed_at ? `، ${fmtDateTime(d.endorsed_at)}` : ""}`;
+// المصادقة المسجّلة تخالف موقف المدير الموثّق
+const endorseMismatch = d => !!(d && d.endorse_kind && approvalKind(d) && ENDORSE_APPROVAL[d.endorse_kind] !== approvalKind(d));
 const approvalShort = d => { const k = approvalKind(d); return k ? `${APPROVAL[k][0]}${d.approval_ref ? " " + d.approval_ref : ""}` : "⏳"; };
 // الطلبات المرتبطة بقرار (المشترك)
 const decisionRequests = (rows, d) => (rows || []).filter(r => r.linked_decision_id ? r.linked_decision_id === d.id : d.request_id === r.id);
@@ -973,6 +984,8 @@ function RequestDecisionBox({ secret, c, items, onSaved }) {
           <div style={{ margin: "6px 0" }}>
             <b>{approvalText(mine)}</b>
             {approver && <div className="muted" style={{ fontSize: 13.5 }}>{approver.title}{approver.decision_date ? ` (${fmtDate(approver.decision_date)})` : ""}</div>}
+            {/* توثيق مدير الإدارة (القسم 70) */}
+            <div style={{ fontSize: 13.5, marginTop: 4 }}>{endorseText(mine)}{endorseMismatch(mine) && <b> — ⚠️ تخالف المصادقة المسجّلة</b>}</div>
           </div>
           {!linkedOnly && titleField}
           {manager && linkedOnly && (
@@ -1137,7 +1150,10 @@ const XL_SHEETS = [
   { name: "قرارات الشكاوى", key: "decisions", marker: "رقم القرار", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
     ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"],
-    ["approval_kind", "نوع المصادقة"], ["approval_note", "ما صودق عليه"]] },
+    ["approval_kind", "نوع المصادقة"], ["approval_note", "ما صودق عليه"],
+    // توثيق مدير الإدارة (القسم 70)
+    ["endorse_kind", "توثيق مدير الإدارة"], ["endorse_note", "ملاحظة التوثيق"], ["endorsed_by", "وثّقه"], ["endorsed_at", "وقت التوثيق", true],
+    ["endorse_log", "سجل التوثيق"]] },
   { name: "قرارات الإدارة", key: "admindecisions", cols: [
     ["decision_number", "رقم القرار"], ["decision_date", "تاريخ القرار", "day"], ["title", "عنوان القرار"], ["classification", "تصنيف القرار"],
     ["subject", "موضوع القرار"], ["url", "رابط القرار"], ["secrecy", "درجة السرية"], ["approved", "تمت المصادقة"], ["approval_ref", "رقم قرار المصادقة"],
@@ -2208,6 +2224,12 @@ function smartAlerts(c, ref = new Date()) {
   // اعتراض المشتكى عليه لم يُراجع بعد (لم تُحفظ الشكوى بعد وصوله) — يظهر حتى لو كانت مغلقة
   const objection = c.objection_at && new Date(c.updated_at || 0) - new Date(c.objection_at) < 5000
     ? [{ level: "warn", text: `⚖️ وصل اعتراض من المشتكى عليه (${fmtDateTime(c.objection_at)}) — افتح الشكوى لمراجعته` }] : [];
+  // توثيق مدير الإدارة لقرار الطلب (القسم 70): وثّقه ولم تُسجَّل المصادقة الرسمية بعد، أو المصادقة المسجّلة تخالفه
+  const dec = c.justified !== "غير محق" ? requestDecision(ADMIN_CTX.decisions, c) : null;
+  if (dec && dec.endorse_kind && !approvalKind(dec))
+    objection.push({ level: "info", text: `✍️ وثّق مدير الإدارة القرار ${dec.decision_number} (${dec.endorse_kind}) — سجّل المصادقة من القرار الورقي` });
+  else if (endorseMismatch(dec))
+    objection.push({ level: "warn", text: `⚠️ مصادقة القرار ${dec.decision_number} (${approvalKind(dec)}) تخالف توثيق مدير الإدارة (${dec.endorse_kind})` });
   if (isClosed(c.status)) return objection;
   const now = ref.getTime();
   const age = now - new Date(c.received_date);                     // عمر الشكوى
@@ -5582,6 +5604,22 @@ function objectionTag(requests, a) {
   return judged.length ? MERIT_TAG[judged[0].obj_merit] : "⚖️ معترض عليه";
 }
 
+// توثيق مدير الإدارة في تفاصيل القرار (القسم 70): موقفه واسمه ووقته، وتنبيه إن خالفته المصادقة المسجّلة، وسجل المواقف السابقة
+function EndorseInfo({ d }) {
+  return (
+    <div className={`approval-box ${d.endorse_kind && d.endorse_kind !== "غير موافق" ? "ok" : ""}`}>
+      <b>{endorseText(d)}</b>
+      {endorseMismatch(d) && <div>⚠️ المصادقة المسجّلة ({approvalKind(d)}) تخالف موقف المدير الموثّق — راجع القرار الورقي.</div>}
+      {d.endorse_log && (
+        <details style={{ marginTop: 4 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>سجل التوثيق السابق</summary>
+          <div className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 13.5 }}>{d.endorse_log}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // requests: الشكاوى والاعتراضات (لربط «اعتراض على قرار إداري» بقرار الإدارة برقمه)؛ onOpenRequest: فتح الاعتراض من بطاقة القرار
 function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false, requests = [], onOpenRequest }) {
   const KIND = kind === "admin" ? "قرارات الإدارة" : "قرارات الشكاوى";
@@ -5600,6 +5638,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const [season, setSeason] = useState("");                    // موسم القرارات ("" = الكل)
   const [all, setAll] = useState([]);                          // كل القرارات بنوعيها (لربط المصادقة)
   const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
+  const [endF, setEndF] = useState("");                        // تصفية توثيق مدير الإدارة: "" / done / wait / no / diff (القسم 70)
   const [objF, setObjF] = useState("");                        // تصفية «⚖️ عليها اعتراض»: "" / yes (قرارات الإدارة)
   // عرض الأعمدة بالسحب (لكل قسم عروضه على الجهاز)
   const cw = useColWidths(`hajj_dec_widths_${kind}`);
@@ -5642,6 +5681,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
     (!range.from || (d.decision_date || "") >= range.from) &&
     (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)) &&
     (!appr || ({ yes: "كاملة", mod: "مع تعديل", rej: "عدم مصادقة", no: "" })[appr] === approvalKind(d)) &&
+    (!endF || (endF === "done" ? !!d.endorse_kind : endF === "wait" ? !d.endorse_kind : endF === "no" ? d.endorse_kind === "غير موافق" : endorseMismatch(d))) &&
     (!objF || objectionsOf(d).length > 0) &&
     (kind !== "admin" || showReplaced || !replacedBy[d.id]));
   // القرار يُحسب في كل تصنيف من تصنيفاته
@@ -5795,6 +5835,13 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
             <button key={k} className={appr === k ? "active" : ""} onClick={() => setAppr(k)}>{t}</button>)}
         </div>
       )}
+      {/* توثيق مدير الإدارة (القسم 70): يظهر بعد أول توثيق */}
+      {kind === "complaints" && (list || []).some(d => d.endorse_kind || d.endorse_log) && (
+        <div className="chips">
+          {[["", "✍️ كل التوثيقات"], ["done", "✍️ موثّق"], ["wait", "⏳ بانتظار التوثيق"], ["no", "❌ غير موافق"], ["diff", "⚠️ المصادقة تخالف التوثيق"]].map(([k, t]) =>
+            <button key={k} className={endF === k ? "active" : ""} onClick={() => setEndF(k)}>{t}</button>)}
+        </div>
+      )}
       {/* القرارات المستبدلة بعد الاعتراض: مخفية افتراضياً */}
       {kind === "admin" && Object.keys(replacedBy).length > 0 && (
         <div className="chips">
@@ -5833,7 +5880,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                       {replaces[d.id] && <> <span className="kind-badge">🔁 بديل للقرار {replaces[d.id].map(x => x.decision_number).join("، ")}</span></>}</>)}</td>
                     <td>{cw.sized("classification", classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—")}</td>
                     <td>{cw.sized("secrecy", d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—"))}</td>
-                    {kind === "complaints" && <td title={approvalText(d)}>{cw.sized("approval", approvalShort(d))}</td>}
+                    {kind === "complaints" && <td title={`${approvalText(d)}\n${endorseText(d)}`}>{cw.sized("approval", <>{approvalShort(d)}{d.endorse_kind && ` ✍️${ENDORSE[d.endorse_kind]}`}{endorseMismatch(d) && " ⚠️"}</>)}</td>}
                     <td className="wrap">{cw.sized("subject", <span className="clip">{d.subject || "—"}</span>)}</td>
                     <td>{cw.sized("url", d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—")}</td>
                   </tr>
@@ -5869,6 +5916,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   </div>
                 );
               })()}
+              {kind === "complaints" && <EndorseInfo d={shown} />}
               {/* الاستبدال بعد الاعتراض: الضغط على رقم القرار الآخر يفتحه */}
               {kind === "admin" && replacedBy[shown.id] && (
                 <div className="approval-box replaced-box">
@@ -6747,14 +6795,27 @@ function AdminViewers({ secret }) {
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [endorsers, setEndorsers] = useState(null);   // معرّفات من له صلاحية التوثيق (null = القسم 70 غير منفَّذ)
 
   // جلب أصحاب كلمات المرور
   const load = useCallback(async () => {
     const { data, error } = await sb.rpc("admin_list_viewers", { p_secret: secret });
     if (error) return setMsg({ type: "error", text: NET_ERR });
     setList(data || []);
+    // من له صلاحية توثيق القرارات (القسم 70؛ قاعدة لم يُنفَّذ فيها ← بلا الخيار)
+    const en = await sb.rpc("admin_list_endorsers", { p_secret: secret });
+    setEndorsers(en.error ? null : new Set((en.data || []).map(x => typeof x === "string" ? x : Object.values(x)[0])));
   }, [secret]);
   useEffect(() => { load(); }, [load]);
+
+  // منح صلاحية «✍️ يوثّق القرارات» أو سحبها
+  async function toggleEndorse(r) {
+    const on = !endorsers.has(r.id);
+    const { data, error } = await sb.rpc("admin_set_viewer_endorse", { p_secret: secret, p_id: r.id, p_on: on });
+    if (error || !data) return setMsg({ type: "error", text: "تعذّر الحفظ (نفّذ القسم 70 من schema.sql في Supabase)." });
+    setMsg({ type: "ok", text: on ? `✍️ ${r.name} يوثّق القرارات الآن من صفحة التقارير.` : `سُحبت صلاحية التوثيق من ${r.name}.` });
+    load();
+  }
 
   // إضافة شخص وتوليد كلمة مروره
   async function create(e) {
@@ -6806,6 +6867,9 @@ function AdminViewers({ secret }) {
                   <div className="muted" style={{ fontSize: 13 }}>آخر دخول: {fmtDateTime(r.last_seen_at)}</div>
                 </div>
                 <span className="row" style={{ gap: 6 }}>
+                  {endorsers && <button type="button" className={`btn sm ${endorsers.has(r.id) ? "" : "secondary"}`} aria-pressed={endorsers.has(r.id)}
+                    title="يسجّل من صفحة التقارير اطلاعه وموقفه من قرارات اللجنة" onClick={() => toggleEndorse(r)}>
+                    {endorsers.has(r.id) ? "✍️ يوثّق القرارات ✓" : "✍️ يوثّق القرارات"}</button>}
                   <button className={`btn sm ${r.active ? "secondary" : ""}`} onClick={() => toggle(r)}>{r.active ? "إيقاف" : "تفعيل"}</button>
                   <button type="button" className="btn danger-text" onClick={async () => { if (await deleteAccessUser(secret, r, "صاحب كلمة مرور الإدارة")) load(); }}>🗑️ حذف</button>
                 </span>
@@ -6859,6 +6923,96 @@ function ReportCardSwitch({ secret }) {
   );
 }
 
+// «✍️ للتوثيق» في صفحة التقارير (القسم 70، لمن له صلاحية التوثيق — مدير الإدارة): قرارات اللجنة (على الشكاوى والاعتراضات)
+// مع طلباتها وملفاتها، وموقفه من كل قرار: موافق / موافق مع تعديل / غير موافق (التعديل والسبب إلزاميان)؛ القرار الورقي يبقى الأساس.
+// hidden: يبقى محمّلاً خارج التبويب ليظهر عدد المنتظر؛ onCount: عدد القرارات بانتظار التوثيق
+function EndorseBox({ code, hidden, onCount, onOpenRequest }) {
+  const [decs, setDecs] = useState(null);
+  const [reqs, setReqs] = useState([]);
+  const [show, setShow] = useState("wait");            // wait = بانتظار التوثيق، done = الموثّقة، all = الكل
+  const [edit, setEdit] = useState(null);              // {id, kind, note} لموقف يحتاج نصاً
+  const [busy, setBusy] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  // قرارات اللجنة، والطلبات (كل المواسم) لربط كل قرار بطلباته
+  const load = useCallback(async () => {
+    const [d, r] = await Promise.all([sb.rpc("viewer_list_decisions", { p_code: code }),
+      sb.rpc("viewer_report", { p_code: code, p_from: null, p_to: null, p_season: null })]);
+    if (d.error) { setDecs([]); return setMsg({ type: "error", text: NET_ERR }); }
+    setDecs((d.data || []).filter(x => (x.kind || "complaints") === "complaints"));
+    setReqs(r.data || []);
+  }, [code]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (decs) onCount(decs.filter(d => !d.endorse_kind).length); }, [decs]);
+
+  // حفظ الموقف (أو سحبه بموقف فارغ)
+  async function endorse(d, kind, note = "") {
+    if (kind === "" && !window.confirm(`سحب توثيق القرار ${d.decision_number}؟ يبقى موقفك السابق في سجل التوثيق.`)) return;
+    setBusy(d.id); setMsg(null);
+    const { data, error } = await sb.rpc("viewer_endorse_decision", { p_code: code, p_id: d.id, p_kind: kind, p_note: note });
+    setBusy(null);
+    if (error && /NOTE_REQUIRED/.test(error.message || "")) return setMsg({ type: "error", text: "اكتب التعديل أو السبب." });
+    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الحفظ، يرجى المحاولة مرة أخرى." });
+    setDecs(list => list.map(x => x.id === d.id ? data[0] : x));
+    setEdit(null);
+    setMsg({ type: "ok", text: kind ? `✅ وُثّق القرار ${d.decision_number}: ${kind}.` : `سُحب توثيق القرار ${d.decision_number}.` });
+  }
+
+  if (hidden) return null;
+  if (decs === null) return <Loading />;
+  const reqsOf = d => reqs.filter(r => requestDecision([d], r) === d);
+  const list = decs.filter(d => show === "all" || (show === "wait" ? !d.endorse_kind : !!d.endorse_kind))
+    .sort((a, b) => (b.decision_date || "").localeCompare(a.decision_date || "") || String(b.decision_number).localeCompare(String(a.decision_number), "ar", { numeric: true }));
+
+  // العرض: تصفية الحالة، ثم بطاقة لكل قرار بطلباته وملفه وموقف المدير وأزرار التوثيق
+  return (
+    <div>
+      <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>سجّل اطلاعك وموقفك من قرارات اللجنة؛ يُحفظ باسمك ووقته. القرار الورقي الموقّع يبقى هو الأساس.</p>
+      <div className="chips">
+        {[["wait", `⏳ بانتظار التوثيق (${decs.filter(d => !d.endorse_kind).length})`], ["done", `✍️ الموثّقة (${decs.filter(d => d.endorse_kind).length})`], ["all", "الكل"]].map(([k, t]) =>
+          <button key={k} className={show === k ? "active" : ""} onClick={() => setShow(k)}>{t}</button>)}
+      </div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      {list.length === 0 ? <div className="card empty">{show === "wait" ? "لا قرارات بانتظار التوثيق ✅" : "لا توجد قرارات"}</div> : list.map(d => (
+        <div key={d.id} className="card">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <b>📜 القرار <span dir="ltr">{d.decision_number}</span> — {d.title}</b>
+            <span className="muted" style={{ fontSize: 13.5 }}>{d.decision_date ? fmtDate(d.decision_date) : "بلا تاريخ"}{d.season ? ` · موسم ${d.season}` : ""}{d.classification ? ` · ${d.classification}` : ""}</span>
+          </div>
+          {d.subject && <div className="subject" style={{ marginTop: 6 }}>{d.subject}</div>}
+          <div className="links-line">
+            {reqsOf(d).length > 0 && <><b>الطلبات:</b> {reqsOf(d).map(r => onOpenRequest
+              ? <button key={r.complaint_number} type="button" className="link-chip" onClick={() => onOpenRequest(r.complaint_number)}><ReqNo n={r.complaint_number} /></button>
+              : <span key={r.complaint_number} className="link-chip"><ReqNo n={r.complaint_number} /></span>)}</>}
+            {d.url ? <a className="link-chip" href={d.url} target="_blank" rel="noopener">📄 ملف القرار ↗</a> : <span className="muted">بلا ملف قرار بعد</span>}
+          </div>
+          <div className="muted" style={{ fontSize: 13.5 }}>{approvalText(d)}</div>
+          <EndorseInfo d={d} />
+          {/* أزرار الموقف؛ «مع تعديل» و«غير موافق» تفتح خانة النص */}
+          {edit && edit.id === d.id ? (
+            <div style={{ marginTop: 8 }}>
+              <textarea autoFocus style={{ minHeight: 80 }} maxLength={2000} value={edit.note} onChange={e => setEdit({ ...edit, note: e.target.value })}
+                placeholder={edit.kind === "غير موافق" ? "سبب عدم الموافقة" : "التعديل المطلوب (ما توافق عليه)"} />
+              <div className="row" style={{ marginTop: 6 }}>
+                <button type="button" className="btn sm" disabled={busy === d.id || !edit.note.trim()} onClick={() => endorse(d, edit.kind, edit.note)}>
+                  {busy === d.id ? "…" : `${ENDORSE[edit.kind]} حفظ: ${edit.kind}`}</button>
+                <button type="button" className="btn secondary sm" onClick={() => setEdit(null)}>إلغاء</button>
+              </div>
+            </div>
+          ) : (
+            <div className="row" style={{ marginTop: 8 }}>
+              <button type="button" className="btn sm" disabled={busy === d.id} onClick={() => endorse(d, "موافق")}>✅ اطّلعت وأوافق</button>
+              <button type="button" className="btn secondary sm" disabled={busy === d.id} onClick={() => setEdit({ id: d.id, kind: "موافق مع تعديل", note: "" })}>✏️ أوافق مع تعديل</button>
+              <button type="button" className="btn secondary sm" disabled={busy === d.id} onClick={() => setEdit({ id: d.id, kind: "غير موافق", note: "" })}>❌ لا أوافق</button>
+              {d.endorse_kind && <button type="button" className="btn danger-text" disabled={busy === d.id} onClick={() => endorse(d, "")}>سحب التوثيق</button>}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // =====================================================================
 // الصفحة 4: التقارير (‎#/reports)
 // =====================================================================
@@ -6890,6 +7044,15 @@ function ReportsPage({ code, viewerName }) {
   const [openNum, setOpenNum] = useState(null);
   useEffect(() => {
     sb.rpc("viewer_card_enabled", { p_code: code }).then(({ data }) => setCardOn(data === true));
+  }, [code]);
+  // صلاحية توثيق القرارات (القسم 70، لمدير الإدارة)، وعدد القرارات بانتظار توثيقه
+  const [canEndorse, setCanEndorse] = useState(false);
+  const [endorseWait, setEndorseWait] = useState(0);
+  useEffect(() => {
+    sb.rpc("viewer_can_endorse", { p_code: code }).then(({ data }) => {
+      setCanEndorse(data === true);
+      if (data === true) setView("endorse");
+    });
   }, [code]);
 
   // جلب شكاوى الفترة عبر viewer_report؛ نهاية الفترة تشمل اليوم الأخير كاملاً
@@ -6934,10 +7097,13 @@ function ReportsPage({ code, viewerName }) {
         <div className="center row" style={{ marginTop: 6, justifyContent: "center" }}><InstallButton /><PinButton /></div>
       </div>
       <div className="tabs" style={{ marginBottom: 12 }}>
-        {[["complaints", "📋 الشكاوى"], ["objections", "⚖️ الاعتراضات"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
+        {[...(canEndorse ? [["endorse", `✍️ للتوثيق${endorseWait ? ` (${endorseWait})` : ""}`]] : []),
+          ["complaints", "📋 الشكاوى"], ["objections", "⚖️ الاعتراضات"], ["decisions", "📑 قرارات الشكاوى"], ["admindec", "🏛️ قرارات الإدارة"]].map(([k, t]) =>
           <button key={k} className={view === k ? "active" : ""} onClick={() => setView(k)}>{t}</button>)}
       </div>
-      {view === "decisions" || view === "admindec" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer
+      {canEndorse && <EndorseBox code={code} hidden={view !== "endorse"} onCount={setEndorseWait}
+        onOpenRequest={cardOn ? n => setOpenNum(n) : null} />}
+      {view === "endorse" ? null : view === "decisions" || view === "admindec" ? <AdminDecisions key={view} secret={code} isManager={false} kind={view === "admindec" ? "admin" : "complaints"} viewer
         requests={rows || []} onOpenRequest={cardOn ? r => setOpenNum(r.complaint_number) : null} /> : (<>
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="filters">
@@ -7084,6 +7250,7 @@ function ComplaintView({ c, sessions, decisions }) {
               <div className="links-line" style={{ marginTop: 10 }}>
                 <b>📜 قرار اللجنة رقم <span dir="ltr">{ref}</span>:</b>
                 <span>{d ? approvalText(d) : <span className="muted">لم يُعثر عليه في قرارات هذا الموسم</span>}</span>
+                {d && d.endorse_kind && <span className="muted">{endorseText(d)}</span>}
                 {d && d.url && <a className="link-chip" href={d.url} target="_blank" rel="noopener">فتح ↗</a>}
               </div>
             ) : null;
@@ -7242,7 +7409,8 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
                             {d.subject && <div className="muted" style={{ fontSize: 13 }}>{d.subject}</div>}</td>
                           <td data-label="التصنيف">{d.classification || "—"}</td>
                           {/* نوع المصادقة وما صودق عليه (قرارات الشكاوى) */}
-                          {tab === "decisions" && <td data-label="المصادقة" className="wrap">{approvalText(d)}</td>}
+                          {tab === "decisions" && <td data-label="المصادقة" className="wrap">{approvalText(d)}
+                            {d.endorse_kind && <div className="muted" style={{ fontSize: 13 }}>{endorseText(d)}</div>}</td>}
                           <td data-label="الرابط">{d.url ? <a href={d.url} target="_blank" rel="noopener">فتح ↗</a> : "—"}</td>
                         </tr>
                       ))}
