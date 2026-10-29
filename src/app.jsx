@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  خانة «الموسم» في نموذج القرار (القسم 69): تظهر إن كان في القاعدة أكثر من موسم مفتوح (الحالي + سابق مفتوح للتعديل)،
+//                فيُحفظ القرار ثم يُنقل إلى الموسم المختار (admin_set_decision_season) ليُؤرشف معه؛ قرار الطلب يبقى بموسم الطلب.
 //    2026-10-29  إصلاح اختفاء الشاشة بعد «➕ إضافة شكوى إلى موسم …»: فتح الشكوى الجديدة («جديد» ← «قيد المراجعة») كان يعدّل قائمة
 //                الشكاوى وهي فارغة أثناء إعادة جلبها، فيتوقف التطبيق؛ صار التعديل يُتجاوز حتى يكتمل الجلب (onSaved).
 //    2026-10-29  تذكير النسخة الاحتياطية: وقت آخر تصدير كامل يُحفظ على الجهاز، ويظهر في «💾 التصدير والنسخ المحفوظة»؛ وفي الرئيسية
@@ -5658,10 +5660,22 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const arrow = key => sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "";
 
   // نموذج فارغ، أو تعبئته من قرار للتعديل
+  // (الموسم: موسم التصفية المختار إن وُجد، وإلا الحالي؛ وفي التعديل موسم القرار)
   const blank = () => ({ id: null, number: "", date: toDateInput(new Date()), title: "", subject: "", url: "", classes: [], secrecy: "عادي",
-                         approved: false, approval_ref: "" });
+                         approved: false, approval_ref: "", season: season || "" });
   const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "",
-                         classes: classesOf(d), secrecy: d.secrecy || "عادي", approved: !!d.approved, approval_ref: d.approval_ref || "" });
+                         classes: classesOf(d), secrecy: d.secrecy || "عادي", approved: !!d.approved, approval_ref: d.approval_ref || "",
+                         season: d.season || "", request_id: d.request_id || null });
+  // المواسم المفتوحة في القاعدة (الحالي + السابقة المفتوحة للتعديل)، تُجلب عند فتح النموذج لخانة «الموسم»
+  const [openSeasons, setOpenSeasons] = useState(null);
+  useEffect(() => {
+    if (!form || viewer || openSeasons) return;
+    sb.rpc("admin_get_season", { p_secret: secret }).then(({ data }) => {
+      if (!data) return;
+      const list = [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse();
+      setOpenSeasons({ current: data.current || "", list });
+    });
+  }, [form]);
   // الرقم التالي في تصنيف: أكبر رقم في بداية أرقام قراراته + 1 (يُقترح عند اختيار التصنيف ويمكن تعديله)
   const nextNumber = k => String(Math.max(0, ...(list || []).filter(d => classesOf(d).includes(k))
     .map(d => parseInt(String(d.decision_number).match(/\d+/) || "0", 10) || 0)) + 1);
@@ -5690,10 +5704,20 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
       if (kind === "admin") { setBusy(false); return setMsg({ type: "error", text: "قرارات الإدارة تحتاج تنفيذ القسم 43 من schema.sql في Supabase." }); }
       ({ data, error } = await sb.rpc("admin_save_decision", base));
     }
+    if (error || !data || !data.length) { setBusy(false); return setMsg({ type: "error", text: "تعذّر الحفظ، يرجى المحاولة مرة أخرى." }); }
+    // نقل القرار إلى الموسم المختار إن اختلف عن موسمه (القسم 69)؛ القرار المضاف يأخذ الحالي تلقائياً
+    let saved = data[0];
+    if (form.season && saved.season !== form.season && !saved.request_id) {
+      const r = await sb.rpc("admin_set_decision_season", { p_secret: secret, p_id: saved.id, p_season: form.season });
+      if (r.error || !r.data || !r.data.length) {
+        setBusy(false); setForm(null); load();
+        return setMsg({ type: "error", text: `حُفظ القرار في موسم ${saved.season}، وتعذّر نقله إلى موسم ${form.season} (نفّذ القسم 69 من schema.sql في Supabase، وتأكد أن الموسم مفتوح للتعديل).` });
+      }
+      saved = r.data[0];
+    }
     setBusy(false);
-    if (error || !data || !data.length) return setMsg({ type: "error", text: "تعذّر الحفظ، يرجى المحاولة مرة أخرى." });
-    setMsg({ type: "ok", text: form.id ? "✅ تم تعديل القرار." : "✅ أُضيف القرار." });
-    setForm(null); setShown(data[0]); load();
+    setMsg({ type: "ok", text: form.id ? "✅ تم تعديل القرار." : `✅ أُضيف القرار${saved.season ? ` في موسم ${saved.season}` : ""}.` });
+    setForm(null); setShown(saved); load();
   }
 
   // حذف قرار بعد التأكيد
@@ -5917,6 +5941,14 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                 </Field>
                 <Field label="رقم القرار" required hint="يمكن تعديله"><input type="text" dir="ltr" value={form.number} onChange={e => setForm(f => ({ ...f, number: e.target.value, autoNumber: false }))} maxLength={60} /></Field>
                 <Field label="تاريخ القرار"><input type="date" value={form.date} onChange={setF("date")} /></Field>
+                {/* الموسم (القسم 69): يظهر إن كان في القاعدة أكثر من موسم مفتوح؛ قرار الطلب يبقى بموسم الطلب */}
+                {!form.request_id && openSeasons && openSeasons.list.length > 1 && (
+                  <Field label="الموسم" hint="لموسم سابق مفتوح للتعديل، ليُؤرشف معه">
+                    <select value={form.season || openSeasons.current} onChange={setF("season")}>
+                      {openSeasons.list.map(x => <option key={x} value={x}>موسم {x}{x === openSeasons.current ? " (الحالي)" : ""}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <Field label="درجة السرية">
                   <select value={form.secrecy} onChange={setF("secrecy")}>{SECRECY.map(x => <option key={x} value={x}>{x}</option>)}</select>
                 </Field>

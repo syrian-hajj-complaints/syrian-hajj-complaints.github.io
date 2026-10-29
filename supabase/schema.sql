@@ -124,6 +124,8 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 67.
 --    2026-10-28  القسم 67: نوع المصادقة (approval_kind: كاملة / مع تعديل / عدم مصادقة، approval_note)؛ كلمة مرور الأدمن الأولى صارت القسم 68.
 --    2026-10-29  القسم 68: التقارير برقم القرار المرتبط وهل الطلب محق (للقرار المستبدل بعد الاعتراض)؛ كلمة مرور الأدمن الأولى صارت القسم 69.
+--    2026-10-29  القسم 69: موسم القرار المضاف يدوياً (admin_set_decision_season، للمدير): الحالي أو موسم سابق مفتوح للتعديل؛
+--                كلمة مرور الأدمن الأولى صارت القسم 70.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -7772,7 +7774,32 @@ end $$;
 grant execute on function public.viewer_report(text, timestamptz, timestamptz, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 69) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 69) موسم القرار (للمدير): القرار المضاف من «➕ إضافة قرار» يأخذ الموسم الحالي تلقائياً؛ وهذه الدالة تنقله إلى موسم آخر
+--     مفتوح في القاعدة (الحالي، أو موسم سابق مفتوح للتعديل) ليُؤرشف معه. قرار الطلب المسجَّل من بطاقته يبقى بموسم الطلب.
+--     يحتاج الأقسام حتى 68 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- تُرجع القرار بعد التعديل، أو لا شيء (كلمة مرور خاطئة، موسم غير مفتوح، قرار طلب)
+create or replace function public.admin_set_decision_season(p_secret text, p_id uuid, p_season text)
+returns setof public.decisions
+language plpgsql security definer set search_path = public as $$
+declare
+  v_season text := translate(btrim(coalesce(p_season, '')), '٠١٢٣٤٥٦٧٨٩', '0123456789');
+begin
+  if public.verify_password('مدير', p_secret) is null or v_season !~ '^\d{4}$' then
+    return;
+  end if;
+  -- الموسم المقبول: الحالي، أو موسم له شكاوى في القاعدة (مفتوح للتعديل)
+  if v_season <> coalesce(public.setting('season'), '') and not exists (select 1 from public.complaints where season = v_season) then
+    return;
+  end if;
+  update public.decisions set season = v_season where id = p_id and request_id is null;
+  return query select * from public.decisions where id = p_id;
+end $$;
+
+grant execute on function public.admin_set_decision_season(text, uuid, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 70) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
