@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  تغيير عرض الأعمدة بالسحب في «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» (لكل قسم عروضه على الجهاز، و«↔ العرض
+//                التلقائي»)؛ أداة مشتركة useColWidths مع جدول الطلبات.
 //    2026-10-29  القرار المستبدل بعد الاعتراض (قرارات الإدارة): إن كان حكم الاعتراض «إلغاء» أو «تعديل» وقرار اللجنة مصادَقاً عليه بقرار
 //                إدارة آخر، يُخفى القرار الأول افتراضياً (شارة «⛔ استُبدل بالقرار …» وتصفية «🔁 إظهار القرارات المستبدلة»)، وعلى
 //                قرار المصادقة «🔁 بديل للقرار …»؛ وفي التفاصيل انتقال بين القرارين؛ وفي التقارير كذلك (القسم 68).
@@ -2851,16 +2853,12 @@ function usePref(key, initial) {
   return [value, save];
 }
 
-function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
-  // التفضيلات: الأعمدة المخفية، حجم الخط، عدد الأسطر
-  const [hidden, setHidden] = usePref("hajj_cols_hidden", DEFAULT_HIDDEN);
-  const [fontSize, setFontSize] = usePref("hajj_font_size", 14);
-  const [pageSize, setPageSize] = usePref("hajj_page_size", 50);
-  // عرض الأعمدة بالبكسل (يُسحب من حافة العنوان، ويحفظه الجهاز)؛ live: العمود أثناء السحب
-  const [widths, setWidths] = usePref("hajj_col_widths", {});
+// تغيير عرض أعمدة جدول بالسحب (جدول الطلبات وجدول القرارات): prefKey مفتاح حفظ العروض على الجهاز؛ live: العمود أثناء السحب؛
+// الحافة على يسار العنوان (الاتجاه من اليمين لليسار) فالسحب يساراً يوسّع العمود (50–800 بكسل)، وضغطتان تعيدانه تلقائياً
+function useColWidths(prefKey) {
+  const [widths, setWidths] = usePref(prefKey, {});
   const [live, setLive] = useState(null);   // { key, w }
   const widthOf = key => live && live.key === key ? live.w : widths[key];
-  // بدء السحب: الحافة على يسار العنوان (الاتجاه من اليمين لليسار)، فالسحب يساراً يوسّع العمود؛ بين 50 و800 بكسل
   function startResize(e, key) {
     e.preventDefault(); e.stopPropagation();
     const th = e.currentTarget.parentElement;
@@ -2873,10 +2871,25 @@ function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
     };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
-  // إعادة عمود إلى عرضه التلقائي (ضغط مزدوج على الحافة)
   const resetWidth = key => { const n = { ...widths }; delete n[key]; setWidths(n); };
   // محتوى خلية بعرض محدد (إن حُدّد للعمود)
   const sized = (key, content) => widthOf(key) ? <div className="cw" style={{ width: widthOf(key) }}>{content}</div> : content;
+  // حافة السحب داخل عنوان العمود
+  const resizer = key => (
+    <span className={`col-resizer ${live && live.key === key ? "on" : ""}`} onPointerDown={e => startResize(e, key)}
+      onClick={e => e.stopPropagation()} onDoubleClick={e => { e.stopPropagation(); resetWidth(key); }}
+      title="اسحب لتغيير عرض العمود — ضغطتان للعرض التلقائي" />
+  );
+  return { widths, setWidths, live, widthOf, startResize, resetWidth, sized, resizer };
+}
+
+function ComplaintsTable({ secret, rows, onSaved, onOpen, alertsFor }) {
+  // التفضيلات: الأعمدة المخفية، حجم الخط، عدد الأسطر
+  const [hidden, setHidden] = usePref("hajj_cols_hidden", DEFAULT_HIDDEN);
+  const [fontSize, setFontSize] = usePref("hajj_font_size", 14);
+  const [pageSize, setPageSize] = usePref("hajj_page_size", 50);
+  // عرض الأعمدة بالبكسل (أداة مشتركة مع جدول القرارات)
+  const { widths, setWidths, live, startResize, resetWidth, sized } = useColWidths("hajj_col_widths");
 
   // الفرز (العمود والاتجاه)، الصفحة الحالية، قائمة الأعمدة، الاختيار، والتغيير الجماعي
   const [sort, setSort] = useState({ key: null, dir: 1 });
@@ -5557,6 +5570,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const [all, setAll] = useState([]);                          // كل القرارات بنوعيها (لربط المصادقة)
   const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
   const [objF, setObjF] = useState("");                        // تصفية «⚖️ عليها اعتراض»: "" / yes (قرارات الإدارة)
+  // عرض الأعمدة بالسحب (لكل قسم عروضه على الجهاز)
+  const cw = useColWidths(`hajj_dec_widths_${kind}`);
   // الاعتراضات على قرار إدارة: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف)
   const objectionsOf = a => objectionsFor(requests, a);
   const objTag = a => objectionTag(requests, a);
@@ -5674,6 +5689,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
       <div className="row" style={{ marginBottom: 10 }}>
         {isManager && <button type="button" className="btn" onClick={() => { setForm(blank()); setMsg(null); }}>➕ إضافة قرار</button>}
         {!viewer && <button type="button" className="btn secondary" disabled={!visible.length} onClick={exportXl}>⬇ تصدير Excel</button>}
+        {Object.keys(cw.widths).length > 0 && <button type="button" className="btn secondary sm" onClick={() => cw.setWidths({})} title="إعادة كل الأعمدة إلى عرضها التلقائي">↔ العرض التلقائي</button>}
       </div>
       <div className="row" style={{ flexWrap: "nowrap", marginBottom: 8 }}>
         {seasons.length > 1 && (
@@ -5749,22 +5765,24 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
           <div className="table-wrap">
             <table className="sheet">
               <thead><tr>
-                {Object.keys(DECISION_SORTS).map(k => <th key={k} className="sortable" onClick={() => toggleSort(k)}>{DECISION_SORTS[k].label}{arrow(k)}</th>)}
-                <th>السرية</th>{kind === "complaints" && <th>المصادقة</th>}<th>الموضوع</th><th>الرابط</th>
+                {Object.keys(DECISION_SORTS).map(k => <th key={k} className="sortable" onClick={() => toggleSort(k)}>{cw.sized(k, <>{DECISION_SORTS[k].label}{arrow(k)}</>)}{cw.resizer(k)}</th>)}
+                <th>{cw.sized("secrecy", "السرية")}{cw.resizer("secrecy")}</th>
+                {kind === "complaints" && <th>{cw.sized("approval", "المصادقة")}{cw.resizer("approval")}</th>}
+                <th>{cw.sized("subject", "الموضوع")}{cw.resizer("subject")}</th><th>{cw.sized("url", "الرابط")}{cw.resizer("url")}</th>
               </tr></thead>
               <tbody>
                 {visible.map(d => (
                   <tr key={d.id} className="clickable" onClick={() => setShown(d)}>
-                    <td><b dir="ltr">{d.decision_number}</b></td>
-                    <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
-                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}
+                    <td>{cw.sized("number", <b dir="ltr">{d.decision_number}</b>)}</td>
+                    <td>{cw.sized("date", d.decision_date ? fmtDate(d.decision_date) : "—")}</td>
+                    <td>{cw.sized("title", <><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}
                       {replacedBy[d.id] && <> <span className="kind-badge replaced-tag">⛔ استُبدل بالقرار {replacedBy[d.id].decision_number}</span></>}
-                      {replaces[d.id] && <> <span className="kind-badge">🔁 بديل للقرار {replaces[d.id].map(x => x.decision_number).join("، ")}</span></>}</td>
-                    <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
-                    <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
-                    {kind === "complaints" && <td title={approvalText(d)}>{approvalShort(d)}</td>}
-                    <td className="wrap"><span className="clip">{d.subject || "—"}</span></td>
-                    <td>{d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—"}</td>
+                      {replaces[d.id] && <> <span className="kind-badge">🔁 بديل للقرار {replaces[d.id].map(x => x.decision_number).join("، ")}</span></>}</>)}</td>
+                    <td>{cw.sized("classification", classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—")}</td>
+                    <td>{cw.sized("secrecy", d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—"))}</td>
+                    {kind === "complaints" && <td title={approvalText(d)}>{cw.sized("approval", approvalShort(d))}</td>}
+                    <td className="wrap">{cw.sized("subject", <span className="clip">{d.subject || "—"}</span>)}</td>
+                    <td>{cw.sized("url", d.url ? <a href={d.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}>🔗 فتح</a> : "—")}</td>
                   </tr>
                 ))}
               </tbody>
