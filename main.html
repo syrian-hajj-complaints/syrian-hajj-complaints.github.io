@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-29  «💬 ملاحظة سريعة»: إلغاء ظهور الفقاعة بالوقوف بالمؤشر؛ تظهر بالضغط فقط (.req-card.note-on).
     2026-10-28  ألوان القوائم المنسدلة: «القائمة» (حالية / أرشيف)، «الحالة» بلون الحالة، والتصفية المغيَّرة بحدّ واضح (.is-set / .fi-*).
     2026-10-28  تصفيات الشكاوى والاعتراضات قوائم منسدلة (.filter-bar / .filter-item / .filter-reset).
     2026-10-28  صفحة «🔍 فحص المطابقة» (.check-group / .check-chip).
@@ -492,7 +493,7 @@
   .check-chip { border: 1px solid var(--st); background: var(--st-soft); color: var(--ink); border-radius: 999px; padding: 4px 12px;
                 font: inherit; font-size: 13.5px; cursor: pointer; }
   .check-chip:hover { box-shadow: 0 1px 6px rgba(0,0,0,.12); }
-  /* «💬 ملاحظة سريعة»: أيقونة في زاوية البطاقة، وفقاعة تظهر عند الوقوف بالمؤشر (أو بلمس الأيقونة على الجوال) */
+  /* «💬 ملاحظة سريعة»: أيقونة في زاوية البطاقة، وفقاعة لا تظهر إلا بالضغط على الأيقونة (.note-on) */
   .req-card { position: relative; }
   .req-note-btn { position: absolute; top: 8px; inset-inline-end: 8px; border: 0; background: #fff; border-radius: 50%; width: 30px; height: 30px;
                   font-size: 15px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); z-index: 2; }
@@ -502,7 +503,6 @@
   .req-note-pop::before { content: ""; position: absolute; top: -6px; inset-inline-end: 16px; border: 6px solid transparent; border-top: 0; border-bottom-color: #333132; }
   .req-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .req-note-meta { color: #d9c89e; font-size: 12px; margin-top: 4px; }
-  @media (hover: hover) { .req-card:hover .req-note-pop, .req-card:focus-within .req-note-pop { display: block; } }
   .req-card.note-on .req-note-pop { display: block; }
   /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
   .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
@@ -832,6 +832,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=0ed765a7a4"></script>
+<script src="app.js?v=b35584c32a"></script>
 </body>
 </html>
