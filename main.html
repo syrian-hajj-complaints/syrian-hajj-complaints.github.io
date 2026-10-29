@@ -95,6 +95,7 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-10-29  تنبيه ذهبي (.alert.warn) لتذكير النسخة الاحتياطية في الرئيسية.
     2026-10-29  «💬 ملاحظة سريعة»: إلغاء ظهور الفقاعة بالوقوف بالمؤشر؛ تظهر بالضغط فقط (.req-card.note-on).
     2026-10-28  ألوان القوائم المنسدلة: «القائمة» (حالية / أرشيف)، «الحالة» بلون الحالة، والتصفية المغيَّرة بحدّ واضح (.is-set / .fi-*).
     2026-10-28  تصفيات الشكاوى والاعتراضات قوائم منسدلة (.filter-bar / .filter-item / .filter-reset).
@@ -232,6 +233,8 @@
   .alert.error { background: var(--danger-soft); color: var(--danger); }
   .alert.ok { background: var(--ok-soft); color: var(--ok); }
   .alert.info { background: #eaf2fd; color: #1d5fbf; }
+  /* تنبيه بلون الهوية الذهبي (تذكير النسخة الاحتياطية في الرئيسية) */
+  .alert.warn { background: #e3ddd2; color: #6e5f2e; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
   /* ألوان الحالات: جديد برتقالي، قيد المراجعة أزرق، جاري المتابعة بنفسجي، مغلقة أخضر
      (--st لون الحالة الأساسي، --st-soft خلفيته الفاتحة) */
@@ -832,6 +835,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=cb814ba34f"></script>
+<script src="app.js?v=290ad1fcc6"></script>
 </body>
 </html>

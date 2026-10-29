@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  تذكير النسخة الاحتياطية: وقت آخر تصدير كامل يُحفظ على الجهاز، ويظهر في «💾 التصدير والنسخ المحفوظة»؛ وفي الرئيسية
+//                تنبيه للمدير بعد 7 أيام بلا نسخة مع زر «نسخة الآن» (يفتح «الإعدادات ← 💾 النسخ والتصدير»).
 //    2026-10-29  عارض المواسم السابقة: قرار اللجنة ونوع مصادقته في «النتائج» ببطاقة الطلب (المرتبط أو المشترك)، وعمود «المصادقة»
 //                في قرارات الشكاوى، وشارتا «⛔ استُبدل» و«🔁 بديل» في قرارات الإدارة (من الملف نفسه، كما في الموسم الحالي).
 //    2026-10-29  «💬 ملاحظة سريعة»: الفقاعة لا تظهر بالوقوف بالمؤشر بعد الآن، بل بالضغط على 💬 فقط (وتُغلق بضغطة ثانية أو بالضغط خارجها).
@@ -2678,6 +2680,14 @@ function AdminHome({ me, isManager, rows, go, secret, onOpen }) {
         </form>
       </div>
 
+      {/* تذكير المدير بالنسخة الاحتياطية الأسبوعية (يفتح «الإعدادات ← 💾 النسخ والتصدير») */}
+      {isManager && list.length > 0 && backupDue() && (
+        <Alert type="warn">
+          💾 {lastBackup() ? `مضى أكثر من ${BACKUP_DAYS} أيام على آخر نسخة احتياطية من هذا الجهاز.` : "لم تُحفظ نسخة احتياطية من هذا الجهاز بعد."}{" "}
+          <button type="button" className="btn sm" onClick={() => { storeSet(localStorage, "hajj_settings_tab", JSON.stringify("backup")); go("settings"); }}>نسخة الآن</button>
+        </Alert>
+      )}
+
       <div className="home-tiles">
         <Tile icon="📅" title="المطلوب اليوم" count={dueList.length} tone={dueList.length > 0 ? "hot" : "ok"} onClick={() => go("today")} sub={dueList.length > 0 ? "اضغط للمتابعة" : "لا شيء متأخر"} />
         <Tile icon="🆕" title="شكاوى جديدة" count={fresh} tone={fresh > 0 ? "warm" : ""} onClick={() => go("complaints", { filter: "جديد" })} sub="لم تُفتح بعد" />
@@ -3269,7 +3279,7 @@ function AdminSettings({ secret, rows, reload }) {
   // نسخة احتياطية قبل التصفير: نفس التصدير الكامل إلى Excel
   async function backup() {
     setBusy(true); setMsg(null);
-    try { await exportAllToExcel(secret, rows || []); }
+    try { await exportAllToExcel(secret, rows || []); markBackup(); }
     catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
     setBusy(false);
   }
@@ -3918,6 +3928,12 @@ function QuickLinksCard({ secret }) {
 }
 
 // بطاقة «التصدير والنسخ المحفوظة» (في الإعدادات فقط): تصدير كل الجداول لموسم مختار، واستعراض ملف Excel سابق
+// تذكير النسخة الاحتياطية: وقت آخر تصدير كامل على هذا الجهاز؛ يظهر التنبيه في الرئيسية للمدير بعد 7 أيام بلا نسخة
+const BACKUP_KEY = "hajj_last_backup", BACKUP_DAYS = 7;
+const markBackup = () => storeSet(localStorage, BACKUP_KEY, new Date().toISOString());
+const lastBackup = () => { const t = Date.parse(storeGet(localStorage, BACKUP_KEY) || ""); return isNaN(t) ? null : new Date(t); };
+const backupDue = () => { const t = lastBackup(); return !t || Date.now() - t.getTime() > BACKUP_DAYS * 86400000; };
+
 function ExportCard({ secret, rows }) {
   // الموسم المختار ("" = كل المواسم)، حالة التصدير، نافذة الاستعراض، والرسالة
   const seasons = [...new Set((rows || []).map(c => c.season).filter(Boolean))].sort().reverse();
@@ -3929,16 +3945,23 @@ function ExportCard({ secret, rows }) {
   // التصدير: الشكاوى والجلسات والإحالات للموسم المختار (مقفولة للعرض فقط)
   async function exportAll() {
     setBusy(true); setMsg(null);
-    try { await exportAllToExcel(secret, (rows || []).filter(c => !season || c.season === season), null, { season }); }
+    try { await exportAllToExcel(secret, (rows || []).filter(c => !season || c.season === season), null, { season }); markBackup(); setLast(lastBackup()); }
     catch (e) { setMsg({ type: "error", text: e.message || NET_ERR }); }
     setBusy(false);
   }
+  // وقت آخر نسخة على هذا الجهاز
+  const [last, setLast] = useState(lastBackup);
 
   // العرض: اختيار الموسم، زر التصدير، وزر الاستعراض
   return (
     <div className="card">
       <h2>💾 التصدير والنسخ المحفوظة</h2>
-      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بأربع أوراق: الشكاوى، الجلسات، الإحالات، قرارات الشكاوى — مقفول للعرض فقط. احفظ نسخة أسبوعياً.</p>
+      <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>ملف Excel واحد بأربع أوراق: الشكاوى، الجلسات، الإحالات، قرارات الشكاوى — مقفول للعرض فقط. احفظ نسخة أسبوعياً
+        في مجلد على Google Drive؛ وهي أيضاً ما تُستعاد منه المنصة إن توقف Supabase (الخطوات في README).</p>
+      {/* آخر نسخة على هذا الجهاز، وتنبيه إن مضى أسبوع */}
+      <p style={{ fontSize: 14 }} className={backupDue() ? "" : "muted"}>
+        {last ? `🕒 آخر نسخة من هذا الجهاز: ${fmtDateTime(last.toISOString())}` : "🕒 لم تُحفظ نسخة من هذا الجهاز بعد."}
+        {backupDue() && <b> — حان وقت نسخة جديدة.</b>}</p>
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
       <div className="row">
         <select value={season} onChange={e => setSeason(e.target.value)} style={{ width: "auto", minWidth: 150 }} aria-label="الموسم">
