@@ -123,6 +123,7 @@
 --    2026-10-28  القسم 66: القرار المشترك لأكثر من طلب (complaints.linked_decision_id / linked_decision_ref، admin_link_request_decision)؛
 --                كلمة مرور الأدمن الأولى صارت القسم 67.
 --    2026-10-28  القسم 67: نوع المصادقة (approval_kind: كاملة / مع تعديل / عدم مصادقة، approval_note)؛ كلمة مرور الأدمن الأولى صارت القسم 68.
+--    2026-10-29  القسم 68: التقارير برقم القرار المرتبط وهل الطلب محق (للقرار المستبدل بعد الاعتراض)؛ كلمة مرور الأدمن الأولى صارت القسم 69.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -7741,7 +7742,37 @@ grant execute on function public.admin_set_decision_approval(text, uuid, text, t
 grant execute on function public.admin_restore_season(text, text, json, json, json, json)   to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 68) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 68) التقارير: رقم قرار اللجنة المرتبط بكل طلب (linked_decision_ref) وهل الطلب محق، لتعرف صفحة التقارير قرار الإدارة الذي
+--     استُبدل بعد اعتراض حكمه «إلغاء» أو «تعديل» (كما في لوحة الإدارة)
+--     يحتاج الأقسام حتى 67 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة
+-- ---------------------------------------------------------------------
+drop function if exists public.viewer_report(text, timestamptz, timestamptz, text);
+create function public.viewer_report(p_code text, p_from timestamptz, p_to timestamptz, p_season text)
+returns table (complaint_number text, season text, status text, complainant_name text, complainant_role text,
+               accused_name text, accused_role text, title text, classification text,
+               subject text, result text, received_date timestamptz, closed_date timestamptz, kind text, decision_ref text,
+               obj_form text, obj_merit text, accused_key text, final_result text, linked_decision_ref text, justified text)
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('إدارة', p_code) is null then
+    return;
+  end if;
+  return query
+    select c.complaint_number, c.season, c.status, c.complainant_name, c.complainant_role,
+           c.accused_name, c.accused_role, c.title, c.classification,
+           c.subject, c.result, c.received_date, c.closed_date, c.kind, c.decision_ref, c.obj_form, c.obj_merit, c.accused_key, c.final_result,
+           c.linked_decision_ref, c.justified
+    from public.complaints c
+    where (p_from is null or c.received_date >= p_from)
+      and (p_to   is null or c.received_date <  p_to)
+      and (coalesce(p_season, '') = '' or c.season = p_season)
+    order by c.received_date desc;
+end $$;
+
+grant execute on function public.viewer_report(text, timestamptz, timestamptz, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 69) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

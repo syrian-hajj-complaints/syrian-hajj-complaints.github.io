@@ -84,6 +84,9 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  القرار المستبدل بعد الاعتراض (قرارات الإدارة): إن كان حكم الاعتراض «إلغاء» أو «تعديل» وقرار اللجنة مصادَقاً عليه بقرار
+//                إدارة آخر، يُخفى القرار الأول افتراضياً (شارة «⛔ استُبدل بالقرار …» وتصفية «🔁 إظهار القرارات المستبدلة»)، وعلى
+//                قرار المصادقة «🔁 بديل للقرار …»؛ وفي التفاصيل انتقال بين القرارين؛ وفي التقارير كذلك (القسم 68).
 //    2026-10-29  فتح أكثر من طلب معاً: زر «↗️ نافذة جديدة» في رأس بطاقة الطلب، وCtrl+ضغطة (أو زر الفأرة الأوسط) على بطاقة أو صف
 //                يفتح الطلب في تبويب جديد (رابط ‎?open=الرقم#/admin يفتح الطلب عند التحميل).
 //    2026-10-28  تمييز القوائم المنسدلة في «الشكاوى» و«الاعتراضات» بالألوان: «القائمة» أزرق للحالية وذهبي للأرشيف، «الحالة» بلون
@@ -796,6 +799,8 @@ const REQ_DEC_CLASS = c => isDecObj(c) ? "اعتراضات" : "شكاوى";
 // قرار الطلب من قائمة القرارات: المرتبط به (القسم 66، ويكون مشتركاً)، أو المسجَّل منه (64)، أو المسجَّل يدوياً برقمه في موسمه
 const requestDecision = (all, c) => (all || []).find(d => c.linked_decision_id && d.id === c.linked_decision_id)
   || (all || []).find(d => d.request_id === c.id)
+  // (صفحة التقارير: برقم القرار المرتبط في موسم الطلب)
+  || (all || []).find(d => c.linked_decision_ref && (d.kind || "complaints") === "complaints" && d.decision_number === c.linked_decision_ref && (!c.season || d.season === c.season))
   || (all || []).find(d => (d.kind || "complaints") === "complaints" && d.decision_number === complaintRef(c) && d.season === c.season);
 // نوع المصادقة (القسم 67): «كاملة» / «مع تعديل» / «عدم مصادقة»، وفارغ = بانتظار المصادقة (القرارات القديمة المصادَقة = كاملة)
 const APPROVAL = { "كاملة": ["✅", "صودق"], "مع تعديل": ["✏️", "صودق مع تعديل"], "عدم مصادقة": ["❌", "لم يُصادق"] };
@@ -5555,6 +5560,20 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   // الاعتراضات على قرار إدارة: «اعتراض على قرار إداري» برقمه (من موسمه إن عُرف)
   const objectionsOf = a => objectionsFor(requests, a);
   const objTag = a => objectionTag(requests, a);
+  // القرار المستبدل بعد الاعتراض (قرارات الإدارة): اعتراض عليه حكمه موضوعاً «إلغاء» أو «تعديل»، وقرار اللجنة فيه مصادَق عليه
+  // (كاملة أو مع تعديل) بقرار إدارة آخر ← القرار الأول «استُبدل» بقرار المصادقة؛ ويُخفى من القائمة إلا بتصفية «إظهار المستبدلة»
+  const [showReplaced, setShowReplaced] = useState(false);
+  const replacedBy = {}, replaces = {};
+  if (kind === "admin") all.filter(a => a.kind === "admin").forEach(a => {
+    objectionsFor(requests, a).filter(r => r.obj_merit === "إلغاء" || r.obj_merit === "تعديل").forEach(r => {
+      const d = requestDecision(all, r);
+      if (!d || !["كاملة", "مع تعديل"].includes(approvalKind(d)) || !d.approval_ref) return;
+      const b = all.find(x => x.kind === "admin" && x.decision_number === d.approval_ref && x.season === a.season)
+             || all.find(x => x.kind === "admin" && x.decision_number === d.approval_ref);
+      if (!b || b.id === a.id) return;
+      replacedBy[a.id] = b; (replaces[b.id] = replaces[b.id] || []).push(a);
+    });
+  });
 
   // جلب القرارات
   const load = useCallback(async () => {
@@ -5577,7 +5596,8 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
     (!range.from || (d.decision_date || "") >= range.from) &&
     (!range.to || ((d.decision_date || "") !== "" && d.decision_date <= range.to)) &&
     (!appr || ({ yes: "كاملة", mod: "مع تعديل", rej: "عدم مصادقة", no: "" })[appr] === approvalKind(d)) &&
-    (!objF || objectionsOf(d).length > 0));
+    (!objF || objectionsOf(d).length > 0) &&
+    (kind !== "admin" || showReplaced || !replacedBy[d.id]));
   // القرار يُحسب في كل تصنيف من تصنيفاته
   const count = k => base.filter(d => !k || classesOf(d).includes(k)).length;
   const visible = base.filter(d => !klass || classesOf(d).includes(klass)).sort((a, b) =>
@@ -5706,6 +5726,13 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
             <button key={k} className={appr === k ? "active" : ""} onClick={() => setAppr(k)}>{t}</button>)}
         </div>
       )}
+      {/* القرارات المستبدلة بعد الاعتراض: مخفية افتراضياً */}
+      {kind === "admin" && Object.keys(replacedBy).length > 0 && (
+        <div className="chips">
+          <button className={showReplaced ? "active" : ""} onClick={() => setShowReplaced(v => !v)}>
+            🔁 {showReplaced ? "إخفاء" : "إظهار"} القرارات المستبدلة ({Object.keys(replacedBy).length})</button>
+        </div>
+      )}
       {kind === "admin" && (list || []).some(d => objectionsOf(d).length) && (
         <div className="chips">
           {[["", "كل القرارات"], ["yes", `⚖️ عليها اعتراض (${(list || []).filter(d => objectionsOf(d).length).length})`]].map(([k, t]) =>
@@ -5730,7 +5757,9 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   <tr key={d.id} className="clickable" onClick={() => setShown(d)}>
                     <td><b dir="ltr">{d.decision_number}</b></td>
                     <td>{d.decision_date ? fmtDate(d.decision_date) : "—"}</td>
-                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}</td>
+                    <td><b>{d.title}</b>{kind === "admin" && objectionsOf(d).length > 0 && <> <span className="kind-badge">{objTag(d)}</span></>}
+                      {replacedBy[d.id] && <> <span className="kind-badge replaced-tag">⛔ استُبدل بالقرار {replacedBy[d.id].decision_number}</span></>}
+                      {replaces[d.id] && <> <span className="kind-badge">🔁 بديل للقرار {replaces[d.id].map(x => x.decision_number).join("، ")}</span></>}</td>
                     <td>{classesOf(d).length ? classesOf(d).map(k => <span key={k} className="badge dec-tag" style={{ marginInlineEnd: 4 }}>{k}</span>) : "—"}</td>
                     <td>{d.secrecy && d.secrecy !== "عادي" ? <span className="badge secrecy-tag">🔒 {d.secrecy}</span> : (d.secrecy || "—")}</td>
                     {kind === "complaints" && <td title={approvalText(d)}>{approvalShort(d)}</td>}
@@ -5769,6 +5798,19 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                   </div>
                 );
               })()}
+              {/* الاستبدال بعد الاعتراض: الضغط على رقم القرار الآخر يفتحه */}
+              {kind === "admin" && replacedBy[shown.id] && (
+                <div className="approval-box replaced-box">
+                  <b>⛔ استُبدل بعد الاعتراض بالقرار </b>
+                  <a href="#" onClick={e => { e.preventDefault(); setShown(replacedBy[shown.id]); }}>{replacedBy[shown.id].decision_number} — {replacedBy[shown.id].title}</a>
+                </div>
+              )}
+              {kind === "admin" && replaces[shown.id] && (
+                <div className="approval-box ok">
+                  <b>🔁 بديل بعد الاعتراض للقرار: </b>
+                  {replaces[shown.id].map(x => <div key={x.id}><a href="#" onClick={e => { e.preventDefault(); setShown(x); }}>{x.decision_number} — {x.title}</a></div>)}
+                </div>
+              )}
               {/* الطلبات التي صدر فيها هذا القرار (قرار مشترك لأكثر من طلب)، والضغط يفتح الطلب */}
               {kind === "complaints" && decisionRequests(requests, shown).length > 0 && (
                 <div className="approval-box">
