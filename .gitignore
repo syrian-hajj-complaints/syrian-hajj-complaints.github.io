@@ -1,3 +1,5 @@
 # ملفات Word المؤقتة (تظهر أثناء فتح المستند)
 ~$*
 SUMMARY.local.md
+# إعدادات Claude Code الشخصية (أذونات هذا الجهاز)
+.claude/settings.local.json

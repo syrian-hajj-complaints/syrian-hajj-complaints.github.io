@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-10-29  عارض المواسم السابقة: قرار اللجنة ونوع مصادقته في «النتائج» ببطاقة الطلب (المرتبط أو المشترك)، وعمود «المصادقة»
+//                في قرارات الشكاوى، وشارتا «⛔ استُبدل» و«🔁 بديل» في قرارات الإدارة (من الملف نفسه، كما في الموسم الحالي).
 //    2026-10-29  «💬 ملاحظة سريعة»: الفقاعة لا تظهر بالوقوف بالمؤشر بعد الآن، بل بالضغط على 💬 فقط (وتُغلق بضغطة ثانية أو بالضغط خارجها).
 //    2026-10-29  تغيير عرض الأعمدة بالسحب في «📑 قرارات الشكاوى» و«🏛️ قرارات الإدارة» (لكل قسم عروضه على الجهاز، و«↔ العرض
 //                التلقائي»)؛ أداة مشتركة useColWidths مع جدول الطلبات.
@@ -6940,7 +6942,8 @@ function ReportsPage({ code, viewerName }) {
 // ---------------------------------------------------------------------
 // بطاقة شكوى للاطلاع فقط، بشكل بطاقة لوحة الإدارة: الرأس، المعلومات الأساسية، العنوان والنص والروابط،
 // ثم تبويبات الجلسات والنتائج والاعتراض والمتابعة — بلا أي تعديل
-function ComplaintView({ c, sessions }) {
+// decisions (اختياري، في عارض المواسم السابقة): قرارات الشكاوى، لإظهار قرار الطلب ونوع مصادقته في «النتائج»
+function ComplaintView({ c, sessions, decisions }) {
   const [tab, setTab] = useState("sessions");
   const [openSess, setOpenSess] = useState(null);   // الجلسة المفتوحة لعرض موضوعها
   const sess = [...(sessions || [])].sort((a, b) => new Date(b.session_at) - new Date(a.session_at));
@@ -7016,6 +7019,17 @@ function ComplaintView({ c, sessions }) {
       {tab === "results" && (
         <div className="card-pane">
           <ResultBox c={c} />
+          {/* قرار الطلب (المرتبط أو المشترك) ونوع مصادقته؛ الطلب غير المحق بلا قرار */}
+          {decisions && c.justified !== "غير محق" && (() => {
+            const d = requestDecision(decisions, c), ref = (d && d.decision_number) || c.linked_decision_ref;
+            return ref ? (
+              <div className="links-line" style={{ marginTop: 10 }}>
+                <b>📜 قرار اللجنة رقم <span dir="ltr">{ref}</span>:</b>
+                <span>{d ? approvalText(d) : <span className="muted">لم يُعثر عليه في قرارات هذا الموسم</span>}</span>
+                {d && d.url && <a className="link-chip" href={d.url} target="_blank" rel="noopener">فتح ↗</a>}
+              </div>
+            ) : null;
+          })()}
           <div className="field-label" style={{ marginTop: 12 }}>👤 النتيجة التي يراها المشتكي</div>
           <div className="subject">{c.complainant_result || none}</div>
           <div className="field-label">⚖️ النتيجة التي يراها المعترض</div>
@@ -7097,7 +7111,24 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
     .filter(c => (!st || c.status === st) &&
       (!term || [c.complaint_number, c.title, c.complainant_name, c.accused_name, c.subject, c.result].some(v => (v || "").includes(term))))
     .sort((a, b) => String(b.complaint_number).localeCompare(String(a.complaint_number), "ar", { numeric: true }));
-  const decisions = book ? (tab === "admindecisions" ? book.admindecisions : book.decisions) || [] : [];
+  // قرارات الملف بموسمه ونوعها، و«تمت المصادقة» من نص الملف (نعم / لا) إلى قيمة منطقية
+  const fileSeason = book && (book.complaints.find(c => c.season) || {}).season;
+  // (request_id فارغ: لا معرّفات في الملف، فيُعرف قرار الطلب برقمه المرتبط أو برقم الطلب)
+  const asDec = (d, kind) => ({ ...d, kind, season: d.season || fileSeason, request_id: null,
+    approved: ["نعم", "true", "1", "TRUE"].includes(String(d.approved ?? "").trim()) });
+  const comDecs = book ? (book.decisions || []).map(d => asDec(d, "complaints")) : [];
+  const admDecs = book ? (book.admindecisions || []).map(d => asDec(d, "admin")) : [];
+  const decisions = tab === "admindecisions" ? admDecs : comDecs;
+  // القرار المستبدل بعد الاعتراض (كما في «🏛️ قرارات الإدارة»): اعتراض حكمه موضوعاً «إلغاء» أو «تعديل»، وقرار اللجنة فيه
+  // مصادَق عليه (كاملة أو مع تعديل) بقرار إدارة آخر ← «⛔ استُبدل» على الأول و«🔁 بديل» على الثاني (برقم القرار)
+  const replacedBy = {}, replaces = {};
+  admDecs.forEach(a => objectionsFor(book.complaints, a).filter(r => r.obj_merit === "إلغاء" || r.obj_merit === "تعديل").forEach(r => {
+    const d = requestDecision(comDecs, r);
+    if (!d || !["كاملة", "مع تعديل"].includes(approvalKind(d)) || !d.approval_ref) return;
+    const b = admDecs.find(x => x.decision_number === d.approval_ref);
+    if (!b || b.decision_number === a.decision_number) return;
+    replacedBy[a.decision_number] = b; (replaces[b.decision_number] = replaces[b.decision_number] || []).push(a);
+  }));
 
   // العرض: نافذة فيها العنوان ورابط Google، ثم تبويبا الشكاوى والقرارات، ثم بطاقة الشكوى المفتوحة
   return (
@@ -7133,7 +7164,7 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
               <div className="card" style={{ padding: 0 }}>
                 <div className="table-wrap" style={{ maxHeight: "none" }}>
                   <table className="stack">
-                    <thead><tr><th>رقم القرار</th><th>التاريخ</th><th>العنوان</th><th>التصنيف</th><th>الرابط</th></tr></thead>
+                    <thead><tr><th>رقم القرار</th><th>التاريخ</th><th>العنوان</th><th>التصنيف</th>{tab === "decisions" && <th>المصادقة</th>}<th>الرابط</th></tr></thead>
                     <tbody>
                       {decisions.map((d, i) => (
                         <tr key={i} style={{ cursor: "default" }}>
@@ -7148,8 +7179,12 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
                                     <a href="#" dir="ltr" onClick={e => { e.preventDefault(); setOpen(r); }}>{r.complaint_number}</a></React.Fragment>))}
                                 </div></>
                             )}
+                            {replacedBy[d.decision_number] && <> <span className="kind-badge replaced-tag">⛔ استُبدل بالقرار {replacedBy[d.decision_number].decision_number}</span></>}
+                            {tab === "admindecisions" && replaces[d.decision_number] && <> <span className="kind-badge">🔁 بديل للقرار {replaces[d.decision_number].map(x => x.decision_number).join("، ")}</span></>}
                             {d.subject && <div className="muted" style={{ fontSize: 13 }}>{d.subject}</div>}</td>
                           <td data-label="التصنيف">{d.classification || "—"}</td>
+                          {/* نوع المصادقة وما صودق عليه (قرارات الشكاوى) */}
+                          {tab === "decisions" && <td data-label="المصادقة" className="wrap">{approvalText(d)}</td>}
                           <td data-label="الرابط">{d.url ? <a href={d.url} target="_blank" rel="noopener">فتح ↗</a> : "—"}</td>
                         </tr>
                       ))}
@@ -7165,7 +7200,7 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
           <div className="modal-back" {...backdrop(() => setOpen(null))}>
             <div className="modal" onClick={e => e.stopPropagation()}>
               <div className="modal-close"><button className="btn sm" onClick={() => setOpen(null)}>✕ إغلاق</button></div>
-              <ComplaintView c={open} sessions={book.sessions.filter(s => s.complaint_number === open.complaint_number)} />
+              <ComplaintView c={open} sessions={book.sessions.filter(s => s.complaint_number === open.complaint_number)} decisions={comDecs} />
             </div>
           </div>
         )}
