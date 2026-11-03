@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-11-03  قائمة «الموسم» في «قرارات الشكاوى» و«قرارات الإدارة»: من مواسم كل القرارات والمواسم المفتوحة في القاعدة، فتظهر
+//                في قرارات الإدارة أيضاً (مع «كل المواسم»)؛ واختيار موسم فيها يجعله موسم القرار الجديد تلقائياً.
 //    2026-11-03  خانة «الموسم» في نموذج القرار تظهر دائماً (مقفلة بموسم واحد مفتوح، مع شرح فتح الموسم السابق)، وتُجلب المواسم
 //                من جديد كلما فُتح النموذج.
 //    2026-11-03  «➕ اعتراض جديد» (على قرار إداري): نص الاعتراض بالصوت 🎤 أيضاً (VoiceArea) كنموذج الشكوى.
@@ -5647,6 +5649,7 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const [all, setAll] = useState([]);                          // كل القرارات بنوعيها (لربط المصادقة)
   const [appr, setAppr] = useState("");                        // تصفية المصادقة: "" / yes / no (قرارات الشكاوى)
   const [endF, setEndF] = useState("");                        // تصفية توثيق مدير الإدارة: "" / done / wait / no / diff (القسم 70)
+  const [openSeasons, setOpenSeasons] = useState(null);         // المواسم المفتوحة في القاعدة {current, list} (للقائمة وخانة الموسم)
   const [objF, setObjF] = useState("");                        // تصفية «⚖️ عليها اعتراض»: "" / yes (قرارات الإدارة)
   // عرض الأعمدة بالسحب (لكل قسم عروضه على الجهاز)
   const cw = useColWidths(`hajj_dec_widths_${kind}`);
@@ -5681,8 +5684,9 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const term = q.trim();
   const inField = d => field === "number" ? [d.decision_number] : field === "title" ? [d.title] : field === "subject" ? [d.subject]
     : [d.decision_number, d.title, d.subject, d.classification, d.approval_ref];
-  // المواسم الموجودة في القرارات (تظهر القائمة إن كان هناك أكثر من موسم، مثل موسم مفتوح للتعديل)
-  const seasons = [...new Set((list || []).map(d => d.season).filter(Boolean))].sort().reverse();
+  // المواسم: مواسم كل القرارات (بنوعيها) + المواسم المفتوحة في القاعدة؛ تظهر القائمة إن كان هناك أكثر من موسم
+  // (فتظهر في «قرارات الإدارة» أيضاً وإن لم يكن فيها بعد قرار لموسم سابق مفتوح)
+  const seasons = [...new Set([...all.map(d => d.season), ...((openSeasons && openSeasons.list) || [])].filter(Boolean))].sort().reverse();
   const base = (list || []).filter(d =>
     (!season || d.season === season) &&
     (!term || inField(d).some(v => (v || "").includes(term))) &&
@@ -5714,11 +5718,11 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "",
                          classes: classesOf(d), secrecy: d.secrecy || "عادي", approved: !!d.approved, approval_ref: d.approval_ref || "",
                          season: d.season || "", request_id: d.request_id || null });
-  // المواسم المفتوحة في القاعدة (الحالي + السابقة المفتوحة للتعديل)، تُجلب من جديد كلما فُتح النموذج لخانة «الموسم»
-  const [openSeasons, setOpenSeasons] = useState(null);
+  // المواسم المفتوحة في القاعدة (الحالي + السابقة المفتوحة للتعديل): تُجلب عند فتح الصفحة (لقائمة المواسم) ومن جديد كلما فُتح
+  // النموذج (لخانة «الموسم»)
   const formOpen = !!form;
   useEffect(() => {
-    if (!formOpen || viewer) return;
+    if (viewer) return;
     sb.rpc("admin_get_season", { p_secret: secret }).then(({ data }) => {
       if (!data) return;
       const list = [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse();
