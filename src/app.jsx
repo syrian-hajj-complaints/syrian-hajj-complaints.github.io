@@ -84,6 +84,7 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-11-03  «➕ اعتراض جديد» (على قرار إداري): نص الاعتراض بالصوت 🎤 أيضاً (VoiceArea) كنموذج الشكوى.
 //    2026-11-02  «➕ إضافة شكوى إلى موسم …»: نص الشكوى بالصوت 🎤 أيضاً (VoiceArea) كنموذج الشكوى الجديدة.
 //    2026-10-29  توثيق مدير الإدارة لقرارات اللجنة (القسم 70؛ القرار الورقي يبقى الأساس): «✍️ يوثّق القرارات» لكلمة مرور إدارة في
 //                «كلمات مرور الإدارة»؛ تبويب «✍️ للتوثيق» في التقارير (EndorseBox): موافق / مع تعديل / غير موافق باسمه ووقته، وسجل
@@ -2536,7 +2537,9 @@ function AddDecisionObjection({ secret, onClose, onDone }) {
                 {CLASSIFICATIONS.map(x => <option key={x}>{x}</option>)}
               </select>
             </Field>
-            <Field label="نص الاعتراض" required full><textarea style={{ minHeight: 160 }} value={f.subject} onChange={set("subject")} maxLength={5000} /></Field>
+            {/* نص الاعتراض بالكتابة أو بالصوت 🎤 (كنموذج الشكوى) */}
+            <VoiceArea label="نص الاعتراض *" hint={`${f.subject.length} / 5000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={160} maxLength={5000}
+              placeholder="اكتب نص الاعتراض… أو اضغط 🎤 وتحدّث" value={f.subject} onChange={v => { setF(x => ({ ...x, subject: v })); setErr(""); }} onError={setErr} />
             <LinksField value={f.links} onChange={l => setF(x => ({ ...x, links: l }))} hint="اختياري — حتى رابطين، مثل صورة الاعتراض الورقي أو القرار" />
           </div>
           <datalist id="roles-list">{ROLES.map(r => <option key={r} value={r} />)}</datalist>
