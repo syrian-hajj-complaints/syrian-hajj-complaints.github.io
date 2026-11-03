@@ -84,6 +84,10 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-11-03  «🚩 علامة متابعة» (القسم 72، يضعها المدير): 🔴 عاجل / 🟡 للمتابعة / 🟢 للمراجعة — قائمة صغيرة في زاوية البطاقة
+//                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
+//                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
+//                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
 //    2026-11-03  «➕ اعتراض جديد»: خانة «الموسم» للمدير (القسم 71) — اعتراض قديم يُدخل في موسم سابق مفتوح للتعديل برقم من تسلسل
 //                اعتراضاته (1446-ع-001) بدل الموسم الحالي؛ والافتراضي الموسم السابق المختار في قائمة الاعتراضات.
 //    2026-11-03  قائمة «الموسم» في «قرارات الشكاوى» و«قرارات الإدارة»: من مواسم كل القرارات والمواسم المفتوحة في القاعدة، فتظهر
@@ -1149,7 +1153,9 @@ const XL_SHEETS = [
     ["kind", "نوع الطلب"], ["decision_ref", "رقم القرار المعترض عليه"], ["decision_date", "تاريخ القرار المعترض عليه", "day"], ["referred_by", "الجهة المحيلة"],
     ["obj_form", "الحكم شكلاً"], ["obj_merit", "الحكم موضوعاً"], ["accused_key", "المشتكى عليه الموحّد"], ["final_result", "نتيجة الشكوى (قرار اللجنة)"],
     ["archived_at", "تاريخ الأرشفة", true], ["card_note", "ملاحظة سريعة"], ["card_note_by", "كاتب الملاحظة"], ["card_note_at", "وقت الملاحظة", true],
-    ["justified", "هل الطلب محق؟"], ["linked_decision_ref", "رقم القرار (المشترك)"]] },
+    ["justified", "هل الطلب محق؟"], ["linked_decision_ref", "رقم القرار (المشترك)"],
+    // علامة المتابعة (القسم 72)
+    ["follow_flag", "علامة المتابعة"], ["follow_flag_by", "واضع العلامة"], ["follow_flag_at", "وقت العلامة", true]] },
   { name: "الجلسات", key: "sessions", marker: "تاريخ ووقت الجلسة", cols: [
     ["complaint_number", "رقم الشكوى"], ["complainant_name", "المشتكي"], ["session_at", "تاريخ ووقت الجلسة", true], ["title", "عنوان الجلسة"],
     ["location", "المكان"], ["topic", "موضوع الجلسة"], ["opinion", "رأي لجنة الشكاوى والصلح"], ["referred_to", "مُحالة إلى"], ["result", "نتيجة الجلسة"], ["status", "حالة الشكوى"], ["links", "روابط الجلسة"]] },
@@ -2885,10 +2891,19 @@ function NameRole({ name, role }) {
   return <span>{name}{role && <small className="role-tag">{role}</small>}</span>;
 }
 
+// «🚩 علامة متابعة» (القسم 72، يضعها المدير): الاسم، الرمز، وصنف اللون على البطاقة
+const FLAGS = [["عاجل", "🔴", "flag-red"], ["للمتابعة", "🟡", "flag-yellow"], ["للمراجعة", "🟢", "flag-green"]];
+const flagOf = c => FLAGS.find(f => f[0] === (c && c.follow_flag));
+const flagTitle = c => { const f = flagOf(c); return f ? `🚩 ${f[0]}${c.follow_flag_by ? ` — ${c.follow_flag_by}` : ""}${c.follow_flag_at ? `، ${fmtDateTime(c.follow_flag_at)}` : ""}` : ""; };
+
 // تعريف الأعمدة: المفتاح، العنوان، قيمة الفرز، النص (للتصدير)، والعرض داخل الخلية
 const muted = v => v || <span className="muted">—</span>;
 const COLUMNS = [
-  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <><ReqNo n={c.complaint_number} />{c.card_note && <span title={c.card_note} style={{ cursor: "help" }}> 💬</span>}</> },
+  { key: "number", label: "الرقم", sort: c => c.complaint_number, text: c => c.complaint_number, cell: c => <>{flagOf(c) && <span title={flagTitle(c)}>{flagOf(c)[1]} </span>}<ReqNo n={c.complaint_number} />{c.card_note && <span title={c.card_note} style={{ cursor: "help" }}> 💬</span>}</> },
+  // الملاحظة السريعة (القسم 63) وعلامة المتابعة (القسم 72) كعمودين (مخفيان افتراضياً؛ يُظهَران من قائمة الأعمدة)
+  { key: "note", label: "💬 الملاحظة السريعة", sort: c => c.card_note, text: c => c.card_note, wrap: true, cell: c => c.card_note ? <span className="clip">{c.card_note}</span> : muted() },
+  { key: "flag", label: "🚩 العلامة", sort: c => c.follow_flag ? FLAGS.findIndex(f => f[0] === c.follow_flag) : 9, text: c => c.follow_flag,
+    cell: c => flagOf(c) ? <span title={flagTitle(c)}>{flagOf(c)[1]} {c.follow_flag}</span> : muted() },
   { key: "date", label: "التاريخ", sort: c => new Date(c.received_date).getTime(), text: c => xlDate(c.received_date), cell: c => fmtDate(c.received_date) },
   { key: "title", label: "العنوان", sort: c => c.title, text: c => c.title, cell: c => c.title ? <b>{c.title}</b> : muted() },
   { key: "name", label: "المشتكي", sort: c => c.complainant_name, text: c => withRole(c.complainant_name, c.complainant_role), cell: c => <NameRole name={c.complainant_name} role={c.complainant_role} /> },
@@ -2918,7 +2933,7 @@ const COLUMNS = [
     cell: c => c.objection_at ? <span className="badge st-review">⚖️ {fmtDate(c.objection_at)}</span> : c.objection_code ? <span className="muted">بانتظار الاعتراض</span> : muted() },
 ];
 // الأعمدة المخفية افتراضياً (يمكن إظهارها من قائمة الأعمدة)
-const DEFAULT_HIDDEN = ["result", "cresult", "aresult", "tracking", "objection"];
+const DEFAULT_HIDDEN = ["result", "cresult", "aresult", "tracking", "objection", "note", "flag"];
 
 // تفضيلات الجدول المحفوظة على الجهاز: الأعمدة المخفية، حجم الخط، عدد الأسطر
 function usePref(key, initial) {
@@ -4364,28 +4379,56 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
 // بطاقات الطلبات (عرض مبسّط بدل الجدول): الرقم والحالة، العنوان، المشتكي والمشتكى عليه، التصنيف، والنتيجة؛
 // لون البطاقة من حالتها؛ الضغط يفتح الطلب؛ 48 بطاقة ثم «عرض المزيد»
 // alertsFor (اختياري): تنبيهات كل طلب تظهر في أعلى بطاقته (في «المطلوب اليوم»)
-// «💬 ملاحظة سريعة» (القسم 63): فقاعة لا تظهر إلا بالضغط على 💬، وتُغلق بضغطة ثانية أو بالضغط في أي مكان آخر
-function RequestCards({ rows, onOpen, alertsFor }) {
+// «💬 ملاحظة سريعة» (القسم 63): فقاعة لا تظهر إلا بالضغط على 💬، وتُغلق بضغطة ثانية أو بالضغط في أي مكان آخر؛
+// showNotes: تظهر الملاحظة داخل كل البطاقات معاً بدل الفقاعة
+// «🚩 علامة متابعة» (القسم 72): لونها على البطاقة للجميع؛ والمدير يضعها أو يزيلها من قائمة صغيرة (يحتاج secret وonSaved)
+function RequestCards({ rows, onOpen, alertsFor, showNotes = false, secret, onSaved }) {
   const [shown, setShown] = useState(48);
   const [noteOpen, setNoteOpen] = useState(null);   // البطاقة التي فُتحت فقاعتها بالضغط على 💬
+  const [flagOpen, setFlagOpen] = useState(null);   // البطاقة التي فُتحت قائمة علامتها
+  const [flagErr, setFlagErr] = useState("");
   useEffect(() => {
-    if (!noteOpen) return;
-    const close = () => setNoteOpen(null);
+    if (!noteOpen && !flagOpen) return;
+    const close = () => { setNoteOpen(null); setFlagOpen(null); };
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
-  }, [noteOpen]);
+  }, [noteOpen, flagOpen]);
+  const canFlag = ADMIN_CTX.manager && secret && onSaved;
+  // وضع العلامة أو إزالتها (الفارغ يزيلها)
+  async function setFlag(c, flag) {
+    setFlagOpen(null); setFlagErr("");
+    const { data, error } = await sb.rpc("admin_set_follow_flag", { p_secret: secret, p_id: c.id, p_flag: flag });
+    if (error || !data || !data.length) return setFlagErr("تعذّر حفظ العلامة (نفّذ القسم 72 من schema.sql في Supabase).");
+    onSaved(data[0]);
+  }
   if (!rows.length) return <div className="card empty">لا توجد طلبات</div>;
   return (
     <>
+      {flagErr && <Alert type="error">{flagErr}</Alert>}
       <div className="req-cards">
         {rows.slice(0, shown).map(c => {
-          const L = partyLabels(c), res = c.final_result || c.result;
+          const L = partyLabels(c), res = c.final_result || c.result, fl = flagOf(c);
           return (
-            <div key={c.id} role="button" tabIndex={0} className={`req-card ${stClass(c.status)} ${noteOpen === c.id ? "note-on" : ""}`}
+            <div key={c.id} role="button" tabIndex={0} className={`req-card ${stClass(c.status)} ${noteOpen === c.id ? "note-on" : ""} ${fl ? fl[2] : ""}`}
               onClick={e => { if (!newWindowClick(e, c)) onOpen(c); }} onAuxClick={e => newWindowClick(e, c)}
               onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); } }}
               title="اضغط لفتح الطلب — ومع Ctrl (أو بزر الفأرة الأوسط) في نافذة جديدة">
-              {c.card_note && (
+              {/* علامة المتابعة: زر للمدير يفتح قائمة الألوان، أو الرمز وحده لغيره */}
+              {(fl || canFlag) && (
+                <span className="req-flag" onClick={e => e.stopPropagation()}>
+                  {canFlag
+                    ? <button type="button" className={`req-flag-btn ${fl ? "" : "off"}`} title={fl ? flagTitle(c) : "🚩 وضع علامة متابعة"} aria-label="علامة المتابعة"
+                        onClick={() => { setNoteOpen(null); setFlagOpen(flagOpen === c.id ? null : c.id); }}>{fl ? fl[1] : "🏳️"}</button>
+                    : <span title={flagTitle(c)}>{fl[1]}</span>}
+                  {flagOpen === c.id && (
+                    <span className="req-flag-menu" role="menu">
+                      {FLAGS.map(([k, i]) => <button key={k} type="button" role="menuitem" className={c.follow_flag === k ? "active" : ""} onClick={() => setFlag(c, k)}>{i} {k}</button>)}
+                      {fl && <button type="button" role="menuitem" onClick={() => setFlag(c, "")}>✕ إزالة العلامة</button>}
+                    </span>
+                  )}
+                </span>
+              )}
+              {c.card_note && !showNotes && (
                 <>
                   <button type="button" className="req-note-btn" aria-label="عرض الملاحظة السريعة"
                     onClick={e => { e.stopPropagation(); setNoteOpen(noteOpen === c.id ? null : c.id); }}>💬</button>
@@ -4398,6 +4441,10 @@ function RequestCards({ rows, onOpen, alertsFor }) {
               <div className="req-top"><ReqNo n={c.complaint_number} /><StatusBadge value={c.status} /></div>
               {alertsFor && <div className="req-alerts">{alertsFor(c).map((a, i) => <span key={i} className={`alert-tag ${a.level}`}>{a.text}</span>)}</div>}
               <div className="req-title">{c.title || <span className="muted">بلا عنوان</span>}</div>
+              {/* الملاحظة السريعة داخل البطاقة (زر «💬 إظهار الملاحظات») */}
+              {showNotes && c.card_note && (
+                <div className="req-note-inline" title={[c.card_note_by, c.card_note_at && fmtDateTime(c.card_note_at)].filter(Boolean).join(" · ")}>💬 {c.card_note}</div>
+              )}
               <dl className="req-meta">
                 <div><dt>{L.who}</dt><dd>{c.complainant_name || "—"}</dd></div>
                 <div><dt>{L.against}</dt><dd>{c.accused_name || "—"}</dd></div>
@@ -4466,8 +4513,12 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
   // تصفية الملفات الناقصة: بلا رابط دراسة الشكوى المنقّحة، أو بلا رابط ملف القرار
   const [missing, setMissing] = useState("");
   const MISSING = { study: c => !c.study_url, decision: c => !c.decision_url };
+  // تصفية علامة المتابعة (القسم 72): "" كل الطلبات، any كل المعلَّمة، أو لون واحد؛ وإظهار الملاحظات السريعة داخل البطاقات
+  const [flagF, setFlagF] = useState("");
+  const [showNotes, setShowNotes] = usePref("hajj_show_notes", false);
   const visible = inSeason.filter(c =>
     (!missing || MISSING[missing](c)) &&
+    (!flagF || (flagF === "any" ? !!c.follow_flag : c.follow_flag === flagF)) &&
     (filter === "الكل" || c.status === filter) &&
     (!term || [c.complaint_number, c.title, c.complainant_name, c.complainant_role, c.accused_role, c.classification, c.phone_number, c.contact_number, c.accused_name, c.subject, c.tracking_code, c.access_code, c.referred_to, c.decision_ref, c.referred_by, c.accused_key].some(v => (v || "").includes(term))));
   const count = s => inSeason.filter(c => s === "الكل" || c.status === s).length;
@@ -4516,10 +4567,18 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
             <option value="decision">⚠️ بلا ملف قرار ({inSeason.filter(c => (filter === "الكل" || c.status === filter) && !c.decision_url).length})</option>
           </select>
         </label>
+        {/* علامة المتابعة (القسم 72): كل الطلبات، كل المعلَّمة، أو لون واحد */}
+        <label className={`filter-item ${flagF ? "is-set" : ""}`}><span>العلامة</span>
+          <select value={flagF} onChange={e => setFlagF(e.target.value)}>
+            <option value="">🏳️ كل الطلبات</option>
+            <option value="any">🚩 كل المعلَّمة ({inSeason.filter(c => c.follow_flag).length})</option>
+            {FLAGS.map(([k, i]) => <option key={k} value={k}>{i} {k} ({inSeason.filter(c => c.follow_flag === k).length})</option>)}
+          </select>
+        </label>
         {/* العودة إلى القيم الافتراضية (تظهر عند تغيير أي تصفية) */}
-        {(arch || filter !== "الكل" || klass || missing || (current && season !== current)) && (
+        {(arch || filter !== "الكل" || klass || missing || flagF || (current && season !== current)) && (
           <button type="button" className="btn secondary sm filter-reset"
-            onClick={() => { setArch(false); setFilter("الكل"); setKlass(""); setMissing(""); if (current) setSeason(current); }}>↺ الافتراضي</button>
+            onClick={() => { setArch(false); setFilter("الكل"); setKlass(""); setMissing(""); setFlagF(""); if (current) setSeason(current); }}>↺ الافتراضي</button>
         )}
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
@@ -4530,6 +4589,9 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
           <button type="button" className={`btn sm ${view === "cards" ? "" : "secondary"}`} onClick={() => setView("cards")} aria-pressed={view === "cards"}>▦ بطاقات</button>
           <button type="button" className={`btn sm ${view === "table" ? "" : "secondary"}`} onClick={() => setView("table")} aria-pressed={view === "table"}>☰ جدول</button>
         </span>
+        {/* إظهار الملاحظات السريعة داخل كل البطاقات معاً (يتذكره الجهاز)؛ وفي الجدول عمود «💬 الملاحظة السريعة» */}
+        {view === "cards" && <button type="button" className={`btn sm ${showNotes ? "" : "secondary"}`} aria-pressed={showNotes}
+          onClick={() => setShowNotes(!showNotes)}>💬 {showNotes ? "إخفاء الملاحظات" : "إظهار الملاحظات"}</button>}
         {OBJ && <button className="btn" onClick={() => setAddingObj(true)}>➕ اعتراض جديد</button>}
         {/* أرشيف المتابعة على الجهاز (للمدير): ما يظهر الآن بعد التصفية */}
         {ADMIN_CTX.manager && <>
@@ -4541,7 +4603,8 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       {expMsg && <Alert type={expMsg.type}>{expMsg.text}</Alert>}
       {pastOpen && <p className="muted" style={{ fontSize: 13.5, marginTop: -6 }}>🔓 موسم {season} مفتوح للتعديل. بعد الانتهاء أعد أرشفته من «الإعدادات ← 📚 أرشفة المواسم».</p>}
       {rows === null ? <Loading /> : view === "cards"
-        ? <RequestCards key={season + klass + filter + missing + term + arch} rows={visible} onOpen={onOpen} />
+        ? <RequestCards key={season + klass + filter + missing + flagF + term + arch} rows={visible} onOpen={onOpen}
+            showNotes={showNotes} secret={secret} onSaved={onSaved} />
         : <ComplaintsTable secret={secret} rows={visible} onSaved={onSaved} onOpen={onOpen} />}
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
@@ -4587,6 +4650,31 @@ function CardNoteLine({ secret, c, onSaved }) {
             {c.card_note ? "✏️ تعديل" : "➕ إضافة"}</button>}
         </>
       )}
+    </div>
+  );
+}
+
+// «🚩 علامة متابعة» في بطاقة الطلب (القسم 72): أزرار الألوان الثلاثة للمدير (الضغط على المختار يزيلها)، وللمسؤول للاطلاع فقط
+function FollowFlagLine({ secret, c, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function setFlag(flag) {
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_set_follow_flag", { p_secret: secret, p_id: c.id, p_flag: flag });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 72 من schema.sql في Supabase).");
+    onSaved(data[0]);
+  }
+  if (!ADMIN_CTX.manager && !c.follow_flag) return null;
+  return (
+    <div className="links-line">
+      <b>🚩 علامة المتابعة:</b>
+      {ADMIN_CTX.manager && onSaved ? FLAGS.map(([k, i]) => (
+        <button key={k} type="button" className={`btn sm ${c.follow_flag === k ? "" : "secondary"}`} disabled={busy} aria-pressed={c.follow_flag === k}
+          title={c.follow_flag === k ? "اضغط لإزالة العلامة" : `وضع علامة «${k}»`} onClick={() => setFlag(c.follow_flag === k ? "" : k)}>{i} {k}</button>
+      )) : <span>{flagOf(c)[1]} {c.follow_flag}</span>}
+      {c.follow_flag && <small className="muted">{flagTitle(c).replace(/^🚩 [^—]*— ?/, "")}</small>}
+      {err && <small style={{ color: "var(--danger)", width: "100%" }}>{err}</small>}
     </div>
   );
 }
@@ -4932,6 +5020,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
         <div><dt>🗒️ ملاحظة عن {L.against}</dt><PartyNote secret={secret} complaint={c} party="accused" onSaved={onSaved} /></div>
       </dl>
       <CardNoteLine secret={secret} c={c} onSaved={onSaved} />
+      <FollowFlagLine secret={secret} c={c} onSaved={onSaved} />
       {isDecObj(c) ? <DecObjInfo secret={secret} c={c} onSaved={onSaved} /> : <AccusedKeyLine secret={secret} c={c} onSaved={onSaved} />}
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>

@@ -95,6 +95,8 @@
     2026-10-07  أيقونتا الملفات في سجل الشكاوى (.file-icons).
     2026-10-08  شارة «⚖️ اعتراض على قرار» بجانب رقم الطلب (.kind-badge).
     2026-10-08  تغيير عرض أعمدة جدول الشكاوى بالسحب (.col-resizer / .cw).
+    2026-11-03  «🚩 علامة متابعة» على البطاقة (.req-flag / .req-flag-btn / .req-flag-menu / .flag-red|yellow|green)، والملاحظة
+                السريعة داخل البطاقة (.req-note-inline).
     2026-10-29  تنبيه ذهبي (.alert.warn) لتذكير النسخة الاحتياطية في الرئيسية.
     2026-10-29  «💬 ملاحظة سريعة»: إلغاء ظهور الفقاعة بالوقوف بالمؤشر؛ تظهر بالضغط فقط (.req-card.note-on).
     2026-10-28  ألوان القوائم المنسدلة: «القائمة» (حالية / أرشيف)، «الحالة» بلون الحالة، والتصفية المغيَّرة بحدّ واضح (.is-set / .fi-*).
@@ -507,6 +509,22 @@
   .req-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .req-note-meta { color: #d9c89e; font-size: 12px; margin-top: 4px; }
   .req-card.note-on .req-note-pop { display: block; }
+  /* الملاحظة السريعة داخل البطاقة (زر «💬 إظهار الملاحظات») */
+  .req-note-inline { background: #333132; color: #fff; border-radius: 8px; padding: 6px 10px; font-size: 13.5px; line-height: 1.6;
+                     white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* «🚩 علامة متابعة»: زر بجانب أيقونة الملاحظة، وقائمة الألوان تحته، وإطار ملوّن حول البطاقة المعلَّمة */
+  .req-card .req-top { padding-inline-end: 74px; }
+  .req-flag { position: absolute; top: 8px; inset-inline-end: 44px; z-index: 3; font-size: 17px; line-height: 30px; cursor: default; }
+  .req-flag-btn { border: 0; background: #fff; border-radius: 50%; width: 30px; height: 30px; font-size: 15px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .req-flag-btn.off { opacity: .45; }
+  .req-flag-btn.off:hover { opacity: 1; }
+  .req-flag-menu { position: absolute; top: 36px; inset-inline-end: 0; display: flex; flex-direction: column; min-width: 150px; background: #fff;
+                   border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.18); overflow: hidden; }
+  .req-flag-menu button { border: 0; background: none; font: inherit; font-size: 14px; text-align: start; padding: 8px 12px; cursor: pointer; }
+  .req-flag-menu button:hover, .req-flag-menu button.active { background: var(--brand-soft); }
+  .req-card.flag-red    { box-shadow: 0 0 0 3px #d64545; }
+  .req-card.flag-yellow { box-shadow: 0 0 0 3px #e0b43a; }
+  .req-card.flag-green  { box-shadow: 0 0 0 3px #279e91; }
   /* قفل الجهاز برمز PIN: شاشة كاملة فوق كل شيء، أربع نقاط، ولوحة أرقام كبيرة للإبهام */
   .pin-lock { position: fixed; inset: 0; z-index: 9999; background: var(--brand-dark); color: #fff; display: flex; flex-direction: column;
               align-items: center; justify-content: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; }
@@ -835,6 +853,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 
 <!-- كود التطبيق جاهزاً (مولَّد من src/app.jsx بالأمر python build.py) -->
-<script src="app.js?v=6c444afb7b"></script>
+<script src="app.js?v=6baf41371f"></script>
 </body>
 </html>
