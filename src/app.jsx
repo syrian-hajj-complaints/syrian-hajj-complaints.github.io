@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-11-03  خانة «الموسم» في نموذج القرار تظهر دائماً (مقفلة بموسم واحد مفتوح، مع شرح فتح الموسم السابق)، وتُجلب المواسم
+//                من جديد كلما فُتح النموذج.
 //    2026-11-03  «➕ اعتراض جديد» (على قرار إداري): نص الاعتراض بالصوت 🎤 أيضاً (VoiceArea) كنموذج الشكوى.
 //    2026-11-02  «➕ إضافة شكوى إلى موسم …»: نص الشكوى بالصوت 🎤 أيضاً (VoiceArea) كنموذج الشكوى الجديدة.
 //    2026-10-29  توثيق مدير الإدارة لقرارات اللجنة (القسم 70؛ القرار الورقي يبقى الأساس): «✍️ يوثّق القرارات» لكلمة مرور إدارة في
@@ -5712,16 +5714,17 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
   const editOf = d => ({ id: d.id, number: d.decision_number, date: d.decision_date || "", title: d.title, subject: d.subject || "", url: d.url || "",
                          classes: classesOf(d), secrecy: d.secrecy || "عادي", approved: !!d.approved, approval_ref: d.approval_ref || "",
                          season: d.season || "", request_id: d.request_id || null });
-  // المواسم المفتوحة في القاعدة (الحالي + السابقة المفتوحة للتعديل)، تُجلب عند فتح النموذج لخانة «الموسم»
+  // المواسم المفتوحة في القاعدة (الحالي + السابقة المفتوحة للتعديل)، تُجلب من جديد كلما فُتح النموذج لخانة «الموسم»
   const [openSeasons, setOpenSeasons] = useState(null);
+  const formOpen = !!form;
   useEffect(() => {
-    if (!form || viewer || openSeasons) return;
+    if (!formOpen || viewer) return;
     sb.rpc("admin_get_season", { p_secret: secret }).then(({ data }) => {
       if (!data) return;
       const list = [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse();
       setOpenSeasons({ current: data.current || "", list });
     });
-  }, [form]);
+  }, [formOpen]);
   // الرقم التالي في تصنيف: أكبر رقم في بداية أرقام قراراته + 1 (يُقترح عند اختيار التصنيف ويمكن تعديله)
   const nextNumber = k => String(Math.max(0, ...(list || []).filter(d => classesOf(d).includes(k))
     .map(d => parseInt(String(d.decision_number).match(/\d+/) || "0", 10) || 0)) + 1);
@@ -5996,9 +5999,11 @@ function AdminDecisions({ secret, isManager, kind = "complaints", viewer = false
                 <Field label="رقم القرار" required hint="يمكن تعديله"><input type="text" dir="ltr" value={form.number} onChange={e => setForm(f => ({ ...f, number: e.target.value, autoNumber: false }))} maxLength={60} /></Field>
                 <Field label="تاريخ القرار"><input type="date" value={form.date} onChange={setF("date")} /></Field>
                 {/* الموسم (القسم 69): يظهر إن كان في القاعدة أكثر من موسم مفتوح؛ قرار الطلب يبقى بموسم الطلب */}
-                {!form.request_id && openSeasons && openSeasons.list.length > 1 && (
-                  <Field label="الموسم" hint="لموسم سابق مفتوح للتعديل، ليُؤرشف معه">
-                    <select value={form.season || openSeasons.current} onChange={setF("season")}>
+                {/* تظهر دائماً؛ وبموسم واحد مفتوح تُقفل مع شرح كيف يُضاف قرار لموسم سابق */}
+                {!form.request_id && openSeasons && (
+                  <Field label="الموسم" hint={openSeasons.list.length > 1 ? "لموسم سابق مفتوح للتعديل، ليُؤرشف معه"
+                    : "لا موسم سابق مفتوح الآن؛ لإضافة قرار لموسم سابق افتحه أولاً: «الإعدادات ← 📚 أرشفة المواسم ← 🔓 فتح للتعديل»، أو أضف له شكوى"}>
+                    <select value={form.season || openSeasons.current} onChange={setF("season")} disabled={openSeasons.list.length <= 1}>
                       {openSeasons.list.map(x => <option key={x} value={x}>موسم {x}{x === openSeasons.current ? " (الحالي)" : ""}</option>)}
                     </select>
                   </Field>
