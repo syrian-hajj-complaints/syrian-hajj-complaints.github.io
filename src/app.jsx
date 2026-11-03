@@ -84,6 +84,8 @@
 //                الشكاوى والصلح (من آخر جلسة فيها رأي)، ثم قرار اللجنة، ثم التبليغ.
 //    2026-10-08  مقدمة ثابتة لرأي لجنة الشكاوى والصلح (OPINION_INTRO): «بعد اطلاع اللجنة على الشكاوى المقدمة… تبيّن للجنة ما يلي:»
 //                في دراسة الشكوى (قبل نص الرأي في كل جلسة) وفي البند الأول من القرار.
+//    2026-11-03  «➕ اعتراض جديد»: خانة «الموسم» للمدير (القسم 71) — اعتراض قديم يُدخل في موسم سابق مفتوح للتعديل برقم من تسلسل
+//                اعتراضاته (1446-ع-001) بدل الموسم الحالي؛ والافتراضي الموسم السابق المختار في قائمة الاعتراضات.
 //    2026-11-03  قائمة «الموسم» في «قرارات الشكاوى» و«قرارات الإدارة»: من مواسم كل القرارات والمواسم المفتوحة في القاعدة، فتظهر
 //                في قرارات الإدارة أيضاً (مع «كل المواسم»)؛ واختيار موسم فيها يجعله موسم القرار الجديد تلقائياً.
 //    2026-11-03  خانة «الموسم» في نموذج القرار تظهر دائماً (مقفلة بموسم واحد مفتوح، مع شرح فتح الموسم السابق)، وتُجلب المواسم
@@ -2486,12 +2488,23 @@ function AdminPage({ secret, onLogout }) {
 
 // نافذة «➕ اعتراض جديد» في قسم «⚖️ الاعتراضات» (للمدير والمسؤول؛ لا يظهر في الصفحات العامة): بيانات المعترض، والقرار
 // المعترض عليه (رقمه وتاريخه والجهة المحيلة)، وتاريخ تقديم الاعتراض مع فحص المهلة القانونية فوراً، ثم موضوعه ونصه وروابطه؛
-// يُرقَّم من تسلسل الاعتراضات في الموسم الحالي «1448-ع-001» (admin_add_decision_objection، القسم 59)
-function AddDecisionObjection({ secret, onClose, onDone }) {
+// يُرقَّم من تسلسل الاعتراضات في الموسم الحالي «1448-ع-001» (admin_add_decision_objection، القسم 59)، أو — للمدير — في موسم
+// سابق مفتوح للتعديل يُختار من «الموسم» (admin_add_season_objection، القسم 71)؛ season: الموسم السابق المختار في القائمة (افتراضي)
+function AddDecisionObjection({ secret, season = "", onClose, onDone }) {
   const [f, setF] = useState({ at: toDateTimeInput(new Date()), name: "", role: "", phone: "", against: "", ref: "", date: "",
-                               by: "", title: "", subject: "", classification: "", links: [] });
+                               by: "", title: "", subject: "", classification: "", links: [], season });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // المواسم المفتوحة في القاعدة (للمدير): الحالي + السابقة المفتوحة للتعديل
+  const [seasons, setSeasons] = useState(null);
+  useEffect(() => {
+    if (!ADMIN_CTX.manager) return;
+    sb.rpc("admin_get_season", { p_secret: secret }).then(({ data }) => {
+      if (!data) return;
+      setSeasons({ current: data.current || "", list: [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse() });
+    });
+  }, [secret]);
+  const past = seasons && f.season && f.season !== seasons.current;   // اعتراض لموسم سابق
   const set = k => e => { setF(x => ({ ...x, [k]: e.target.value })); setErr(""); };
   // فحص المهلة بالقيم الحالية
   const delay = decObjDelay({ kind: DEC_OBJ, decision_date: f.date, received_date: f.at ? new Date(f.at) : null }, ADMIN_CTX.objDays);
@@ -2501,13 +2514,18 @@ function AddDecisionObjection({ secret, onClose, onDone }) {
     if (!f.at || !f.name.trim() || !f.against.trim() || !f.subject.trim()) return setErr("تاريخ تقديم الاعتراض واسم المعترض والمعترض عليه ونص الاعتراض إلزامية.");
     if (badLink(f.links)) return setErr(BAD_LINK);
     setBusy(true); setErr("");
-    const { data, error } = await sb.rpc("admin_add_decision_objection", {
+    const fields = {
       p_secret: secret, p_received_at: dateTimeInputToIso(f.at), p_name: f.name, p_role: f.role, p_phone: f.phone,
       p_against: f.against, p_decision_ref: f.ref, p_decision_date: f.date || null, p_referred_by: f.by,
       p_title: f.title, p_subject: f.subject, p_classification: f.classification, p_links: cleanLinks(f.links),
-    });
+    };
+    // موسم سابق مفتوح ← تسلسل اعتراضاته (القسم 71)؛ وإلا الموسم الحالي (القسم 59)
+    const { data, error } = past ? await sb.rpc("admin_add_season_objection", { ...fields, p_season: f.season })
+                                 : await sb.rpc("admin_add_decision_objection", fields);
     setBusy(false);
-    if (error || !data || !data.length) return setErr("تعذّر الإدخال (نفّذ القسم 59 من schema.sql في Supabase).");
+    if (error || !data || !data.length) return setErr(past
+      ? `تعذّر الإدخال في موسم ${f.season} (نفّذ القسم 71 من schema.sql في Supabase، وتأكد أن الموسم مفتوح للتعديل).`
+      : "تعذّر الإدخال (نفّذ القسم 59 من schema.sql في Supabase).");
     onDone(data[0]);
   }
 
@@ -2517,8 +2535,16 @@ function AddDecisionObjection({ secret, onClose, onDone }) {
         <div className="modal-close"><button className="btn secondary sm" onClick={onClose}>✕ إغلاق</button></div>
         <form className="card" onSubmit={save}>
           <h2 style={{ marginTop: 0 }}>➕ اعتراض جديد على قرار إداري</h2>
-          <p className="muted" style={{ fontSize: 13.5, marginTop: 0 }}>يأخذ رقماً من تسلسل الاعتراضات (مثل 1448-ع-001)، ويُتابع بالجلسات كالمعتاد. لا يظهر في الصفحات العامة.</p>
+          <p className="muted" style={{ fontSize: 13.5, marginTop: 0 }}>يأخذ رقماً من تسلسل اعتراضات موسمه (مثل {f.season || (seasons && seasons.current) || "1448"}-ع-001)، ويُتابع بالجلسات كالمعتاد. لا يظهر في الصفحات العامة.</p>
           <div className="grid">
+            {/* الموسم (للمدير، إن كان في القاعدة موسم سابق مفتوح للتعديل) */}
+            {seasons && seasons.list.length > 1 && (
+              <Field label="الموسم" hint="لاعتراض قديم: اختر موسمه السابق المفتوح للتعديل">
+                <select value={f.season || seasons.current} onChange={set("season")}>
+                  {seasons.list.map(x => <option key={x} value={x}>موسم {x}{x === seasons.current ? " (الحالي)" : ""}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="اسم المعترض" required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
             <Field label="صفة المعترض"><input type="text" value={f.role} onChange={set("role")} maxLength={100} list="roles-list" placeholder="مثال: موجّه ديني (الأبرار)" /></Field>
             <Field label="هاتف المعترض"><input type="tel" dir="ltr" value={f.phone} onChange={e => { setF(x => ({ ...x, phone: cleanPhone(e.target.value) })); setErr(""); }} maxLength={15} placeholder="963912345678" /></Field>
@@ -4520,7 +4546,7 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
       {addingObj && ReactDOM.createPortal(
-        <AddDecisionObjection secret={secret} onClose={() => setAddingObj(false)}
+        <AddDecisionObjection secret={secret} season={pastOpen ? season : ""} onClose={() => setAddingObj(false)}
           onDone={c => { setAddingObj(false); onAdded ? onAdded(c) : (reload(), onOpen(c)); }} />, document.body)}
     </div>
   );

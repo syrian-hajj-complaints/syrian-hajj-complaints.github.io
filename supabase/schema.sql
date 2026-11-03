@@ -128,6 +128,8 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 70.
 --    2026-10-29  القسم 70: توثيق مدير الإدارة لقرارات اللجنة (can_endorse، endorse_kind/note/by/at/log، viewer_endorse_decision)؛
 --                القرار الورقي يبقى الأساس؛ كلمة مرور الأدمن الأولى صارت القسم 71.
+--    2026-11-03  القسم 71: اعتراض على قرار إداري في موسم سابق مفتوح للتعديل (admin_add_season_objection، للمدير) برقم من تسلسل
+--                اعتراضات ذلك الموسم؛ كلمة مرور الأدمن الأولى صارت القسم 72.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -8015,7 +8017,50 @@ grant execute on function public.viewer_endorse_decision(text, uuid, text, text)
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 71) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 71) اعتراض على قرار إداري في موسم سابق مفتوح للتعديل (للمدير): كـ «➕ إضافة شكوى إلى موسم …» (القسم 42) — يُرقَّم من تسلسل
+--     اعتراضات ذلك الموسم (مثل 1446-ع-001) بتاريخ تقديمه، لا من الموسم الحالي. والموسم الحالي يبقى عبر admin_add_decision_objection.
+--     يحتاج الأقسام حتى 70 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- تُرجع الاعتراض بعد الإدخال، أو لا شيء (كلمة مرور خاطئة، حقل إلزامي فارغ، الموسم الحالي أو موسم غير مفتوح)
+create or replace function public.admin_add_season_objection(
+  p_secret text, p_season text, p_received_at timestamptz, p_name text, p_role text, p_phone text,
+  p_against text, p_decision_ref text, p_decision_date date, p_referred_by text,
+  p_title text, p_subject text, p_classification text, p_links text[]
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  v_next int;
+  v_id   uuid;
+begin
+  if public.verify_password('مدير', p_secret) is null or coalesce(p_season, '') !~ '^\d{4}$' or p_season = public.setting('season')
+     or coalesce(btrim(p_name), '') = '' or coalesce(btrim(p_against), '') = '' or coalesce(btrim(p_subject), '') = ''
+     or p_received_at is null or p_received_at > now() + interval '1 day'
+     or not exists (select 1 from public.complaints where season = p_season) then
+    return;
+  end if;
+  -- الرقم التالي في تسلسل اعتراضات الموسم
+  select coalesce(max(nullif(substring(complaint_number from '^' || p_season || '-ع-(\d+)$'), '')::int), 0) + 1 into v_next
+    from public.complaints where season = p_season;
+
+  -- الإدخال بلا مشغّلات الإدخال (التي ترقّم بالموسم الحالي)؛ تعود عند نهاية الدالة
+  alter table public.complaints disable trigger user;
+  insert into public.complaints (season, complaint_number, tracking_code, received_date, status, kind,
+         complainant_name, complainant_role, phone_number, accused_name, title, subject, classification, links,
+         decision_ref, decision_date, referred_by, updated_at)
+  values (p_season, public.request_number(p_season, true, v_next), public.random_password(6, true), p_received_at, 'جديد',
+          'اعتراض على قرار إداري', btrim(left(p_name, 200)), nullif(btrim(left(p_role, 100)), ''), public.normalize_phone(p_phone),
+          btrim(left(p_against, 200)), nullif(btrim(left(p_title, 150)), ''), btrim(left(p_subject, 5000)),
+          nullif(btrim(left(p_classification, 60)), ''), public.clean_links(p_links),
+          nullif(btrim(left(p_decision_ref, 60)), ''), p_decision_date, nullif(btrim(left(p_referred_by, 200)), ''), now())
+  returning id into v_id;
+  alter table public.complaints enable trigger user;
+  return query select * from public.complaints where id = v_id;
+end $$;
+
+grant execute on function public.admin_add_season_objection(text, text, timestamptz, text, text, text, text, text, date, text, text, text, text, text[]) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 72) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
