@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-04  عارض المواسم السابقة (للجميع: لوحة الإدارة والمواسم السابقة والتقارير): الشكاوى بطاقات كبطاقات الطلبات
+//                (الافتراضي، مع «☰ قائمة» يتذكرها الجهاز)، وسطر المصادقة من قرارات الملف نفسه.
 //    2026-11-04  «➕ اعتراض جديد»: يأخذ الموسم المختار في قائمة الاعتراضات فعلاً (كان لا يُمرَّر في قسم الاعتراضات)، وقائمة
 //                «القرار من قرارات الإدارة» من الموسم نفسه تملأ رقم القرار وتاريخه (والمعترض عليه بعنوانه إن كان فارغاً).
 //    2026-11-03  «➕ اعتراض جديد»: خانة «الموسم» للمدير (القسم 71) — اعتراض قديم يُدخل في موسم سابق مفتوح للتعديل برقم من تسلسل
@@ -4409,7 +4411,8 @@ function AddSeasonComplaint({ secret, season, onDone, onClose }) {
 // «💬 ملاحظة سريعة» (القسم 63): فقاعة لا تظهر إلا بالضغط على 💬، وتُغلق بضغطة ثانية أو بالضغط في أي مكان آخر؛
 // showNotes: تظهر الملاحظة داخل كل البطاقات معاً بدل الفقاعة
 // «🚩 علامة متابعة» (القسم 72): لونها على البطاقة للجميع؛ والمدير يضعها أو يزيلها من قائمة صغيرة (يحتاج secret وonSaved)
-function RequestCards({ rows, onOpen, alertsFor, showNotes = false, secret, onSaved }) {
+// decisions: قرارات سطر المصادقة (افتراضياً قرارات القاعدة)؛ archive: طلبات ملف موسم مؤرشف (بلا فتح في نافذة جديدة)
+function RequestCards({ rows, onOpen, alertsFor, showNotes = false, secret, onSaved, decisions = ADMIN_CTX.decisions, archive = false }) {
   const [shown, setShown] = useState(48);
   const [noteOpen, setNoteOpen] = useState(null);   // البطاقة التي فُتحت فقاعتها بالضغط على 💬
   const [flagOpen, setFlagOpen] = useState(null);   // البطاقة التي فُتحت قائمة علامتها
@@ -4437,9 +4440,9 @@ function RequestCards({ rows, onOpen, alertsFor, showNotes = false, secret, onSa
           const L = partyLabels(c), res = c.final_result || c.result, fl = flagOf(c);
           return (
             <div key={c.id} role="button" tabIndex={0} className={`req-card ${stClass(c.status)} ${noteOpen === c.id ? "note-on" : ""} ${fl ? fl[2] : ""}`}
-              onClick={e => { if (!newWindowClick(e, c)) onOpen(c); }} onAuxClick={e => newWindowClick(e, c)}
+              onClick={e => { if (archive || !newWindowClick(e, c)) onOpen(c); }} onAuxClick={e => !archive && newWindowClick(e, c)}
               onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); } }}
-              title="اضغط لفتح الطلب — ومع Ctrl (أو بزر الفأرة الأوسط) في نافذة جديدة">
+              title={archive ? "اضغط لعرض بطاقة الطلب" : "اضغط لفتح الطلب — ومع Ctrl (أو بزر الفأرة الأوسط) في نافذة جديدة"}>
               {/* علامة المتابعة: زر للمدير يفتح قائمة الألوان، أو الرمز وحده لغيره */}
               {(fl || canFlag) && (
                 <span className="req-flag" onClick={e => e.stopPropagation()}>
@@ -4479,7 +4482,7 @@ function RequestCards({ rows, onOpen, alertsFor, showNotes = false, secret, onSa
               </dl>
               <div className="req-result"><b>النتيجة{c.justified ? ` (${justLabel(c, c.justified)})` : ""}: </b>{res || <span className="muted">لم تصدر بعد</span>}</div>
               {/* المصادقة مع تعديل أو عدمها تظهر على البطاقة (القرار الأصلي يبقى في النتيجة) */}
-              {(() => { const d = requestDecision(ADMIN_CTX.decisions, c), k = approvalKind(d);
+              {(() => { const d = requestDecision(decisions, c), k = approvalKind(d);
                 return (k === "مع تعديل" || k === "عدم مصادقة") ? <div className="req-approval">{approvalText(d)}</div> : null; })()}
             </div>
           );
@@ -7476,6 +7479,8 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
   const [q, setQ] = useState("");
   const [st, setSt] = useState("");
   const [open, setOpen] = useState(null);
+  // طريقة عرض الشكاوى: بطاقات (الافتراضي، للجميع) أو قائمة — يتذكرها الجهاز
+  const [view, setView] = usePref("hajj_past_view", "cards");
 
   // جلب الملف من Google وقراءته
   useEffect(() => {
@@ -7528,16 +7533,25 @@ function SeasonViewer({ source, onClose, sheetLink = true }) {
             </div>
             {tab === "complaints" ? (
               <>
-                <div className="row" style={{ flexWrap: "nowrap", margin: "10px 0" }}>
-                  <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 بحث بالرقم أو العنوان أو الاسم…" />
+                <div className="row" style={{ margin: "10px 0" }}>
+                  <input className="grow" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 بحث بالرقم أو العنوان أو الاسم…" />
                   <select value={st} onChange={e => setSt(e.target.value)} style={{ width: "auto", flex: "0 0 auto" }} aria-label="الحالة">
                     <option value="">كل الحالات</option>
                     {STATUSES.map(x => <option key={x} value={x}>{x}</option>)}
                   </select>
+                  {/* بطاقات أو قائمة */}
+                  <span className="view-switch" role="group" aria-label="طريقة العرض" style={{ flex: "0 0 auto" }}>
+                    <button type="button" className={`btn sm ${view === "cards" ? "" : "secondary"}`} onClick={() => setView("cards")} aria-pressed={view === "cards"}>▦ بطاقات</button>
+                    <button type="button" className={`btn sm ${view === "list" ? "" : "secondary"}`} onClick={() => setView("list")} aria-pressed={view === "list"}>☰ قائمة</button>
+                  </span>
                 </div>
                 {rows.length === 0 ? <p className="muted center">لا توجد شكاوى{term || st ? " مطابقة" : ""}.</p> : (
                   <>
-                    <div className="card" style={{ padding: 0 }}><ComplaintsBrief rows={rows} onOpen={setOpen} /></div>
+                    {/* البطاقات كبطاقات الطلبات في لوحة الإدارة (رقم الطلب معرّفها، وقرارات الملف لسطر المصادقة) */}
+                    {view === "cards"
+                      ? <RequestCards key={term + st} rows={rows.map(c => ({ ...c, id: c.id || c.complaint_number }))}
+                          onOpen={c => setOpen(rows.find(r => r.complaint_number === c.complaint_number))} decisions={comDecs} archive />
+                      : <div className="card" style={{ padding: 0 }}><ComplaintsBrief rows={rows} onOpen={setOpen} /></div>}
                     <p className="muted center" style={{ fontSize: 13.5 }}>👁️ اضغط على أي شكوى لعرض بطاقتها</p>
                   </>
                 )}
