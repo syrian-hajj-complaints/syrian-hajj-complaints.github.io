@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-04  «➕ اعتراض جديد»: يأخذ الموسم المختار في قائمة الاعتراضات فعلاً (كان لا يُمرَّر في قسم الاعتراضات)، وقائمة
+//                «القرار من قرارات الإدارة» من الموسم نفسه تملأ رقم القرار وتاريخه (والمعترض عليه بعنوانه إن كان فارغاً).
 //    2026-11-03  «➕ اعتراض جديد»: خانة «الموسم» للمدير (القسم 71) — اعتراض قديم يُدخل في موسم سابق مفتوح للتعديل برقم من تسلسل
 //                اعتراضاته (1446-ع-001) بدل الموسم الحالي؛ والافتراضي الموسم السابق المختار في قائمة الاعتراضات.
 //    2026-11-03  قائمة «الموسم» في «قرارات الشكاوى» و«قرارات الإدارة»: من مواسم كل القرارات والمواسم المفتوحة في القاعدة، فتظهر
@@ -2507,11 +2509,28 @@ function AddDecisionObjection({ secret, season = "", onClose, onDone }) {
     if (!ADMIN_CTX.manager) return;
     sb.rpc("admin_get_season", { p_secret: secret }).then(({ data }) => {
       if (!data) return;
-      setSeasons({ current: data.current || "", list: [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse() });
+      const list = [...new Set([data.current, ...(data.seasons || []).map(x => x.season)])].filter(Boolean).sort().reverse();
+      setSeasons({ current: data.current || "", list });
+      // الموسم المختار في القائمة غير مفتوح للتعديل ← الموسم الحالي
+      setF(x => x.season && !list.includes(x.season) ? { ...x, season: "" } : x);
     });
   }, [secret]);
   const past = seasons && f.season && f.season !== seasons.current;   // اعتراض لموسم سابق
   const set = k => e => { setF(x => ({ ...x, [k]: e.target.value })); setErr(""); };
+  // قرارات الإدارة في موسم الاعتراض نفسه: اختيار أحدها يملأ رقمه وتاريخه (والمعترض عليه بعنوانه إن كان فارغاً)
+  const [adminDecs, setAdminDecs] = useState([]);
+  useEffect(() => {
+    sb.rpc("admin_list_decisions", { p_secret: secret }).then(({ data }) => setAdminDecs((data || []).filter(d => d.kind === "admin")));
+  }, [secret]);
+  const sea = f.season || (seasons && seasons.current) || ADMIN_CTX.season;
+  const seaDecs = adminDecs.filter(d => !sea || d.season === sea);
+  const picked = seaDecs.find(d => d.decision_number === f.ref.trim());
+  const pickDec = id => {
+    const a = seaDecs.find(d => d.id === id);
+    if (!a) return;
+    setF(x => ({ ...x, ref: a.decision_number, date: a.decision_date ? String(a.decision_date).slice(0, 10) : x.date, against: x.against.trim() ? x.against : a.title }));
+    setErr("");
+  };
   // فحص المهلة بالقيم الحالية
   const delay = decObjDelay({ kind: DEC_OBJ, decision_date: f.date, received_date: f.at ? new Date(f.at) : null }, ADMIN_CTX.objDays);
 
@@ -2554,6 +2573,14 @@ function AddDecisionObjection({ secret, season = "", onClose, onDone }) {
             <Field label="اسم المعترض" required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
             <Field label="صفة المعترض"><input type="text" value={f.role} onChange={set("role")} maxLength={100} list="roles-list" placeholder="مثال: موجّه ديني (الأبرار)" /></Field>
             <Field label="هاتف المعترض"><input type="tel" dir="ltr" value={f.phone} onChange={e => { setF(x => ({ ...x, phone: cleanPhone(e.target.value) })); setErr(""); }} maxLength={15} placeholder="963912345678" /></Field>
+            {/* القرار من «🏛️ قرارات الإدارة» في موسم الاعتراض (أو يُكتب يدوياً في الحقول التالية) */}
+            <Field label={`القرار من «قرارات الإدارة» — موسم ${sea || ""}`}
+              hint={seaDecs.length ? "يملأ رقم القرار وتاريخه تلقائياً" : "لا توجد قرارات إدارة في هذا الموسم؛ اكتب البيانات يدوياً"}>
+              <select value={picked ? picked.id : ""} onChange={e => pickDec(e.target.value)} disabled={!seaDecs.length}>
+                <option value="">— اختر القرار —</option>
+                {seaDecs.map(d => <option key={d.id} value={d.id}>{d.decision_number} — {d.title}</option>)}
+              </select>
+            </Field>
             <Field label="المعترض عليه" required><input type="text" value={f.against} onChange={set("against")} maxLength={200} placeholder="مثال: قرار السيد مدير الحج" /></Field>
             <Field label="رقم القرار المعترض عليه"><input type="text" value={f.ref} onChange={set("ref")} maxLength={60} placeholder="مثال: 2215/46/ ق د" /></Field>
             <Field label="تاريخ صدور القرار"><input type="date" value={f.date} onChange={set("date")} /></Field>
@@ -4609,7 +4636,7 @@ function AdminComplaints({ secret, rows, onSaved, reload, onOpen, initialSearch 
       {adding && <AddSeasonComplaint secret={secret} season={season} onClose={() => setAdding(false)}
         onDone={c => { setAdding(false); reload(); onOpen(c); }} />}
       {addingObj && ReactDOM.createPortal(
-        <AddDecisionObjection secret={secret} season={pastOpen ? season : ""} onClose={() => setAddingObj(false)}
+        <AddDecisionObjection secret={secret} season={ADMIN_CTX.manager && season && season !== current ? season : ""} onClose={() => setAddingObj(false)}
           onDone={c => { setAddingObj(false); onAdded ? onAdded(c) : (reload(), onOpen(c)); }} />, document.body)}
     </div>
   );
