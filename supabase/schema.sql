@@ -132,6 +132,8 @@
 --                اعتراضات ذلك الموسم؛ كلمة مرور الأدمن الأولى صارت القسم 72.
 --    2026-11-03  القسم 72: «🚩 علامة متابعة» على بطاقة الطلب (follow_flag/by/at، admin_set_follow_flag، للمدير)؛
 --                كلمة مرور الأدمن الأولى صارت القسم 73.
+--    2026-11-04  القسم 73: قرارات المواسم المؤرشفة — إعادة تعريف admin_delete_season (تحذف قرارات الموسم بنوعيها مع شكاواه)،
+--                وتنظيف مرة واحدة لقرارات بقيت في القاعدة لموسم مؤرشف؛ كلمة مرور الأدمن الأولى صارت القسم 74.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -8216,7 +8218,62 @@ grant execute on function public.admin_set_follow_flag(text, uuid, text)        
 grant execute on function public.admin_restore_season(text, text, json, json, json, json) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 73) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 73) قرارات المواسم المؤرشفة: أرشفة موسم تحذف شكاواه وجلساتها وقراراته بنوعيها (الشكاوى والإدارة) من القاعدة؛
+--     قاعدة فيها نسخة قديمة من admin_delete_season (القسم 32) كانت تحذف الشكاوى وتُبقي القرارات، فتظهر في
+--     «قرارات الشكاوى» و«قرارات الإدارة» بعد الأرشفة. هنا: النسخة الكاملة من جديد، ثم تنظيف مرة واحدة.
+--     يحتاج الأقسام حتى 72 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف إلا قرارات موسم مؤرشف لا شكاوى له في القاعدة)
+-- ---------------------------------------------------------------------
+-- حذف موسم واحد بعد حفظ رابط ملفه؛ تُرجع 'OK:عدد الشكاوى' أو رمز الخطأ
+create or replace function public.admin_delete_season(p_secret text, p_reset_code text, p_season text)
+returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_hash text;
+  v_n    int;
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return 'WRONG_CODE';
+  end if;
+  if coalesce(p_season, '') !~ '^\d{4}$' then
+    return 'INVALID';
+  end if;
+  if p_season = public.setting('season') then
+    return 'CURRENT';
+  end if;
+  -- لا حذف قبل حفظ رابط ملف الموسم
+  if not exists (select 1 from json_array_elements(coalesce(public.setting('past_seasons'), '[]')::json) e
+                  where e->>'season' = p_season and coalesce(e->>'url', '') <> '') then
+    return 'NO_ARCHIVE';
+  end if;
+  -- رمز التصفير الخاص
+  select value into v_hash from public.app_settings where key = 'reset_hash';
+  if v_hash is null then
+    return 'NO_CODE';
+  end if;
+  if crypt(coalesce(p_reset_code, ''), v_hash) <> v_hash then
+    return 'WRONG_CODE';
+  end if;
+  -- الحذف: الشكاوى (ومعها الجلسات والإحالات)، ثم قرارات الموسم بنوعيها (الشكاوى والإدارة)
+  delete from public.complaints where season = p_season;
+  get diagnostics v_n = row_count;
+  delete from public.decisions where season = p_season;
+  return 'OK:' || v_n;
+end $$;
+
+-- تنظيف مرة واحدة: قرارات موسم مؤرشف (له رابط ملف في «المواسم السابقة»، ليس الحالي، ولا شكاوى له في القاعدة)
+-- — القرارات محفوظة في ملف الموسم على Google، وتعود مع «🔓 فتح للتعديل»
+delete from public.decisions d
+ where d.season is not null
+   and d.season <> coalesce(public.setting('season'), '')
+   and exists (select 1 from json_array_elements(coalesce(public.setting('past_seasons'), '[]')::json) e
+                where e->>'season' = d.season and coalesce(e->>'url', '') <> '')
+   and not exists (select 1 from public.complaints c where c.season = d.season);
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.admin_delete_season(text, text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 74) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
