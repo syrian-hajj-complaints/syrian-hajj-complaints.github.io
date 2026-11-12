@@ -115,6 +115,8 @@
     2026-09-30  ألوان حالتي الاعتراض (.st-objreview / .st-objfollow)، وحقل العرض ومربع النتيجة وعلامة «بعد الاعتراض».
     2026-09-30  اعتماد لوحة ألوان الهوية: النصوص #333132 و#939598، العناوين والأزرار #00594f و#006e5c و#279e91،
                 العناصر والرموز #ad9e6e و#d9c89e و#e3ddd2؛ وتحويل الدرجات الفاتحة القديمة إلى درجات من اللوحة.
+    2026-11-12  الفتح بلا إنترنت: شريط «لا يوجد اتصال بالإنترنت» أعلى الصفحة (#offline)، وطلب حفظ دائم
+                لنسخة المنصة على الجهاز (navigator.storage.persist) حتى لا يحذفها الجوال عند امتلاء الذاكرة.
 =======================================================================
 -->
 <html lang="ar" dir="rtl">
@@ -843,8 +845,20 @@
 </style>
 </head>
 <body>
+<!-- شريط يظهر عند انقطاع الإنترنت: الشاشات تُفتح من النسخة المحفوظة، والبيانات تحتاج الاتصال -->
+<div id="offline" hidden style="position:sticky;top:0;z-index:9999;background:#ad9e6e;color:#fff;text-align:center;padding:8px 12px;font-size:15px;font-weight:600">📴 لا يوجد اتصال بالإنترنت — تُعرض البيانات عند عودة الاتصال</div>
+
 <!-- العنصر الذي يُعرض داخله التطبيق كاملاً -->
 <div id="root"></div>
+
+<!-- إظهار الشريط وإخفاؤه مع انقطاع الإنترنت وعودته، وطلب حفظ دائم لنسخة المنصة على الجهاز -->
+<script>
+  (function () {
+    function net() { document.getElementById("offline").hidden = navigator.onLine; }
+    window.addEventListener("online", net); window.addEventListener("offline", net); net();
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(function (p) { if (!p) navigator.storage.persist(); }); } catch (e) {}
+  })();
+</script>
 
 <!-- المكتبات: ملف الإعدادات، React، وعميل Supabase -->
 <script src="config.js"></script>
