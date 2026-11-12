@@ -92,6 +92,9 @@
 //                (الافتراضي، مع «☰ قائمة» يتذكرها الجهاز)، وسطر المصادقة من قرارات الملف نفسه.
 //    2026-11-04  «➕ اعتراض جديد»: يأخذ الموسم المختار في قائمة الاعتراضات فعلاً (كان لا يُمرَّر في قسم الاعتراضات)، وقائمة
 //                «القرار من قرارات الإدارة» من الموسم نفسه تملأ رقم القرار وتاريخه (والمعترض عليه بعنوانه إن كان فارغاً).
+//    2026-11-12  «📋 النصوص الجاهزة» (القسم 74، PhraseTools): تحت «رأي لجنة الشكاوى والصلح» و«نتيجة الطلب (قرار اللجنة)» في
+//                نموذج الجلسة: «📋 نص جاهز» يضع نصاً محفوظاً (وأسماء الطلب مكان {المشتكي} و{المشتكى عليه} و{رقم الطلب})، و«💾 احفظه نصاً
+//                جاهزاً» يحفظ النص المكتوب (وتصير أسماء الطلب ورقمه متغيرات). للمدير والمسؤول، بدل النسخ من شكوى قديمة.
 //    2026-11-03  «➕ اعتراض جديد»: خانة «الموسم» للمدير (القسم 71) — اعتراض قديم يُدخل في موسم سابق مفتوح للتعديل برقم من تسلسل
 //                اعتراضاته (1446-ع-001) بدل الموسم الحالي؛ والافتراضي الموسم السابق المختار في قائمة الاعتراضات.
 //    2026-11-03  قائمة «الموسم» في «قرارات الشكاوى» و«قرارات الإدارة»: من مواسم كل القرارات والمواسم المفتوحة في القاعدة، فتظهر
@@ -468,6 +471,24 @@ async function getDocTexts(secret) {
     return !error && data && typeof data === "object" && !Array.isArray(data) ? data : {};
   } catch { return {}; }
 }
+
+// «📋 النصوص الجاهزة» (القسم 74): تُجلب مرة في كل دخول، ومن جديد بعد الإضافة والحذف
+let phrasesReq = null;
+function getPhrases(secret, fresh = false) {
+  if (!phrasesReq || fresh) {
+    phrasesReq = sb.rpc("admin_get_phrases", { p_secret: secret }).then(({ data, error }) => {
+      if (error) { phrasesReq = null; throw error; }
+      return Array.isArray(data) ? data : [];
+    });
+  }
+  return phrasesReq;
+}
+// المتغيرات في النص الجاهز ← قيم الطلب المفتوح
+const PHRASE_VARS = [["{المشتكي}", "complainant_name"], ["{المشتكى عليه}", "accused_name"], ["{رقم الطلب}", "complaint_number"]];
+const phraseFill = (t, c) => PHRASE_VARS.reduce((s, [v, k]) => s.split(v).join(c[k] || v), t);
+// عند الحفظ: أسماء الطلب ورقمه في النص تصير متغيرات، فينفع النص لطلب آخر (الأطول أولاً)
+const phraseVars = (t, c) => PHRASE_VARS.map(([v, k]) => [v, String(c[k] || "").trim()]).filter(([, x]) => x.length > 1)
+  .sort((a, b) => b[1].length - a[1].length).reduce((s, [v, x]) => s.split(x).join(v), t);
 
 // بناء مستند Word للشكوى (sess: جلساتها، logo: صورة الشعار، letterhead: صورة الترويسة الرسمية — أو null)
 // images: صور الروابط المجلوبة {الرابط: {data, w, h}} — تُدمج تحت رابطها؛ T: عبارات الملف المحفوظة (docText)
@@ -1882,12 +1903,14 @@ function LinksEditor({ secret, complaint, target, onSaved }) {
 
 // إضافة كلام إلى آخر نص بمسافة واحدة بينهما
 const appendText = (text, t) => (text ? text.replace(/\s*$/, " ") : "") + t;
+// النص الجاهز: يملأ الخانة الفارغة، أو يُضاف في سطر جديد بعد ما فيها
+const phraseJoin = (text, t) => (String(text || "").trim() ? String(text).replace(/\s*$/, "\n") : "") + t;
 
 // خانة نص طويل بزر 🎤 لتحويل الكلام إلى نص (موضوع الجلسة ورأي اللجنة ونتيجتها): الكلام يُضاف إلى آخر النص،
 // ويظهر أثناء النطق تحت الخانة؛ عدّاد الأحرف في التلميح
 // onAppend(t): إضافة الكلام إلى آخر النص الحالي (يُفضَّل تحديثاً يعتمد على القيمة الحالية)؛ وإلا يُضاف إلى value
 // mic = false: الخانة نفسها بلا زر 🎤
-function VoiceArea({ label, hint, value, onChange, onAppend, mic = true, minHeight = 140, maxLength = 10000, placeholder, onError }) {
+function VoiceArea({ label, hint, value, onChange, onAppend, mic = true, minHeight = 140, maxLength = 10000, placeholder, onError, tools = null }) {
   const [interim, setInterim] = useState("");
   return (
     <div className="field full">
@@ -1898,6 +1921,85 @@ function VoiceArea({ label, hint, value, onChange, onAppend, mic = true, minHeig
       <textarea style={{ minHeight }} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength} placeholder={placeholder} />
       {interim && <div className="interim">🎙️ {interim}</div>}
       {hint && <small className="hint">{hint}</small>}
+      {tools}
+    </div>
+  );
+}
+
+// «📋 النصوص الجاهزة» تحت خانة الرأي أو النتيجة: اختيار نص محفوظ، أو حفظ النص المكتوب (kind: opinion / result)
+// complaint: الطلب المفتوح (لأسمائه ورقمه وتصنيفه)؛ onPick(نص) يضعه في الخانة
+function PhraseTools({ kind, value, complaint, onPick }) {
+  const secret = ADMIN_CTX.secret;
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState(null);
+  const [q, setQ] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  // رسالة الخطأ: قاعدة لم يُنفَّذ فيها القسم 74 بعد، أو انقطاع الاتصال
+  const fail = e => setMsg({ type: "error", text: e && /function|schema cache/i.test(e.message || "") ? "النصوص الجاهزة تحتاج تنفيذ القسم 74 من ملف قاعدة البيانات." : NET_ERR });
+  const load = fresh => getPhrases(secret, fresh).then(setList, e => { setList([]); fail(e); });
+
+  // فتح القائمة وإغلاقها
+  function toggle() { setMsg(null); if (!open && !list) load(false); setOpen(!open); }
+
+  // حفظ النص المكتوب نصاً جاهزاً
+  async function save() {
+    const text = phraseVars(String(value || "").trim(), complaint);
+    if (!text) return;
+    setBusy(true); setMsg(null);
+    const { data, error } = await sb.rpc("admin_add_phrase", { p_secret: secret, p_kind: kind, p_text: text, p_class: complaint.classification || "" });
+    setBusy(false);
+    if (error) { fail(error); return; }
+    setMsg(data === "OK" ? { type: "ok", text: "✓ حُفظ في النصوص الجاهزة" } : data === "DUP" ? { type: "info", text: "هذا النص محفوظ من قبل." }
+      : data === "FULL" ? { type: "error", text: "وصلت النصوص الجاهزة إلى 300 نص؛ احذف ما لا تحتاجه أولاً." } : { type: "error", text: "تعذّر الحفظ." });
+    if (data === "OK") load(true);
+  }
+
+  // حذف نص من القائمة (بعد التأكيد)
+  async function remove(p) {
+    if (!window.confirm("حذف هذا النص من النصوص الجاهزة؟ (لا يتغير شيء في الطلبات التي استُعمل فيها)")) return;
+    const { error } = await sb.rpc("admin_delete_phrase", { p_secret: secret, p_id: p.id });
+    if (error) { fail(error); return; }
+    load(true);
+  }
+
+  // النصوص من النوع نفسه: تصنيف الطلب أولاً، ثم الأحدث؛ والبحث يتجاهل الفرق بين الهمزات
+  const norm = s => String(s || "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+  const mine = (list || []).filter(p => p.k === kind);
+  const shown = mine.filter(p => !q.trim() || norm(p.t).includes(norm(q.trim())))
+    .sort((a, b) => ((b.c === complaint.classification) - (a.c === complaint.classification)) || String(b.at).localeCompare(String(a.at)));
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <button type="button" className="btn sm secondary" onClick={toggle} aria-expanded={open}>📋 نص جاهز</button>
+        <button type="button" className="btn sm secondary" disabled={busy || !String(value || "").trim()} onClick={save}>{busy ? "جارٍ الحفظ…" : "💾 احفظه نصاً جاهزاً"}</button>
+      </div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      {open && (
+        <div className="phrase-box" style={{ marginTop: 8, border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: 10, background: "var(--bg)" }}>
+          {list === null ? <small className="muted">جارٍ التحميل…</small> : (
+            <>
+              {mine.length > 6 && (
+                <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ابحث في النصوص" style={{ marginBottom: 8 }} />
+              )}
+              {!shown.length ? (
+                <small className="muted">{q ? "لا نص يطابق البحث." : "لا نصوص جاهزة بعد. اكتب النص في الخانة ثم اضغط «💾 احفظه نصاً جاهزاً»."}</small>
+              ) : shown.map(p => (
+                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                  <button type="button" className="phrase-item" onClick={() => { onPick(phraseFill(p.t, complaint)); setOpen(false); }} title="اضغط لوضعه في الخانة"
+                    style={{ flex: 1, textAlign: "start", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", cursor: "pointer", font: "inherit", color: "var(--ink)", whiteSpace: "pre-wrap", maxHeight: 140, overflow: "hidden" }}>
+                    {p.t}
+                    {(p.c || p.by) && <small className="muted" style={{ display: "block", marginTop: 4 }}>{[p.c && `🏷️ ${p.c}`, p.by && `✍️ ${p.by}`].filter(Boolean).join(" · ")}</small>}
+                  </button>
+                  <button type="button" className="btn sm secondary" onClick={() => remove(p)} aria-label="حذف النص" title="حذف">✕</button>
+                </div>
+              ))}
+              <small className="hint" style={{ display: "block", marginTop: 6 }}>اضغط على النص لوضعه في الخانة، ثم عدّل فيه ما تشاء. {"{المشتكي}"} و{"{المشتكى عليه}"} و{"{رقم الطلب}"} تُستبدل بقيم هذا الطلب.</small>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -5608,7 +5710,8 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
           <VoiceArea label="موضوع الجلسة" hint={`${form.topic.length} / 10000 حرف — أو اضغط 🎤 وتحدّث`} minHeight={180} placeholder="ما الذي نوقش في الجلسة… أو اضغط 🎤 وتحدّث"
             value={form.topic} onChange={v => { setForm(f => ({ ...f, topic: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, topic: appendText(f.topic, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <VoiceArea mic={false} label="⚖️ رأي لجنة الشكاوى والصلح" hint={`اختياري — ${form.opinion.length} / 10000 حرف`}
-            value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, opinion: appendText(f.opinion, t) }))} onError={t => setMsg({ type: "error", text: t })} />
+            value={form.opinion} onChange={v => { setForm(f => ({ ...f, opinion: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, opinion: appendText(f.opinion, t) }))} onError={t => setMsg({ type: "error", text: t })}
+            tools={!readOnly && <PhraseTools kind="opinion" value={form.opinion} complaint={complaint} onPick={t => { setForm(f => ({ ...f, opinion: phraseJoin(f.opinion, t) })); setMsg(null); }} />} />
           <VoiceArea mic={false} label="خلاصة الجلسة" hint={`اختيارية — ما انتهت إليه هذه الجلسة؛ ${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
           <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
@@ -5627,7 +5730,8 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             <VoiceArea mic={false} label={`⚖️ نتيجة ${partyLabels(complaint).noun} (قرار اللجنة)`} minHeight={110}
               hint={`سطر لكل بند — منها تُبنى بنود القرار في الدراسة والقرار؛ فارغة = خلاصة آخر جلسة. ${(form.fresult || "").length} / 10000 حرف`}
               value={form.fresult || ""} onChange={v => { setForm(f => ({ ...f, fresult: v })); setMsg(null); }}
-              onAppend={t => setForm(f => ({ ...f, fresult: appendText(f.fresult || "", t) }))} onError={t => setMsg({ type: "error", text: t })} />
+              onAppend={t => setForm(f => ({ ...f, fresult: appendText(f.fresult || "", t) }))} onError={t => setMsg({ type: "error", text: t })}
+              tools={!readOnly && <PhraseTools kind="result" value={form.fresult} complaint={complaint} onPick={t => { setForm(f => ({ ...f, fresult: phraseJoin(f.fresult, t) })); setMsg(null); }} />} />
           )}
           {isClosed(form.status) && !isDecObj(complaint) && (
             <Field label="📩 النص الذي يظهر للمشتكي في نتيجة الشكوى" required hint="يراه المشتكي برقم الشكوى ورمز المتابعة" full>
@@ -6369,6 +6473,7 @@ function AdminGuide({ isManager }) {
           <GuideItem name="📅 المطلوب اليوم">تنبيهات ذكية: شكوى جديدة لم تُراجع خلال 24 ساعة، إحالة بلا تحديث منذ يومين، شكوى مفتوحة منذ 7 أيام، ومواعيد المتابعة.</GuideItem>
           <GuideItem name="📋 الشكاوى">تصفية بالموسم والتصنيف والنوع (الشكاوى / الاعتراضات على قرارات) والحالة، و«⚠️ بلا دراسة شكوى» و«⚠️ بلا ملف قرار»، بحث وفرز، وتفاصيل كل طلب بجلساته وإحالاته.</GuideItem>
           <GuideItem name="🗓️ الجلسات">جلسات اليوم والقادمة والسابقة؛ لكل جلسة عنوان وموضوع وإحالة ونتيجة.</GuideItem>
+          <GuideItem name="📋 النصوص الجاهزة">تحت «رأي لجنة الشكاوى والصلح» و«نتيجة الطلب» في نموذج الجلسة: «📋 نص جاهز» يضع نصاً محفوظاً بأسماء الطلب المفتوح، و«💾 احفظه نصاً جاهزاً» يحفظ ما كتبته لاستعماله في طلبات أخرى (للمدير والمسؤول).</GuideItem>
           <GuideItem name="🔗 إرسال رابط">رسالة جاهزة للنسخ: رابط التقديم مع كلمة مرور تُولّد بضغطة.</GuideItem>
           <GuideItem name="📑 قرارات الشكاوى و🏛️ قرارات الإدارة">رقم القرار وتاريخه وعنوانه وموضوعه ورابطه وتصنيفه، مع بحث متقدم وفرز؛ والمصادقة، والاعتراضات على قرارات الإدارة.</GuideItem>
           <GuideItem name="للمدير فقط">دخول المشتكين، كلمات مرور الإدارة، المسؤولون، والإعدادات (الموسم، القوائم، «📝 عبارات ملفات Word ومهلة الاعتراض»، قفل Excel، التصفير).</GuideItem>

@@ -134,6 +134,8 @@
 --                كلمة مرور الأدمن الأولى صارت القسم 73.
 --    2026-11-04  القسم 73: قرارات المواسم المؤرشفة — إعادة تعريف admin_delete_season (تحذف قرارات الموسم بنوعيها مع شكاواه)،
 --                وتنظيف مرة واحدة لقرارات بقيت في القاعدة لموسم مؤرشف؛ كلمة مرور الأدمن الأولى صارت القسم 74.
+--    2026-11-12  القسم 74: «📋 النصوص الجاهزة» للرأي ونتيجة الطلب (app_settings: phrases، admin_get_phrases /
+--                admin_add_phrase / admin_delete_phrase، للمدير والمسؤول)؛ كلمة مرور الأدمن الأولى صارت القسم 75.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -8273,7 +8275,80 @@ delete from public.decisions d
 grant execute on function public.admin_delete_season(text, text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 74) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 74) «📋 النصوص الجاهزة»: نصوص الرأي ونتيجة الطلب (قرار اللجنة) المتكررة، يختار منها المدير والمسؤول
+--     في نموذج الجلسة بدل نسخها من شكوى قديمة، ويضيفانها ويحذفانها (القرار الورقي يبقى الأساس)
+--     app_settings: phrases = [{"id": "…", "k": "opinion" | "result", "t": "النص", "c": "التصنيف أو فارغ", "by": "الاسم", "at": "…"}]
+--     الإضافة والحذف كلٌّ في دالة (لا حفظ للقائمة كاملة)، فلا يضيع نص أضافه اثنان في الوقت نفسه
+--     يُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+insert into public.app_settings (key, value) values ('phrases', '[]') on conflict (key) do nothing;
+
+-- قراءة النصوص (للمدير والمسؤول)
+create or replace function public.admin_get_phrases(p_secret text)
+returns json
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return null;
+  end if;
+  return coalesce(public.setting('phrases'), '[]')::json;
+end $$;
+
+-- إضافة نص (للمدير والمسؤول): النوع رأي أو نتيجة، والنص حتى 3000 حرف، وحتى 300 نص؛
+-- النص المكرر بالنوع نفسه لا يُضاف مرتين؛ تُرجع 'OK' أو 'DUP' أو 'FULL' أو 'INVALID'
+create or replace function public.admin_add_phrase(p_secret text, p_kind text, p_text text, p_class text)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_id   uuid := public.verify_password('أدمن', p_secret);
+  v_list jsonb;
+  v_text text := btrim(coalesce(p_text, ''));
+  v_by   text;
+begin
+  if v_id is null or p_kind not in ('opinion', 'result') or v_text = '' or length(v_text) > 3000 then
+    return 'INVALID';
+  end if;
+  -- قفل الصف حتى انتهاء الإضافة (إضافتان معاً لا تكتب إحداهما فوق الأخرى)
+  select value::jsonb into v_list from public.app_settings where key = 'phrases' for update;
+  v_list := coalesce(v_list, '[]'::jsonb);
+  if exists (select 1 from jsonb_array_elements(v_list) e where e->>'k' = p_kind and btrim(e->>'t') = v_text) then
+    return 'DUP';
+  end if;
+  if jsonb_array_length(v_list) >= 300 then
+    return 'FULL';
+  end if;
+  select holder_name into v_by from public.access_passwords where id = v_id;
+  v_list := v_list || jsonb_build_array(jsonb_build_object('id', gen_random_uuid()::text, 'k', p_kind, 't', v_text,
+    'c', left(btrim(coalesce(p_class, '')), 100), 'by', coalesce(v_by, ''), 'at', now()));
+  insert into public.app_settings (key, value) values ('phrases', v_list::text)
+    on conflict (key) do update set value = excluded.value;
+  return 'OK';
+end $$;
+
+-- حذف نص بمعرّفه (للمدير والمسؤول)؛ تُرجع 'OK' أو 'INVALID'
+create or replace function public.admin_delete_phrase(p_secret text, p_id text)
+returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_list jsonb;
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return 'INVALID';
+  end if;
+  select value::jsonb into v_list from public.app_settings where key = 'phrases' for update;
+  v_list := coalesce((select jsonb_agg(e) from jsonb_array_elements(coalesce(v_list, '[]'::jsonb)) e where e->>'id' <> coalesce(p_id, '')), '[]'::jsonb);
+  insert into public.app_settings (key, value) values ('phrases', v_list::text)
+    on conflict (key) do update set value = excluded.value;
+  return 'OK';
+end $$;
+
+-- السماح للموقع باستدعاء الدوال
+grant execute on function public.admin_get_phrases(text)                   to anon, authenticated;
+grant execute on function public.admin_add_phrase(text, text, text, text)  to anon, authenticated;
+grant execute on function public.admin_delete_phrase(text, text)           to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 75) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
