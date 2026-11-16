@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-16  روابط الجلسة: «✔️ تم» في جلسة محفوظة يحفظ الروابط وحدها فوراً (admin_set_session_links، القسم 75)، فلا تضيع
+//                إن لم يُضغط «حفظ» في آخر النموذج؛ والجلسة الجديدة تُحفظ روابطها مع الجلسة كما كانت.
 //    2026-11-04  عارض المواسم السابقة (للجميع: لوحة الإدارة والمواسم السابقة والتقارير): الشكاوى بطاقات كبطاقات الطلبات
 //                (الافتراضي، مع «☰ قائمة» يتذكرها الجهاز)، وسطر المصادقة من قرارات الملف نفسه.
 //    2026-11-04  «➕ اعتراض جديد»: يأخذ الموسم المختار في قائمة الاعتراضات فعلاً (كان لا يُمرَّر في قسم الاعتراضات)، وقائمة
@@ -1723,13 +1725,19 @@ function LinksField({ value, onChange, label = "🔗 روابط مرفقة", hin
 
 // روابط الجلسة في نموذجها: أزرار «🔗 رابط 1» تفتح الرابط، مع «✏️ تعديل الروابط» أو «➕ إضافة رابط» يُظهر الخانتين؛
 // الخانتان تبقيان ظاهرتين إن كان فيهما رابط غير صالح؛ readOnly: الأزرار فقط (للاطلاع)
-function LinksInline({ value, onChange, readOnly, hint }) {
+// onDone (اختياري): يُستدعى عند «✔️ تم» بالروابط (حفظها فوراً في جلسة محفوظة، القسم 75)؛ يُرجع true إن نجح
+function LinksInline({ value, onChange, readOnly, hint, onDone }) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const list = cleanLinks(value);
+  async function done() {
+    if (onDone) { setBusy(true); const ok = await onDone(cleanLinks(value)); setBusy(false); if (!ok) return; }
+    setOpen(false);
+  }
   if ((open || badLink(value)) && !readOnly) return (
     <div className="field full">
       <LinksField value={value} onChange={onChange} hint={hint} full={false} />
-      <button type="button" className="btn secondary sm" disabled={!!badLink(value)} onClick={() => setOpen(false)}>✔️ تم</button>
+      <button type="button" className="btn secondary sm" disabled={!!badLink(value) || busy} onClick={done}>{busy ? "جارٍ الحفظ…" : onDone ? "✔️ تم (يُحفظ فوراً)" : "✔️ تم"}</button>
     </div>
   );
   return (
@@ -5606,6 +5614,15 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
   // إلغاء التعديل والعودة لنموذج جلسة جديدة
   function cancelEdit() { setEditId(null); setForm(blank()); setShowForm(false); setMsg(null); }
 
+  // حفظ روابط الجلسة المحفوظة وحدها فوراً عند «✔️ تم» (admin_set_session_links، القسم 75)؛ بقية النموذج تبقى حتى «حفظ»
+  async function saveLinks(links) {
+    const { data, error } = await sb.rpc("admin_set_session_links", { p_secret: secret, p_id: editId, p_links: links });
+    if (error || !data) { setMsg({ type: "error", text: "تعذّر حفظ الروابط (نفّذ القسم 75 من schema.sql في Supabase)، أو احفظ الجلسة من زر الحفظ." }); return false; }
+    setList(l => (l || []).map(s => s.id === editId ? { ...s, links: data } : s));
+    setMsg({ type: "ok", text: "🔗 حُفظت روابط الجلسة. (بقية تعديلات النموذج — إن وُجدت — تُحفظ بزر الحفظ.)" });
+    return true;
+  }
+
   // حفظ: إضافة جلسة (admin_add_session) أو تعديلها (admin_update_session)؛ تُرجع الشكوى بعد الترحيل
   async function submit(e) {
     e.preventDefault();
@@ -5718,7 +5735,10 @@ function SessionsSection({ secret, complaint, onApplied, onChanged, closeReq = 0
             tools={!readOnly && <PhraseTools kind="opinion" value={form.opinion} complaint={complaint} onPick={t => { setForm(f => ({ ...f, opinion: phraseJoin(f.opinion, t) })); setMsg(null); }} />} />
           <VoiceArea mic={false} label="خلاصة الجلسة" hint={`اختيارية — ما انتهت إليه هذه الجلسة؛ ${form.result.length} / 10000 حرف`}
             value={form.result} onChange={v => { setForm(f => ({ ...f, result: v })); setMsg(null); }} onAppend={t => setForm(f => ({ ...f, result: appendText(f.result, t) }))} onError={t => setMsg({ type: "error", text: t })} />
-          <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }} hint="اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ امسح الخانة لحذف رابطها" />
+          <LinksInline key={editId || "new"} readOnly={readOnly} value={form.links} onChange={l => { setForm(f => ({ ...f, links: l })); setMsg(null); }}
+            onDone={editId ? saveLinks : undefined}
+            hint={editId ? "حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ «✔️ تم» يحفظ الروابط فوراً دون بقية النموذج"
+                         : "اختياري — حتى رابطين، مثل محضر الجلسة أو صور على Google Drive؛ تُحفظ مع الجلسة"} />
           {/* «هل الطلب محق؟» (للمدير): غير المحق لا يحتاج قراراً ولا مصادقة */}
           {isClosed(form.status) && ADMIN_CTX.manager && (
             <Field label={`⚖️ هل ${partyLabels(complaint).noun} ${isDecObj(complaint) ? "محق" : "محقة"}؟`} hint="غير المحق لا يحتاج قراراً ولا مصادقة">

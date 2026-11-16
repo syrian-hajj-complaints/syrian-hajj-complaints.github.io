@@ -136,6 +136,8 @@
 --                وتنظيف مرة واحدة لقرارات بقيت في القاعدة لموسم مؤرشف؛ كلمة مرور الأدمن الأولى صارت القسم 74.
 --    2026-11-12  القسم 74: «📋 النصوص الجاهزة» للرأي ونتيجة الطلب (app_settings: phrases، admin_get_phrases /
 --                admin_add_phrase / admin_delete_phrase، للمدير والمسؤول)؛ كلمة مرور الأدمن الأولى صارت القسم 75.
+--    2026-11-16  القسم 75: حفظ روابط الجلسة وحدها فوراً (admin_set_session_links) عند «✔️ تم» في نموذج جلسة محفوظة، دون
+--                بقية حقول النموذج؛ كلمة مرور الأدمن الأولى صارت القسم 76.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -8348,7 +8350,30 @@ grant execute on function public.admin_add_phrase(text, text, text, text)  to an
 grant execute on function public.admin_delete_phrase(text, text)           to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 75) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 75) حفظ روابط الجلسة وحدها فوراً: «✔️ تم» بعد تعديل روابط جلسة محفوظة يحفظها مباشرة (دون بقية حقول النموذج)،
+--     فلا تضيع الروابط إن لم يُضغط «حفظ» في آخر النموذج. الجلسة الجديدة (غير المحفوظة بعد) تُحفظ روابطها مع الجلسة.
+--     يحتاج الأقسام حتى 74 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+-- تُرجع روابط الجلسة بعد الحفظ، أو null (كلمة مرور خاطئة أو جلسة غير موجودة)
+create or replace function public.admin_set_session_links(p_secret text, p_id uuid, p_links text[])
+returns text[]
+language plpgsql security definer set search_path = public as $$
+declare
+  v_links text[];
+begin
+  if public.verify_password('أدمن', p_secret) is null then
+    return null;
+  end if;
+  update public.sessions set links = public.clean_links(p_links) where id = p_id
+  returning coalesce(links, '{}') into v_links;
+  return v_links;
+end $$;
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.admin_set_session_links(text, uuid, text[]) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 76) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');
