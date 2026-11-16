@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-16  جدول «هل الطلب محق؟ حسب التصنيف» (JustByClassTable): لكل تصنيف الإجمالي والمحقة وغير المحقة والمغلقة التي
+//                لم يُحدَّد فيها وغير المغلقة، مع صف الإجمالي — في صفحة التقارير و«📊 المؤشرات» وتقرير المؤشرات (Word).
 //    2026-11-16  «هل الطلب محق؟» في الأعداد: صفحة التقارير (✅ المحقة / 🚫 غير المحقة / ❔ مغلقة لم يُحدَّد فيها، لكل تبويب)،
 //                و«📊 المؤشرات» (بطاقتان، وتوزيع «المغلقة: هل الطلب محق؟» وفي تقرير Word) — من الحقل justified (بلا تغيير في القاعدة).
 //    2026-11-16  ملف دراسة الشكوى (Word): روابط الجلسة بعد «موضوع الجلسة» مباشرة، قبل «رأي لجنة الشكاوى والصلح».
@@ -6621,6 +6623,49 @@ function countByAccused(list, limit = 10) {
     .sort((a, b) => b.value - a.value).slice(0, limit);
 }
 
+// «هل الطلب محق؟» حسب التصنيف: لكل تصنيف الإجمالي، والمحقة، وغير المحقة، والمغلقة التي لم يُحدَّد فيها، وغير المغلقة
+// (مرتّبة من الأكثر طلبات)، وصف «الإجمالي» في آخرها
+const JUST_COLS = ["التصنيف", "الإجمالي", "✅ محقة", "🚫 غير محقة", "❔ مغلقة لم يُحدَّد", "⏳ غير مغلقة"];
+function justByClass(list) {
+  const m = new Map();
+  const add = (k, c) => {
+    const g = m.get(k) || { label: k, total: 0, yes: 0, no: 0, none: 0, open: 0 };
+    g.total++;
+    if (!isClosed(c.status)) g.open++;
+    else if (c.justified === "محق") g.yes++;
+    else if (c.justified === "غير محق") g.no++;
+    else g.none++;
+    m.set(k, g);
+  };
+  list.forEach(c => add((c.classification || "").trim() || "غير محدد", c));
+  const out = [...m.values()].sort((a, b) => b.total - a.total);
+  const sum = out.reduce((s, g) => ({ ...s, total: s.total + g.total, yes: s.yes + g.yes, no: s.no + g.no, none: s.none + g.none, open: s.open + g.open }),
+    { label: "الإجمالي", total: 0, yes: 0, no: 0, none: 0, open: 0 });
+  return out.length ? [...out, sum] : [];
+}
+const justRow = g => [g.label, g.total, g.yes, g.no, g.none, g.open];
+
+// جدول «هل الطلب محق؟» حسب التصنيف (يتحول لبطاقات على الجوال)
+function JustByClassTable({ list }) {
+  const data = justByClass(list);
+  if (!data.length) return <div className="empty">لا توجد طلبات</div>;
+  return (
+    <div className="table-wrap" style={{ maxHeight: "none" }}>
+      {/* just-table: على الجوال التصنيف عنوان البطاقة والأعداد تحته في صف (main.html) */}
+      <table className="stack just-table">
+        <thead><tr>{JUST_COLS.map(h => <th key={h}>{h}</th>)}</tr></thead>
+        <tbody>
+          {data.map((g, i) => (
+            <tr key={g.label + i} className={i === data.length - 1 ? "just-sum" : ""} style={{ cursor: "default", fontWeight: i === data.length - 1 ? 700 : undefined }}>
+              {justRow(g).map((v, j) => <td key={j} data-label={JUST_COLS[j]}>{j === 0 ? <b>{v}</b> : v}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AdminIndicators({ secret, rows }) {
   // الموسم والفترة، الجلسات والإحالات (تُجلب مرة)، وحالة التصدير
   const [season, setSeason] = useState(null);
@@ -6698,7 +6743,9 @@ function AdminIndicators({ secret, rows }) {
     setBusy(true); setMsg(null);
     try {
       await exportIndicatorsWord(scope, kpis, [
-        { title: "توزيع الحالات", items: byStatus }, { title: "المغلقة: هل الطلب محق؟", items: byJust }, { title: "حسب التصنيف", items: byClass },
+        { title: "توزيع الحالات", items: byStatus }, { title: "المغلقة: هل الطلب محق؟", items: byJust },
+        { title: "هل الطلب محق؟ حسب التصنيف", grid: [JUST_COLS, ...justByClass(list).map(g => justRow(g).map(String))] },
+        { title: "حسب التصنيف", items: byClass },
         { title: "صفة المشتكي", items: byCRole }, { title: "صفة المشتكى عليه", items: byARole },
         { title: "المشتكى عليهم الأكثر شكاوى", items: byAccused },
         { title: "الجهات المحال إليها", items: byRef },
@@ -6733,6 +6780,7 @@ function AdminIndicators({ secret, rows }) {
       <div className="ind-grid">
         <div className="card"><h2>توزيع الحالات</h2><BarList items={byStatus} total={total} /></div>
         <div className="card"><h2>المغلقة: هل الطلب محق؟</h2><BarList items={byJust} total={closedList.length} /></div>
+        <div className="card ind-wide"><h2>هل الطلب محق؟ حسب التصنيف</h2><JustByClassTable list={list} /></div>
         <div className="card"><h2>الشكاوى حسب التصنيف</h2><BarList items={byClass} total={total} /></div>
         <div className="card ind-wide"><h2>الوارد يومياً — آخر {span} يوماً</h2><DayColumns days={days} /></div>
         <div className="card"><h2>صفة المشتكي</h2><BarList items={byCRole} total={total} /></div>
@@ -6764,8 +6812,13 @@ async function exportIndicatorsWord(scope, kpis, sections, total) {
     table([["المؤشر", "القيمة"], ...kpis.map(k => [k.label, String(k.value)])], [60, 40]),
   ];
   sections.forEach(sec => {
-    const sum = sec.items.reduce((s, x) => s + x.value, 0) || total;
     body.push(para(sec.title, { bold: true, size: 28, color: GREEN2, before: 280, after: 120 }));
+    // جدول بأعمدة جاهزة (grid: صف العناوين ثم الصفوف)، مثل «هل الطلب محق؟ حسب التصنيف»
+    if (sec.grid) {
+      const n = sec.grid[0].length, first = 30, rest = Math.floor((100 - first) / (n - 1));
+      return body.push(sec.grid.length > 1 ? table(sec.grid, [first, ...Array(n - 1).fill(rest)]) : para("لا توجد بيانات.", { color: MUTED }));
+    }
+    const sum = sec.items.reduce((s, x) => s + x.value, 0) || total;
     body.push(sec.items.length
       ? table([["البند", "العدد", "النسبة"], ...sec.items.map(x => [x.label, String(x.value), `${sum ? Math.round(x.value / sum * 100) : 0}%`])], [60, 20, 20])
       : para("لا توجد بيانات.", { color: MUTED }));
@@ -7445,6 +7498,13 @@ function ReportsPage({ code, viewerName }) {
             <div className="kpi"><div className="label">🚫 {OBJ ? "غير المحق" : "غير المحقة"}</div><div className="value">{justN("غير محق")}</div></div>
             {justNone > 0 && <div className="kpi"><div className="label">❔ مغلقة لم يُحدَّد فيها</div><div className="value">{justNone}</div></div>}
           </div>
+          {/* «هل الطلب محق؟» حسب التصنيف في الموسم والفترة المختارين */}
+          {total > 0 && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h2 style={{ marginTop: 0 }}>هل {OBJ ? "الاعتراض محق" : "الشكوى محقة"}؟ حسب التصنيف</h2>
+              <JustByClassTable list={shown} />
+            </div>
+          )}
           {/* المشتكى عليهم الأكثر شكاوى في الموسم والفترة المختارين (تبويب الشكاوى) */}
           {!OBJ && countByAccused(shown).length > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
