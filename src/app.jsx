@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-16  «هل الطلب محق؟» في الأعداد: صفحة التقارير (✅ المحقة / 🚫 غير المحقة / ❔ مغلقة لم يُحدَّد فيها، لكل تبويب)،
+//                و«📊 المؤشرات» (بطاقتان، وتوزيع «المغلقة: هل الطلب محق؟» وفي تقرير Word) — من الحقل justified (بلا تغيير في القاعدة).
 //    2026-11-16  ملف دراسة الشكوى (Word): روابط الجلسة بعد «موضوع الجلسة» مباشرة، قبل «رأي لجنة الشكاوى والصلح».
 //    2026-11-16  روابط الجلسة: «✔️ تم» في جلسة محفوظة يحفظ الروابط وحدها فوراً (admin_set_session_links، القسم 75)، فلا تضيع
 //                إن لم يُضغط «حفظ» في آخر النموذج؛ والجلسة الجديدة تُحفظ روابطها مع الجلسة كما كانت.
@@ -6666,7 +6668,13 @@ function AdminIndicators({ secret, rows }) {
     { label: "جديدة لم تُفتح", value: fresh, tone: fresh ? "warm" : "" },
     { label: "اعتراضات على النتائج", value: objections },
     { label: "الجلسات", value: sess.length },
+    // «هل الطلب محق؟» (القسم 65)
+    { label: "✅ محقة", value: list.filter(c => c.justified === "محق").length, tone: "closed" },
+    { label: "🚫 غير محقة", value: list.filter(c => c.justified === "غير محق").length },
   ];
+  // توزيع المغلقة حسب «هل الطلب محق؟» (ومنها ما لم يُحدَّد بعد)
+  const byJust = [["محق", "✅ محقة"], ["غير محق", "🚫 غير محقة"], ["", "❔ لم يُحدَّد"]]
+    .map(([v, label]) => ({ label, value: closedList.filter(c => (c.justified || "") === v).length })).filter(x => x.value);
 
   // التوزيعات
   const byStatus = STATUSES.map(s => ({ label: s, value: list.filter(c => c.status === s).length, cls: stClass(s) })).filter(x => x.value);
@@ -6690,7 +6698,7 @@ function AdminIndicators({ secret, rows }) {
     setBusy(true); setMsg(null);
     try {
       await exportIndicatorsWord(scope, kpis, [
-        { title: "توزيع الحالات", items: byStatus }, { title: "حسب التصنيف", items: byClass },
+        { title: "توزيع الحالات", items: byStatus }, { title: "المغلقة: هل الطلب محق؟", items: byJust }, { title: "حسب التصنيف", items: byClass },
         { title: "صفة المشتكي", items: byCRole }, { title: "صفة المشتكى عليه", items: byARole },
         { title: "المشتكى عليهم الأكثر شكاوى", items: byAccused },
         { title: "الجهات المحال إليها", items: byRef },
@@ -6724,6 +6732,7 @@ function AdminIndicators({ secret, rows }) {
 
       <div className="ind-grid">
         <div className="card"><h2>توزيع الحالات</h2><BarList items={byStatus} total={total} /></div>
+        <div className="card"><h2>المغلقة: هل الطلب محق؟</h2><BarList items={byJust} total={closedList.length} /></div>
         <div className="card"><h2>الشكاوى حسب التصنيف</h2><BarList items={byClass} total={total} /></div>
         <div className="card ind-wide"><h2>الوارد يومياً — آخر {span} يوماً</h2><DayColumns days={days} /></div>
         <div className="card"><h2>صفة المشتكي</h2><BarList items={byCRole} total={total} /></div>
@@ -7376,6 +7385,9 @@ function ReportsPage({ code, viewerName }) {
   const total = shown ? shown.length : 0;
   const closed = shown ? shown.filter(r => isClosed(r.status)).length : 0;
   const noun = OBJ ? "الاعتراضات" : "الشكاوى";
+  // «هل الطلب محق؟» (القسم 65): المحق وغير المحق، والمغلق الذي لم يُحدَّد فيه بعد
+  const justN = v => shown ? shown.filter(r => r.justified === v).length : 0;
+  const justNone = shown ? shown.filter(r => isClosed(r.status) && !r.justified).length : 0;
 
   // العرض: الفلتر، بطاقات الأعداد، ثم الجدول (يتحول لبطاقات على الجوال)
   return (
@@ -7429,6 +7441,9 @@ function ReportsPage({ code, viewerName }) {
             <div className="kpi"><div className="label">إجمالي {noun}</div><div className="value">{total}</div></div>
             <div className="kpi closed"><div className="label">المغلقة</div><div className="value">{closed}</div></div>
             <div className="kpi open"><div className="label">المفتوحة</div><div className="value">{total - closed}</div></div>
+            <div className="kpi"><div className="label">✅ {OBJ ? "المحق" : "المحقة"}</div><div className="value">{justN("محق")}</div></div>
+            <div className="kpi"><div className="label">🚫 {OBJ ? "غير المحق" : "غير المحقة"}</div><div className="value">{justN("غير محق")}</div></div>
+            {justNone > 0 && <div className="kpi"><div className="label">❔ مغلقة لم يُحدَّد فيها</div><div className="value">{justNone}</div></div>}
           </div>
           {/* المشتكى عليهم الأكثر شكاوى في الموسم والفترة المختارين (تبويب الشكاوى) */}
           {!OBJ && countByAccused(shown).length > 0 && (
