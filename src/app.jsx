@@ -217,6 +217,7 @@
 //                أعمدة النوع والقرار في ملف الموسم؛ بلا تبويب «اعتراض على النتيجة» للاعتراض على قرار.
 //    2026-10-08  بطاقة «📝 عبارات ملفات Word» في الإعدادات (القسم 52، DocTextsCard): يعدّل المدير العبارات الثابتة في الدراسة والقرار
 //                (العنوان، المقدمات، الخلاصة، التبليغ) مع {الموسم} و{التاريخ}، و«↩️ النص الأصلي»؛ الفارغة لا تظهر.
+// 2026-11-23   عبارات Word: متغيرات {المشتكي} و{المشتكى عليه} و{رقم الطلب} (في كل العبارات، ومنها مقدمة رأي اللجنة والتبليغ).
 //    2026-10-07  أزرار الروابط باسم نوعها (📁 مجلد، 📝 مستند، 📊 جدول، 📄 PDF، 🖼️ صورة، 🎬 فيديو، 📎 ملف Drive) بدل «رابط 1».
 //    2026-10-07  روابط الجلسة في نموذجها كأزرار «🔗 رابط 1» مع «✏️ تعديل الروابط» (الخانتان تظهران عند التعديل فقط)؛
 //                اسم ملفَي Word: «دراسة شكوى - اسم المشتكي - الرقم» و«قرار - اسم المشتكي - الرقم».
@@ -449,10 +450,11 @@ const VERDICT_FORM = { "قبول": "v_form_accept", "رد": "v_form_reject" };
 const VERDICT_MERIT = { "تصديق": "v_merit_confirm", "إلغاء": "v_merit_cancel", "تعديل": "v_merit_amend" };
 const MERIT_TAG = { "تصديق": "✅ صُدّق بعد الاعتراض", "إلغاء": "❌ أُلغي بعد الاعتراض", "تعديل": "✏️ عُدّل بعد الاعتراض" };
 
-// قيم المتغيرات في العبارات لطلب: الموسم، تاريخ وروده، ورقم القرار المعترض عليه وتاريخه والجهة المحيلة، والنتيجة
+// قيم المتغيرات في العبارات لطلب: الموسم، تاريخ وروده، اسم المشتكي والمشتكى عليه ورقم الطلب، ورقم القرار المعترض عليه وتاريخه والجهة المحيلة، والنتيجة
 function docVars(c) {
   const ymd = d => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
-  return { "الموسم": c.season || "", "التاريخ": c.received_date ? ymd(new Date(c.received_date)) : "", "رقم القرار": c.decision_ref || "",
+  return { "المشتكي": String(c.complainant_name || "").trim(), "المشتكى عليه": String(c.accused_name || "").trim(),
+           "رقم الطلب": c.complaint_number || "", "الموسم": c.season || "", "التاريخ": c.received_date ? ymd(new Date(c.received_date)) : "", "رقم القرار": c.decision_ref || "",
            "الجهة المحيلة": c.referred_by || "", "النتيجة": String(c.result || "").trim(),
            "تاريخ القرار": c.decision_date ? ymd(new Date(`${String(c.decision_date).slice(0, 10)}T00:00:00`)) : "" };
 }
@@ -471,7 +473,7 @@ const DOC_TEXT_GROUPS = { study_title: "📄 دراسة شكوى", obj_title: "�
 function docText(T, key, vars = {}) {
   const def = (DOC_TEXT_FIELDS.find(x => x[0] === key) || [])[2] || "";
   const t = T && typeof T[key] === "string" ? T[key] : def;
-  return t.replace(/\{(الموسم|التاريخ|رقم القرار|تاريخ القرار|الجهة المحيلة|النتيجة)\}/g, (m, k) => vars[k] == null ? "" : vars[k])
+  return t.replace(/\{(المشتكي|المشتكى عليه|رقم الطلب|الموسم|التاريخ|رقم القرار|تاريخ القرار|الجهة المحيلة|النتيجة)\}/g, (m, k) => vars[k] == null ? "" : vars[k])
     .replace(/ {2,}/g, " ").replace(/ +([،,.])/g, "$1").trim();
 }
 
@@ -559,7 +561,7 @@ function buildComplaintDoc(D, c, sess, logo, letterhead, images = {}, T = {}) {
     // موضوع الجلسة ثم روابطها (توثيقاتها)، ثم رأي اللجنة
     para("موضوع الجلسة:", { bold: true, after: 40 }), ...box(s.topic),
     ...linkParas("روابط الجلسة:", s.links),
-    ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...opt(docText(T, K("opinion_intro")), { after: 40 }), ...box(s.opinion)] : []),
+    ...(s.opinion ? [para("رأي لجنة الشكاوى والصلح:", { bold: true, before: 80, after: 40 }), ...opt(docText(T, K("opinion_intro"), docVars(c)), { after: 40 }), ...box(s.opinion)] : []),
   ]);
 
   // الترويسة: الصورة الرسمية (letterhead.jpg) بعرض الصفحة في رأس كل صفحة، أو — إن تعذّر تحميلها — الشعار واسم الإدارة وخط ذهبي
@@ -728,11 +730,11 @@ const ORDINALS = ["أولاً", "ثانياً", "ثالثاً", "رابعاً", 
 // (T: عبارات الملف المحفوظة — مقدمة الرأي وبند التبليغ)
 function decisionDefaults(c, opinion = "", T = {}) {
   const d = c.closed_date ? new Date(c.closed_date) : new Date();
-  const intro = docText(T, isDecObj(c) ? "obj_opinion_intro" : "opinion_intro");
+  const intro = docText(T, isDecObj(c) ? "obj_opinion_intro" : "opinion_intro", docVars(c));
   // الاعتراض على قرار بحكم محدد: بنود الحكم (شكلاً ثم موضوعاً) بدل النتيجة
   const verdict = verdictItems(c, T);
   const middle = verdict.length ? verdict : [(c.final_result || c.result || c.complainant_result || "").trim()];
-  const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), ...middle, docText(T, "notify")]
+  const items = [opinion.trim() && [intro, opinion.trim()].filter(Boolean).join("\n"), ...middle, docText(T, "notify", docVars(c))]
     .filter((x, i) => x || (i === 1 && !verdict.length));
   return {
     number: complaintRef(c),
@@ -4053,7 +4055,8 @@ function DocTextsCard({ secret }) {
     <div className="card">
       <h2>📝 عبارات ملفات Word ومهلة الاعتراض</h2>
       <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>
-        العبارات الثابتة في «دراسة شكوى» و«دراسة اعتراض» و«القرار». <b>{"{الموسم}"}</b> و<b>{"{التاريخ}"}</b> تُستبدلان بموسم الطلب وتاريخ وروده،
+        العبارات الثابتة في «دراسة شكوى» و«دراسة اعتراض» و«القرار». <b>{"{المشتكي}"}</b> و<b>{"{المشتكى عليه}"}</b> و<b>{"{رقم الطلب}"}</b>
+        تُستبدل باسم المشتكي والمشتكى عليه ورقم الطلب، و<b>{"{الموسم}"}</b> و<b>{"{التاريخ}"}</b> تُستبدلان بموسم الطلب وتاريخ وروده،
         وفي الاعتراض أيضاً <b>{"{رقم القرار}"}</b> و<b>{"{تاريخ القرار}"}</b> و<b>{"{الجهة المحيلة}"}</b>. العبارة الفارغة لا تظهر في الملف.
       </p>
       {t === null ? <Loading /> : (
