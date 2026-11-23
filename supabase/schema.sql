@@ -138,6 +138,8 @@
 --                admin_add_phrase / admin_delete_phrase، للمدير والمسؤول)؛ كلمة مرور الأدمن الأولى صارت القسم 75.
 --    2026-11-16  القسم 75: حفظ روابط الجلسة وحدها فوراً (admin_set_session_links) عند «✔️ تم» في نموذج جلسة محفوظة، دون
 --                بقية حقول النموذج؛ كلمة مرور الأدمن الأولى صارت القسم 76.
+--    2026-11-23  القسم 76: تعديل بيانات الشكوى الأساسية للمدير (admin_edit_complaint): التاريخ والطرفان والعنوان والنص، مع حفظ
+--                البيانات الأصلية مرة واحدة (original_data) ومن عدّل ومتى (edited_by / edited_at)؛ كلمة مرور الأدمن الأولى صارت القسم 77.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -8373,7 +8375,67 @@ end $$;
 grant execute on function public.admin_set_session_links(text, uuid, text[]) to anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- 76) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
+-- 76) تعديل بيانات الشكوى الأساسية (للمدير فقط): تاريخ الورود، اسم المشتكي وصفته وهاتفاه، اسم المشتكى عليه وصفته، العنوان والنص.
+--     السجل مُلغى (القسم 21)، فتُحفظ البيانات كما أدخلها المشتكي مرة واحدة عند أول تعديل (original_data)، ومن عدّل آخر مرة ومتى؛
+--     الرقم ورمز المتابعة والموسم لا تتغير.
+--     يحتاج الأقسام حتى 75 قبله؛ ويُنفَّذ وحده كتحديث لقاعدة موجودة (لا يحذف بيانات)
+-- ---------------------------------------------------------------------
+alter table public.complaints add column if not exists original_data jsonb;         -- البيانات الأصلية قبل أول تعديل
+alter table public.complaints add column if not exists edited_by     text;          -- من عدّل البيانات آخر مرة
+alter table public.complaints add column if not exists edited_at     timestamptz;   -- وقت آخر تعديل للبيانات
+
+-- تُرجع الطلب بعد التعديل، أو لا شيء (ليس مديراً، حقل إلزامي فارغ، أو قيمة أطول من المسموح)
+create or replace function public.admin_edit_complaint(
+  p_secret text, p_id uuid, p_received_at timestamptz,
+  p_complainant_name text, p_complainant_role text, p_phone_number text, p_contact_number text,
+  p_accused_name text, p_accused_role text, p_title text, p_subject text
+) returns setof public.complaints
+language plpgsql security definer set search_path = public as $$
+declare
+  c public.complaints;
+  v_name    text := btrim(coalesce(p_complainant_name, ''));
+  v_accused text := btrim(coalesce(p_accused_name, ''));
+  v_subject text := btrim(coalesce(p_subject, ''));
+begin
+  if public.verify_password('مدير', p_secret) is null then
+    return;
+  end if;
+  if v_name = '' or v_accused = '' or v_subject = '' or p_received_at is null
+     or length(v_name) > 200 or length(v_accused) > 200 or length(v_subject) > 5000
+     or length(coalesce(p_complainant_role, '')) > 100 or length(coalesce(p_accused_role, '')) > 100
+     or length(coalesce(p_title, '')) > 150 then
+    return;
+  end if;
+  select * into c from public.complaints where id = p_id;
+  if not found then
+    return;
+  end if;
+  update public.complaints set
+    -- البيانات الأصلية تُحفظ مرة واحدة فقط (عند أول تعديل)
+    original_data    = coalesce(original_data, jsonb_build_object(
+                         'received_date', c.received_date, 'complainant_name', c.complainant_name, 'complainant_role', c.complainant_role,
+                         'phone_number', c.phone_number, 'contact_number', c.contact_number, 'accused_name', c.accused_name,
+                         'accused_role', c.accused_role, 'title', c.title, 'subject', c.subject)),
+    received_date    = p_received_at,
+    complainant_name = v_name,
+    complainant_role = nullif(btrim(coalesce(p_complainant_role, '')), ''),
+    phone_number     = public.normalize_phone(p_phone_number),
+    contact_number   = public.normalize_phone(p_contact_number),
+    accused_name     = v_accused,
+    accused_role     = nullif(btrim(coalesce(p_accused_role, '')), ''),
+    title            = nullif(btrim(coalesce(p_title, '')), ''),
+    subject          = v_subject,
+    edited_by        = nullif(current_setting('app.actor', true), ''),
+    edited_at        = now()
+  where id = p_id;
+  return query select * from public.complaints where id = p_id;
+end $$;
+
+-- السماح للموقع باستدعاء الدالة
+grant execute on function public.admin_edit_complaint(text, uuid, timestamptz, text, text, text, text, text, text, text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 77) كلمة مرور الأدمن الأولى — غيّر 'غيّرني-123' قبل التنفيذ (6 أحرف على الأقل)
 -- ---------------------------------------------------------------------
 insert into public.access_passwords (role, password, holder_name)
 values ('أدمن', 'غيّرني-123', 'المدير');

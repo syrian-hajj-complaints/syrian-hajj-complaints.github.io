@@ -88,6 +88,8 @@
 //                وأزرار في بطاقة الطلب، ولون حول البطاقة، ورمزها بجانب الرقم في الجدول، وتصفية «العلامة»، وعمود «🚩 العلامة»؛
 //                وتُحفظ في ملف أرشيف الموسم. وزر «💬 إظهار الملاحظات» يُظهر الملاحظات السريعة داخل كل البطاقات معاً
 //                (يتذكره الجهاز)، وعمود «💬 الملاحظة السريعة» في الجدول.
+//    2026-11-23  «✏️ تعديل بيانات الشكوى» في البطاقة (للمدير، القسم 76، EditComplaintInfo): التاريخ والطرفان والعنوان والنص؛
+//                وسطر «✏️ عُدّلت البيانات بواسطة … في …» مع «📄 البيانات الأصلية» (ما تغيّر مما أدخله المشتكي أول مرة).
 //    2026-11-16  جدول «هل الطلب محق؟ حسب التصنيف» (JustByClassTable): لكل تصنيف الإجمالي والمحقة وغير المحقة والمغلقة التي
 //                لم يُحدَّد فيها وغير المغلقة، مع صف الإجمالي — في صفحة التقارير و«📊 المؤشرات» وتقرير المؤشرات (Word).
 //    2026-11-16  «هل الطلب محق؟» في الأعداد: صفحة التقارير (✅ المحقة / 🚫 غير المحقة / ❔ مغلقة لم يُحدَّد فيها، لكل تبويب)،
@@ -4866,6 +4868,96 @@ function AccusedKeyLine({ secret, c, onSaved }) {
   );
 }
 
+// «✏️ تعديل بيانات الشكوى» (للمدير، القسم 76): التاريخ والطرفان والعنوان والنص؛ وسطر «عُدّلت البيانات» مع البيانات كما أدخلها
+// المشتكي (original_data، تُحفظ مرة واحدة عند أول تعديل) لكل من يفتح البطاقة
+const ORIGINAL_FIELDS = [["received_date", "التاريخ"], ["complainant_name", "الاسم"], ["complainant_role", "الصفة"], ["phone_number", "الهاتف"],
+  ["contact_number", "واتس / تلغرام"], ["accused_name", "الطرف الثاني"], ["accused_role", "صفته"], ["title", "العنوان"], ["subject", "النص"]];
+function EditComplaintInfo({ secret, c, onSaved }) {
+  const [f, setF] = useState(null);           // null = مغلق
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [showOrig, setShowOrig] = useState(false);
+  const L = partyLabels(c);
+  const set = k => e => { setF(x => ({ ...x, [k]: e.target.value })); setErr(""); };
+  const setPhone = k => e => { setF(x => ({ ...x, [k]: cleanPhone(e.target.value) })); setErr(""); };
+  const open = () => { setErr(""); setF({ at: toDateTimeInput(c.received_date), name: c.complainant_name || "", crole: c.complainant_role || "",
+    phone: c.phone_number || "", contact: c.contact_number || "", accused: c.accused_name || "", arole: c.accused_role || "",
+    title: c.title || "", subject: c.subject || "" }); };
+
+  async function save(e) {
+    e.preventDefault();
+    if (!f.at || !f.name.trim() || !f.accused.trim() || !f.subject.trim()) return setErr(`التاريخ واسم ${L.who} و${L.against} والنص إلزامية.`);
+    setBusy(true); setErr("");
+    const { data, error } = await sb.rpc("admin_edit_complaint", { p_secret: secret, p_id: c.id, p_received_at: dateTimeInputToIso(f.at),
+      p_complainant_name: f.name, p_complainant_role: f.crole, p_phone_number: f.phone, p_contact_number: f.contact,
+      p_accused_name: f.accused, p_accused_role: f.arole, p_title: f.title, p_subject: f.subject });
+    setBusy(false);
+    if (error || !data || !data.length) return setErr("تعذّر الحفظ (نفّذ القسم 76 من schema.sql في Supabase).");
+    onSaved(data[0]); setF(null);
+  }
+
+  // البيانات الأصلية: ما تغيّر منها فقط
+  const orig = c.original_data || null;
+  const changed = orig ? ORIGINAL_FIELDS.filter(([k]) => k === "received_date"
+    ? orig[k] && new Date(orig[k]).getTime() !== new Date(c.received_date).getTime()
+    : (orig[k] || "") !== (c[k] || "")) : [];
+
+  return (
+    <>
+      {/* سطر «عُدّلت البيانات» وزر التعديل */}
+      {(c.edited_at || ADMIN_CTX.manager) && (
+        <div className="row" style={{ gap: 8, margin: "6px 0", fontSize: 13.5 }}>
+          {c.edited_at && <span className="muted">✏️ عُدّلت البيانات{c.edited_by ? ` بواسطة ${c.edited_by}` : ""} في {fmtDateTime(c.edited_at)}</span>}
+          {changed.length > 0 && <button type="button" className="btn danger-text" style={{ color: "var(--brand)" }} onClick={() => setShowOrig(!showOrig)}>
+            {showOrig ? "إخفاء الأصل" : "📄 البيانات الأصلية"}</button>}
+          {ADMIN_CTX.manager && <button type="button" className="btn secondary sm" onClick={open}>✏️ تعديل بيانات {L.noun}</button>}
+        </div>
+      )}
+      {/* البيانات كما أدخلها المشتكي (ما تغيّر منها) */}
+      {showOrig && changed.length > 0 && (
+        <div className="due-prompt" style={{ fontSize: 14 }}>
+          <b>📄 كما أُدخلت أول مرة:</b>
+          <dl className="detail-grid info-grid" style={{ marginTop: 6 }}>
+            {changed.map(([k, label]) => (
+              <div key={k} style={k === "subject" ? { gridColumn: "1 / -1" } : undefined}><dt>{label}</dt>
+                <dd style={{ whiteSpace: "pre-wrap" }}>{k === "received_date" ? fmtDateTime(orig[k]) : (orig[k] || "—")}</dd></div>
+            ))}
+          </dl>
+        </div>
+      )}
+      {/* نافذة التعديل */}
+      {f && ReactDOM.createPortal(
+        <div className="modal-back" {...backdrop(() => setF(null))}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-close"><button className="btn secondary sm" onClick={() => setF(null)}>✕ إغلاق</button></div>
+            <form className="card" onSubmit={save}>
+              <h2 style={{ marginTop: 0 }}>✏️ تعديل بيانات {L.noun} <ReqNo n={c.complaint_number} bold={false} /></h2>
+              <p className="muted" style={{ fontSize: 13.5, marginTop: 0 }}>الرقم ورمز المتابعة لا يتغيران. تُحفظ البيانات كما أُدخلت أول مرة، وتظهر من «📄 البيانات الأصلية».</p>
+              <div className="grid">
+                <Field label={`تاريخ ${L.noun}`} required><input type="datetime-local" value={f.at} onChange={set("at")} /></Field>
+                <Field label={`اسم ${L.who}`} required><input type="text" value={f.name} onChange={set("name")} maxLength={200} /></Field>
+                <Field label={`صفة ${L.who}`}><input type="text" value={f.crole} onChange={set("crole")} maxLength={100} list="edit-roles-list" /></Field>
+                <Field label="الهاتف"><input type="tel" dir="ltr" value={f.phone} onChange={setPhone("phone")} maxLength={15} /></Field>
+                <Field label="واتس / تلغرام"><input type="tel" dir="ltr" value={f.contact} onChange={setPhone("contact")} maxLength={15} /></Field>
+                <Field label={L.against} required><input type="text" value={f.accused} onChange={set("accused")} maxLength={200} /></Field>
+                {!isDecObj(c) && <Field label={`صفة ${L.against}`}><input type="text" value={f.arole} onChange={set("arole")} maxLength={100} list="edit-roles-list" /></Field>}
+                <Field label={`عنوان ${L.noun}`}><input type="text" value={f.title} onChange={set("title")} maxLength={150} /></Field>
+                <VoiceArea label={`نص ${L.noun} *`} hint={`${f.subject.length} / 5000 حرف`} minHeight={180} maxLength={5000}
+                  value={f.subject} onChange={v => { setF(x => ({ ...x, subject: v })); setErr(""); }} onError={setErr} />
+              </div>
+              <datalist id="edit-roles-list">{ROLES.map(r => <option key={r} value={r} />)}</datalist>
+              {err && <Alert type="error">{err}</Alert>}
+              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+                <button className="btn" disabled={busy}>{busy ? "جارٍ الحفظ…" : "💾 حفظ التعديل"}</button>
+                <button type="button" className="btn secondary" onClick={() => setF(null)}>إلغاء</button>
+              </div>
+            </form>
+          </div>
+        </div>, document.body)}
+    </>
+  );
+}
+
 // الربط بـ«🏛️ قرارات الإدارة» برقم القرار (كالمصادقة): اختيار القرار من القائمة يملأ تاريخه، ويظهر عنوانه ورابطه
 function DecObjInfo({ secret, c, onSaved }) {
   const [edit, setEdit] = useState(null);   // null = عرض فقط
@@ -5173,6 +5265,7 @@ function ComplaintCard({ secret, complaint: c, onSaved, onSessionsChanged, fromD
       {isDecObj(c) ? <DecObjInfo secret={secret} c={c} onSaved={onSaved} /> : <AccusedKeyLine secret={secret} c={c} onSaved={onSaved} />}
       {c.title && <div className="c-title">📝 {c.title}</div>}
       <div className="subject">{c.subject}</div>
+      <EditComplaintInfo secret={secret} c={c} onSaved={onSaved} />
       <LinksEditor secret={secret} complaint={c} target="complaint" onSaved={onSaved} />
       <StudyLink secret={secret} complaint={c} onSaved={onSaved} />
       <StudyLink secret={secret} complaint={c} onSaved={onSaved} field="decision_url" />
