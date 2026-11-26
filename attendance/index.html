@@ -187,13 +187,17 @@
               </div>
             </div>
             <div class="filters no-print" id="att-list-filter"></div>
-            <div class="filters no-print" id="att-filters">
-              <button class="chip active" data-filter="all">الكل</button>
-              <button class="chip" data-filter="present">الحاضرون</button>
-              <button class="chip" data-filter="late">المتأخرون</button>
-              <button class="chip" data-filter="absent">الغائبون</button>
+            <div class="row no-print att-tools">
+              <label class="sort-label">ترتيب:
+                <select id="att-sort">
+                  <option value="name">أبجدي (أ ← ي)</option>
+                  <option value="name-desc">أبجدي عكسي (ي ← أ)</option>
+                  <option value="list">حسب القائمة</option>
+                  <option value="time">حسب وقت التسجيل</option>
+                </select>
+              </label>
             </div>
-            <p class="muted small-inline no-print att-hint">اضغط على الاسم: مرة = ✓ حاضر، مرتين = ⏰ متأخر، ثلاثاً = إلغاء.</p>
+            <p class="muted small-inline no-print att-hint">اضغط على الاسم فينتقل: «لم يُسجَّل» ← ✓ الحاضرون ← ⏰ المتأخرون ← «لم يُسجَّل». اضغط عنوان القسم لطيّه.</p>
             <ul id="att-list" class="att-list"></ul>
           </div>
 

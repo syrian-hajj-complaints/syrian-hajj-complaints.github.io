@@ -103,7 +103,8 @@
     members: [],
     meetings: [],
     openId: null,
-    attFilter: 'all',
+    attSort: localStorage.getItem('att-sort') || 'name',
+    collapsed: (() => { try { return JSON.parse(localStorage.getItem('att-collapsed') || '{}'); } catch (_) { return {}; } })(),
     attList: 'all',
     attSearch: '',
     membersSearch: '',
@@ -1072,10 +1073,8 @@
   function openMeeting(id) {
     state.openId = id;
     state.attSearch = '';
-    state.attFilter = 'all';
     state.attList = 'all';
     $('#att-search').value = '';
-    $$('#att-filters .chip').forEach((c) => c.classList.toggle('active', c.dataset.filter === 'all'));
     renderMeetingView();
     showView('meeting');
     window.scrollTo(0, 0);
@@ -1123,51 +1122,72 @@
       return;
     }
     const q = state.attSearch.trim();
-    const match = (x) => {
-      const s = statusOf(m, x.id);
-      if (state.attFilter === 'present' && s !== 'present') return false;
-      if (state.attFilter === 'late' && s !== 'late') return false;
-      if (state.attFilter === 'absent' && s) return false;
-      return !q || x.full_name.includes(q);
-    };
-    const lists = meetingLists(m).filter((l) => state.attList === 'all' || l.id === state.attList);
-    const showHeads = meetingLists(m).length > 1;
+    const listIds = new Set(meetingLists(m).filter((l) => state.attList === 'all' || l.id === state.attList).map((l) => l.id));
+    const multi = meetingLists(m).length > 1;
+    const people = state.members.filter((x) => listIds.has(x.list_id) && (!q || x.full_name.includes(q)));
+
+    // ثلاثة أقسام: كل ضغطة تنقل الاسم من قسم إلى آخر
+    const SECTIONS = [
+      { key: null, cls: 'pending', title: '⏳ لم يُسجَّل بعد', empty: '🎉 تم تفقّد الجميع' },
+      { key: 'present', cls: 'present', title: '✓ الحاضرون', empty: 'لا أحد بعد' },
+      { key: 'late', cls: 'late', title: '⏰ المتأخرون', empty: 'لا أحد' },
+    ];
     let html = '';
-    for (const l of lists) {
-      const inList = membersOf(l.id);
-      const items = inList.filter(match);
-      if (!items.length) continue;
-      if (showHeads) {
-        const c = countsOf(m, inList);
-        html += `<li class="group-head">${esc(l.name)}
-          <span class="muted">حاضر ${c.present}${c.late ? ` · متأخر ${c.late}` : ''} · غائب ${c.absent} من ${c.total}</span></li>`;
+    for (const sec of SECTIONS) {
+      const items = sortPeople(people.filter((x) => statusOf(m, x.id) === sec.key), m);
+      const id = sec.key || 'pending';
+      const closed = !!state.collapsed[id];
+      html += `
+        <li class="sec-head ${sec.cls}">
+          <button type="button" data-sec="${id}" aria-expanded="${!closed}">
+            <span>${sec.title}</span><span class="sec-count">${items.length}</span><span class="sec-arrow">${closed ? '◂' : '▾'}</span>
+          </button>
+        </li>`;
+      if (closed) continue;
+      if (!items.length) {
+        html += `<li class="sec-empty">${q ? 'لا نتائج' : sec.empty}</li>`;
+        continue;
       }
       html += items.map((x) => {
-        const s = statusOf(m, x.id);
+        const s = sec.key;
         const at = m.present[x.id] || m.late[x.id];
         return `
           <li class="att-row">
             <button type="button" class="att-item ${s || ''}" data-member="${x.id}"
-              title="${s === 'present' ? 'اضغط لتسجيله متأخراً' : s === 'late' ? 'اضغط لإلغاء العلامة' : 'اضغط لتسجيله حاضراً'}">
+              title="${s === 'present' ? 'اضغط لتسجيله متأخراً' : s === 'late' ? 'اضغط لإعادته إلى «لم يُسجَّل»' : 'اضغط لتسجيله حاضراً'}">
               <span class="tick" aria-hidden="true">${s === 'late' ? '⏰' : '✓'}</span>
               ${avatar(x)}
-              <span class="name">${esc(x.full_name)}</span>
-              ${s ? `<small class="when">${s === 'late' ? 'متأخر · ' : ''}${esc(fmtTime(at))}</small>` : '<small class="when print-only">غائب</small>'}
+              <span class="name">${esc(x.full_name)}${multi ? `<small class="list-tag">${esc(listName(x.list_id))}</small>` : ''}</span>
+              ${s ? `<small class="when">${esc(fmtTime(at))}</small>` : '<small class="when print-only">غائب</small>'}
             </button>
           </li>`;
       }).join('');
     }
-    el.innerHTML = html || `<li class="empty">لا نتائج.</li>`;
+    el.innerHTML = html;
   }
 
-  $('#att-search').addEventListener('input', (e) => { state.attSearch = e.target.value; renderMeetingView(); });
-  $('#att-filters').addEventListener('click', (e) => {
-    const c = e.target.closest('.chip');
-    if (!c) return;
-    state.attFilter = c.dataset.filter;
-    $$('.chip', e.currentTarget).forEach((x) => x.classList.toggle('active', x === c));
+  // ---------- الفرز ----------
+  const collator = new Intl.Collator('ar', { sensitivity: 'base', numeric: true });
+  const SORTS = {
+    name: (a, b) => collator.compare(a.full_name, b.full_name),
+    'name-desc': (a, b) => collator.compare(b.full_name, a.full_name),
+    list: (a, b) => collator.compare(listName(a.list_id), listName(b.list_id)) || collator.compare(a.full_name, b.full_name),
+  };
+  function sortPeople(arr, m) {
+    if (state.attSort === 'time') {
+      const t = (x) => m.present[x.id] || m.late[x.id] || '';
+      return arr.sort((a, b) => (t(a) < t(b) ? -1 : t(a) > t(b) ? 1 : SORTS.name(a, b)));
+    }
+    return arr.sort(SORTS[state.attSort] || SORTS.name);
+  }
+  $('#att-sort').value = state.attSort;
+  $('#att-sort').addEventListener('change', (e) => {
+    state.attSort = e.target.value;
+    localStorage.setItem('att-sort', state.attSort);
     renderMeetingView();
   });
+
+  $('#att-search').addEventListener('input', (e) => { state.attSearch = e.target.value; renderMeetingView(); });
   $('#att-list-filter').addEventListener('click', (e) => {
     const c = e.target.closest('[data-att-list]');
     if (!c) return;
@@ -1232,6 +1252,12 @@
   });
 
   $('#att-list').addEventListener('click', (e) => {
+    const sec = e.target.closest('[data-sec]');
+    if (sec) {
+      state.collapsed[sec.dataset.sec] = !state.collapsed[sec.dataset.sec];
+      localStorage.setItem('att-collapsed', JSON.stringify(state.collapsed));
+      return renderMeetingView();
+    }
     const b = e.target.closest('.att-item[data-member]');
     if (!b) return;
     const m = openMeetingObj();

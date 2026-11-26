@@ -275,6 +275,24 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .chip.list { border-radius: 8px; font-weight: 500; }
 .chip.list.active { background: var(--primary); border-color: var(--primary); }
 .att-hint { margin-bottom: .6rem; }
+.att-tools { margin-bottom: .5rem; }
+.sort-label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .88rem; font-weight: 500; color: var(--muted); }
+.sort-label select { width: auto; margin: 0; padding: .3rem .5rem; font-size: .88rem; }
+
+/* أقسام التفقّد */
+.att-list li.sec-head { margin-top: .8rem; }
+.att-list li.sec-head:first-child { margin-top: 0; }
+.sec-head button {
+  font: inherit; width: 100%; display: flex; align-items: center; gap: .5rem; cursor: pointer;
+  background: #f3f5f8; border: 0; border-radius: 8px; padding: .45rem .7rem; font-weight: 700; color: var(--text);
+  position: sticky; top: 0;
+}
+.sec-head.present button { background: color-mix(in srgb, var(--present) 12%, #fff); color: var(--present); }
+.sec-head.late button { background: color-mix(in srgb, var(--late) 14%, #fff); color: var(--late); }
+.sec-head .sec-count { background: #fff; border-radius: 999px; padding: 0 .55rem; font-size: .85rem; min-width: 1.8em; text-align: center; }
+.sec-head .sec-arrow { margin-inline-start: auto; font-size: .85rem; opacity: .7; }
+.sec-empty { list-style: none; text-align: center; color: var(--muted); font-size: .88rem; padding: .5rem; }
+.list-tag { display: block; font-size: .72rem; font-weight: 400; color: var(--muted); }
 
 .att-list { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; }
 .att-list li + li { margin-top: .3rem; }
