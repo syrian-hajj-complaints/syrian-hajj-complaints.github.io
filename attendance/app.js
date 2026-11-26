@@ -13,8 +13,24 @@
   const nameKey = (s) => cleanName(s).toLowerCase();
   const countWords = (s) => (String(s ?? '').trim().match(/\S+/g) || []).length;
   const wordsLabel = (n) => (n === 1 ? 'كلمة واحدة' : n === 2 ? 'كلمتان' : n >= 3 && n <= 10 ? `${n} كلمات` : `${n} كلمة`);
-  const fmtDateTime = (iso) => new Date(iso).toLocaleString('ar', { dateStyle: 'full', timeStyle: 'short' });
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString('ar', { timeStyle: 'short' });
+  // التاريخ: ميلادي وهجري (تقويم أم القرى؛ قد يختلف يوماً عن رؤية الهلال المحلية)
+  const HIJRI = 'ar-SA-u-ca-islamic-umalqura-nu-latn';
+  const gregFull = new Intl.DateTimeFormat('ar', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const gregWeekday = new Intl.DateTimeFormat('ar', { weekday: 'long' });
+  const gregMonth = new Intl.DateTimeFormat('ar', { month: 'long', year: 'numeric' });
+  const timeFmt = new Intl.DateTimeFormat('ar', { timeStyle: 'short' });
+  const hijriFull = new Intl.DateTimeFormat(HIJRI, { day: 'numeric', month: 'long', year: 'numeric' });
+  const hijriDay = new Intl.DateTimeFormat(HIJRI, { day: 'numeric' });
+  const hijriMonth = new Intl.DateTimeFormat(HIJRI, { month: 'long' });
+  const hijriMonthShort = new Intl.DateTimeFormat(HIJRI, { month: 'short' });
+  const hijriMonthYear = new Intl.DateTimeFormat(HIJRI, { month: 'long', year: 'numeric' });
+  const hijriDayNum = (d) => Number(new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric' }).format(d));
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const fmtDateTime = (iso) => {
+    const d = new Date(iso);
+    return `${gregFull.format(d)} · ${hijriFull.format(d)} · ${timeFmt.format(d)}`;
+  };
+  const fmtTime = (iso) => timeFmt.format(new Date(iso));
   const toLocalInput = (iso) => {
     const d = iso ? new Date(iso) : new Date();
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -805,35 +821,141 @@
   const openMeetingObj = () => state.meetings.find((m) => m.id === state.openId) || null;
   const isPending = (id) => outbox.some((o) => opMeeting(o) === id);
 
-  function renderMeetings() {
-    const el = $('#meetings-list');
-    if (!state.meetings.length) {
-      el.innerHTML = `<div class="card empty">لا توجد اجتماعات بعد. اضغط «بدء اجتماع جديد».</div>`;
-      return;
-    }
-    el.innerHTML = state.meetings.map((m) => {
-      const c = countsOf(m);
-      const lists = m.list_ids.length ? meetingLists(m).map((l) => l.name).join('، ') : 'كل القوائم';
-      return `
-        <div class="card meeting-card" data-id="${m.id}" role="button" tabindex="0">
-          <div class="meeting-card-actions">
-            <button class="icon-btn" data-edit-meeting="${m.id}" title="تعديل الاجتماع">✎</button>
-            <button class="icon-btn del" data-del-meeting="${m.id}" title="حذف الاجتماع">✕</button>
-          </div>
-          <h3>${esc(m.name)}</h3>
-          <p class="muted">${esc(fmtDateTime(m.meeting_date))}</p>
-          ${m.location ? `<p class="muted">📍 ${esc(m.location)}</p>` : ''}
-          <p class="muted small-inline">📋 ${esc(lists)}</p>
-          <div class="meeting-card-foot">
-            <span class="badge present">✓ حاضر ${c.present}</span>
-            ${c.late ? `<span class="badge late">⏰ متأخر ${c.late}</span>` : ''}
-            <span class="badge absent">غائب ${c.absent}</span>
-            <span class="badge">الملاحظات ${m.notes.length}</span>
-            ${isPending(m.id) ? '<span class="badge pending">⏳ بانتظار الرفع</span>' : ''}
-          </div>
-        </div>`;
-    }).join('');
+  function meetingCard(m) {
+    const c = countsOf(m);
+    const lists = m.list_ids.length ? meetingLists(m).map((l) => l.name).join('، ') : 'كل القوائم';
+    return `
+      <div class="card meeting-card" data-id="${m.id}" role="button" tabindex="0">
+        <div class="meeting-card-actions">
+          <button class="icon-btn" data-edit-meeting="${m.id}" title="تعديل الاجتماع">✎</button>
+          <button class="icon-btn del" data-del-meeting="${m.id}" title="حذف الاجتماع">✕</button>
+        </div>
+        <h3>${esc(m.name)}</h3>
+        <p class="muted">${esc(fmtDateTime(m.meeting_date))}</p>
+        ${m.location ? `<p class="muted">📍 ${esc(m.location)}</p>` : ''}
+        <p class="muted small-inline">📋 ${esc(lists)}</p>
+        <div class="meeting-card-foot">
+          <span class="badge present">✓ حاضر ${c.present}</span>
+          ${c.late ? `<span class="badge late">⏰ متأخر ${c.late}</span>` : ''}
+          <span class="badge absent">غائب ${c.absent}</span>
+          <span class="badge">الملاحظات ${m.notes.length}</span>
+          ${isPending(m.id) ? '<span class="badge pending">⏳ بانتظار الرفع</span>' : ''}
+        </div>
+      </div>`;
   }
+
+  // ---------- العرض: تقويم شهري أو قائمة ----------
+  const cal = (() => {
+    const now = new Date();
+    return {
+      mode: localStorage.getItem('meetings-view') || 'calendar',
+      y: now.getFullYear(),
+      m: now.getMonth(),
+      day: dayKey(now), // اليوم المختار
+    };
+  })();
+
+  function renderMeetings() {
+    $$('#view-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.mode === cal.mode));
+    show($('#calendar-wrap'), cal.mode === 'calendar');
+    show($('#meetings-list'), cal.mode === 'list');
+    if (cal.mode === 'calendar') return renderCalendar();
+    const el = $('#meetings-list');
+    el.innerHTML = state.meetings.length
+      ? state.meetings.map(meetingCard).join('')
+      : `<div class="card empty">لا توجد اجتماعات بعد. اضغط «بدء اجتماع جديد».</div>`;
+  }
+
+  function meetingsByDay() {
+    const map = new Map();
+    for (const m of state.meetings) {
+      const k = dayKey(new Date(m.meeting_date));
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(m);
+    }
+    for (const list of map.values()) list.sort((a, b) => new Date(a.meeting_date) - new Date(b.meeting_date));
+    return map;
+  }
+
+  function renderCalendar() {
+    const first = new Date(cal.y, cal.m, 1);
+    const last = new Date(cal.y, cal.m + 1, 0);
+    const offset = (first.getDay() + 1) % 7; // الأسبوع يبدأ يوم السبت
+    const byDay = meetingsByDay();
+    const today = dayKey(new Date());
+
+    $('#cal-title').textContent = gregMonth.format(first);
+    const h1 = hijriMonth.format(first);
+    const h2 = hijriMonthYear.format(last);
+    $('#cal-hijri').textContent = h2.startsWith(h1) ? h2 : `${h1} – ${h2}`;
+
+    let html = '';
+    for (let i = 0; i < offset; i++) html += '<span class="cal-day blank"></span>';
+    for (let d = 1; d <= last.getDate(); d++) {
+      const date = new Date(cal.y, cal.m, d);
+      const k = dayKey(date);
+      const items = byDay.get(k) || [];
+      const hDay = hijriDay.format(date);
+      const hLabel = hijriDayNum(date) === 1 ? `${hDay} ${hijriMonthShort.format(date)}` : hDay;
+      html += `
+        <button type="button" class="cal-day ${k === today ? 'today' : ''} ${k === cal.day ? 'selected' : ''} ${items.length ? 'has' : ''}" data-day="${k}">
+          <span class="cal-num"><b>${d.toLocaleString('ar')}</b><small>${esc(hLabel)}</small></span>
+          <span class="cal-events">
+            ${items.slice(0, 3).map((m) => `<span class="cal-ev" data-open="${m.id}" title="${esc(m.name)}">${esc(fmtTime(m.meeting_date))} ${esc(m.name)}</span>`).join('')}
+            ${items.length > 3 ? `<span class="cal-more">+${(items.length - 3).toLocaleString('ar')}</span>` : ''}
+          </span>
+          ${items.length ? `<span class="cal-dot">${items.length.toLocaleString('ar')}</span>` : ''}
+        </button>`;
+    }
+    const tail = (7 - ((offset + last.getDate()) % 7)) % 7;
+    for (let i = 0; i < tail; i++) html += '<span class="cal-day blank"></span>';
+    $('#cal-days').innerHTML = html;
+    renderDayPanel(byDay);
+  }
+
+  function renderDayPanel(byDay = meetingsByDay()) {
+    const [y, mo, d] = cal.day.split('-').map(Number);
+    const date = new Date(y, mo - 1, d);
+    $('#day-title').textContent = gregFull.format(date);
+    $('#day-hijri').textContent = hijriFull.format(date);
+    const items = byDay.get(cal.day) || [];
+    $('#day-meetings').innerHTML = items.length
+      ? items.map(meetingCard).join('')
+      : `<div class="card empty">لا توجد اجتماعات في هذا اليوم.</div>`;
+  }
+
+  function goMonth(delta) {
+    const d = new Date(cal.y, cal.m + delta, 1);
+    cal.y = d.getFullYear();
+    cal.m = d.getMonth();
+    renderCalendar();
+  }
+  $('#cal-prev').addEventListener('click', () => goMonth(-1));
+  $('#cal-next').addEventListener('click', () => goMonth(1));
+  $('#cal-today').addEventListener('click', () => {
+    const now = new Date();
+    cal.y = now.getFullYear();
+    cal.m = now.getMonth();
+    cal.day = dayKey(now);
+    renderCalendar();
+  });
+  $('#cal-days').addEventListener('click', (e) => {
+    const ev = e.target.closest('[data-open]');
+    if (ev) return openMeeting(ev.dataset.open);
+    const day = e.target.closest('[data-day]');
+    if (!day) return;
+    cal.day = day.dataset.day;
+    renderCalendar();
+    if (window.matchMedia('(max-width: 900px)').matches) $('.day-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('#view-toggle').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mode]');
+    if (!b) return;
+    cal.mode = b.dataset.mode;
+    localStorage.setItem('meetings-view', cal.mode);
+    renderMeetings();
+  });
+  $('#day-new-btn').addEventListener('click', () => openMeetingDialog(null, cal.day));
 
   function deleteMeeting(m) {
     if (!confirm(`حذف اجتماع «${m.name}» مع سجل الحضور والملاحظات؟\nلا يمكن التراجع عن الحذف.`)) return false;
@@ -842,29 +964,43 @@
     return true;
   }
 
-  $('#meetings-list').addEventListener('click', (e) => {
-    const editId = e.target.dataset.editMeeting;
-    const delId = e.target.dataset.delMeeting;
-    if (editId) return openMeetingDialog(state.meetings.find((m) => m.id === editId));
-    if (delId) return deleteMeeting(state.meetings.find((m) => m.id === delId));
-    const card = e.target.closest('.meeting-card');
-    if (card) openMeeting(card.dataset.id);
-  });
-  $('#meetings-list').addEventListener('keydown', (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('meeting-card')) {
-      e.preventDefault();
-      openMeeting(e.target.dataset.id);
-    }
-  });
+  // بطاقات الاجتماعات (في القائمة وتحت التقويم)
+  for (const sel of ['#meetings-list', '#day-meetings']) {
+    $(sel).addEventListener('click', (e) => {
+      const editId = e.target.dataset.editMeeting;
+      const delId = e.target.dataset.delMeeting;
+      if (editId) return openMeetingDialog(state.meetings.find((m) => m.id === editId));
+      if (delId) return deleteMeeting(state.meetings.find((m) => m.id === delId));
+      const card = e.target.closest('.meeting-card');
+      if (card) openMeeting(card.dataset.id);
+    });
+    $(sel).addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('meeting-card')) {
+        e.preventDefault();
+        openMeeting(e.target.dataset.id);
+      }
+    });
+  }
+
+  // التاريخ الهجري المقابل للتاريخ المختار في نافذة الاجتماع
+  const updateDateHijri = () => {
+    const v = $('#meeting-form').meeting_date.value;
+    $('#date-hijri').textContent = v ? `يوافق: ${gregWeekday.format(new Date(v))} ${hijriFull.format(new Date(v))}` : '';
+  };
+  $('#meeting-form').meeting_date.addEventListener('input', updateDateHijri);
 
   let editingMeetingId = null;
-  function openMeetingDialog(meeting = null) {
+  // presetDay: «2026-11-26» عند إنشاء اجتماع من يوم في التقويم
+  function openMeetingDialog(meeting = null, presetDay = null) {
     editingMeetingId = meeting?.id || null;
     const f = $('#meeting-form');
     f.reset();
     $('#meeting-dialog-title').textContent = meeting ? 'تعديل الاجتماع' : 'اجتماع جديد';
     f.title.value = meeting?.name || '';
-    f.meeting_date.value = toLocalInput(meeting?.meeting_date);
+    if (meeting) f.meeting_date.value = toLocalInput(meeting.meeting_date);
+    else if (presetDay && presetDay !== dayKey(new Date())) f.meeting_date.value = `${presetDay}T10:00`;
+    else f.meeting_date.value = toLocalInput();
+    updateDateHijri();
     f.location.value = meeting?.location || '';
     const chosen = meeting?.list_ids?.length ? meeting.list_ids : state.lists.map((l) => l.id);
     $('#meeting-lists').innerHTML = state.lists.length

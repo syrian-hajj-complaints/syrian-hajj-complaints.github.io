@@ -191,6 +191,66 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .photo-dialog img { display: block; max-width: 100%; max-height: 75vh; border-radius: 8px; margin: 0 auto; }
 .photo-dialog p { margin-top: .6rem; font-weight: 700; }
 
+/* ---------- التقويم ---------- */
+.seg-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
+.seg-toggle button { font: inherit; font-size: .9rem; border: 0; background: none; padding: .45rem .8rem; cursor: pointer; color: var(--muted); }
+.seg-toggle button + button { border-inline-start: 1px solid var(--border); }
+.seg-toggle button.active { background: var(--primary); color: #fff; }
+
+#calendar-wrap { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 1.25rem; align-items: start; }
+.cal { padding: 1rem; }
+.cal-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.cal-title { flex: 1; text-align: center; display: flex; flex-direction: column; line-height: 1.35; }
+.cal-title b { font-size: 1.2rem; }
+.cal-title span { font-size: .88rem; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-weekdays { margin-bottom: 4px; }
+.cal-weekdays span { text-align: center; font-size: .8rem; font-weight: 500; color: var(--muted); padding: .2rem 0; }
+.cal-day {
+  font: inherit; color: inherit; text-align: start; position: relative;
+  min-height: 92px; padding: .35rem .4rem; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+  display: flex; flex-direction: column; gap: .25rem; cursor: pointer; overflow: hidden;
+}
+.cal-day:hover { border-color: var(--primary); }
+.cal-day.blank { background: transparent; border-color: transparent; cursor: default; }
+.cal-num { display: flex; justify-content: space-between; align-items: baseline; gap: .25rem; }
+.cal-num b { font-size: 1.05rem; }
+.cal-num small { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.cal-day.today { background: color-mix(in srgb, var(--primary) 7%, #fff); }
+.cal-day.today .cal-num b { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 .45rem; }
+.cal-day.selected { outline: 2px solid var(--primary); outline-offset: -1px; }
+.cal-events { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cal-ev {
+  font-size: .72rem; line-height: 1.35; padding: .1rem .35rem; border-radius: 5px;
+  background: color-mix(in srgb, var(--primary) 13%, #fff); color: var(--primary-h);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-ev:hover { background: var(--primary); color: #fff; }
+.cal-more { font-size: .7rem; color: var(--muted); }
+.cal-dot { display: none; }
+.day-head { margin-bottom: .75rem; }
+.day-head h3 { margin: 0; }
+.day-panel .grid { grid-template-columns: 1fr; }
+.date-hijri { margin: -.5rem 0 .8rem; }
+
+@media (max-width: 900px) {
+  #calendar-wrap { grid-template-columns: 1fr; }
+  .day-panel .grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+}
+@media (max-width: 560px) {
+  .cal { padding: .6rem; }
+  .cal-grid { gap: 2px; }
+  .cal-weekdays span { font-size: .66rem; }
+  .cal-day { min-height: 58px; padding: .25rem; align-items: center; }
+  .cal-num { flex-direction: column; align-items: center; gap: 0; }
+  .cal-num small { font-size: .62rem; }
+  .cal-events { display: none; }
+  .cal-dot {
+    display: grid; place-items: center; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+    min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--primary); color: #fff; font-size: .65rem;
+  }
+}
+
 /* ---------- الإحصائيات ---------- */
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-bottom: 1.25rem; }
 .stat { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .75rem; text-align: center; }

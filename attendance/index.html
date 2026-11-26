@@ -58,9 +58,46 @@
       <section id="view-meetings" class="view">
         <div class="view-head">
           <h2>الاجتماعات</h2>
-          <button class="btn primary" id="new-meeting-btn">+ بدء اجتماع جديد</button>
+          <div class="row">
+            <div class="seg-toggle" id="view-toggle">
+              <button type="button" data-mode="calendar">📅 تقويم</button>
+              <button type="button" data-mode="list">☰ قائمة</button>
+            </div>
+            <button class="btn primary" id="new-meeting-btn">+ بدء اجتماع جديد</button>
+          </div>
         </div>
-        <div id="meetings-list" class="grid"></div>
+
+        <!-- التقويم الشهري -->
+        <div id="calendar-wrap">
+          <div class="card cal">
+            <div class="cal-head">
+              <button type="button" class="btn ghost sm" id="cal-prev" title="الشهر السابق">→</button>
+              <div class="cal-title">
+                <b id="cal-title"></b>
+                <span class="muted" id="cal-hijri"></span>
+              </div>
+              <button type="button" class="btn ghost sm" id="cal-next" title="الشهر التالي">←</button>
+              <button type="button" class="btn sm" id="cal-today">اليوم</button>
+            </div>
+            <div class="cal-grid cal-weekdays">
+              <span>السبت</span><span>الأحد</span><span>الاثنين</span><span>الثلاثاء</span><span>الأربعاء</span><span>الخميس</span><span>الجمعة</span>
+            </div>
+            <div class="cal-grid" id="cal-days"></div>
+          </div>
+          <div class="day-panel">
+            <div class="view-head day-head">
+              <div>
+                <h3 id="day-title"></h3>
+                <span class="muted small-inline" id="day-hijri"></span>
+              </div>
+              <button class="btn sm" id="day-new-btn">+ اجتماع في هذا اليوم</button>
+            </div>
+            <div id="day-meetings" class="grid"></div>
+          </div>
+        </div>
+
+        <!-- قائمة البطاقات -->
+        <div id="meetings-list" class="grid hidden"></div>
       </section>
 
       <!-- الأسماء -->
@@ -198,6 +235,7 @@
       <h3 id="meeting-dialog-title">اجتماع جديد</h3>
       <label>عنوان الاجتماع<input name="title" required></label>
       <label>التاريخ والوقت<input name="meeting_date" type="datetime-local" required></label>
+      <p class="muted small-inline date-hijri" id="date-hijri"></p>
       <label>المكان (اختياري)<input name="location"></label>
       <fieldset class="lists-field">
         <legend>القوائم المشاركة في الاجتماع</legend>
