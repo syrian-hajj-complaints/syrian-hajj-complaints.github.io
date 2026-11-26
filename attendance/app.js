@@ -1,7 +1,9 @@
 ﻿(() => {
   'use strict';
 
-  // ---------- أدوات مساعدة ----------
+  // =====================================================================
+  //  أدوات مساعدة
+  // =====================================================================
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const show = (el, on = true) => el.classList.toggle('hidden', !on);
@@ -9,6 +11,8 @@
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const cleanName = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
   const nameKey = (s) => cleanName(s).toLowerCase();
+  const countWords = (s) => (String(s ?? '').trim().match(/\S+/g) || []).length;
+  const wordsLabel = (n) => (n === 1 ? 'كلمة واحدة' : n === 2 ? 'كلمتان' : n >= 3 && n <= 10 ? `${n} كلمات` : `${n} كلمة`);
   const fmtDateTime = (iso) => new Date(iso).toLocaleString('ar', { dateStyle: 'full', timeStyle: 'short' });
   const fmtTime = (iso) => new Date(iso).toLocaleTimeString('ar', { timeStyle: 'short' });
   const toLocalInput = (iso) => {
@@ -16,6 +20,11 @@
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().slice(0, 16);
   };
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    }));
 
   let toastTimer;
   function toast(msg, type = 'ok') {
@@ -23,63 +32,281 @@
     t.textContent = msg;
     t.className = `toast show ${type}`;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (t.className = 'toast'), 3000);
+    toastTimer = setTimeout(() => (t.className = 'toast'), 3500);
   }
   function fail(error) {
     console.error(error);
-    toast(error?.message || 'حدث خطأ غير متوقع', 'err');
+    toast(isNetErr(error) ? 'لا يوجد اتصال بالإنترنت' : (error?.message || 'حدث خطأ غير متوقع'), 'err');
   }
 
-  // ---------- الإعداد ----------
+  // خطأ اتصال (لا إنترنت) أم خطأ حقيقي من الخادم؟
+  const isNetErr = (e) => !navigator.onLine ||
+    /failed to fetch|networkerror|network request failed|load failed|fetch failed|timeout/i.test(`${e?.message || ''} ${e?.details || ''}`);
+  // أخطاء بيانات لا فائدة من إعادة محاولتها (مثل: الاجتماع حُذف من جهاز آخر)
+  const isDataErr = (e) => /^(P0001|22|23|42703|PGRST116)/.test(e?.code || '');
+
+  function requireOnline() {
+    if (navigator.onLine) return true;
+    toast('هذا الإجراء يحتاج اتصالاً بالإنترنت. التفقّد والملاحظات تعمل بدونه.', 'err');
+    return false;
+  }
+
+  // =====================================================================
+  //  الإعداد
+  // =====================================================================
   const cfg = window.APP_CONFIG || {};
-  if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY || cfg.SUPABASE_URL.includes('YOUR-PROJECT')) {
+  if (!window.supabase || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY || cfg.SUPABASE_URL.includes('YOUR-PROJECT')) {
     show($('#config-screen'));
     return;
   }
   const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
-  // كل البيانات في جدول واحد: سطر لكل اسم (kind = member) وسطر لكل اجتماع (kind = meeting)
+  // كل البيانات في جدول واحد: list (قائمة) / member (اسم) / meeting (اجتماع)
   const TABLE = 'meeting_attendance';
   const tbl = () => sb.from(TABLE);
-  const toMeeting = (r) => ({ ...r, title: r.name, present: r.present || {}, notes: r.notes || [], list_ids: r.list_ids || [] });
+  const MEETING_COLS = 'id, name, meeting_date, location, list_ids, present, late, notes';
 
-  // القوائم المشاركة في اجتماع (الموجودة فعلاً)؛ اجتماع بلا قوائم محددة = كل القوائم
-  const meetingLists = (m) => {
-    const chosen = state.lists.filter((l) => m.list_ids.includes(l.id));
-    return chosen.length ? chosen : state.lists;
-  };
-  // أسماء الاجتماع: أسماء قوائمه المشاركة
-  const rosterOf = (m) => {
-    const ids = new Set(meetingLists(m).map((l) => l.id));
-    return state.members.filter((x) => ids.has(x.list_id));
-  };
+  const CACHE_KEY = 'att-cache-v1';   // آخر نسخة من البيانات (للفتح بدون إنترنت)
+  const OUTBOX_KEY = 'att-outbox-v1'; // تعديلات لم تُرفع بعد
+  const USER_KEY = 'att-user';        // آخر مستخدم دخل من هذا الجهاز
+
+  const normMeeting = (r) => ({
+    id: r.id,
+    name: r.name,
+    meeting_date: r.meeting_date,
+    location: r.location || null,
+    list_ids: r.list_ids || [],
+    present: r.present || {},
+    late: r.late || {},
+    notes: r.notes || [],
+  });
 
   const state = {
     lists: [],
     currentListId: localStorage.getItem('current-list') || null,
     members: [],
     meetings: [],
-    meeting: null,
-    present: new Map(), // member_id -> checked_at
-    notes: [],
+    openId: null,
     attFilter: 'all',
+    attList: 'all',
     attSearch: '',
     membersSearch: '',
     pendingImport: null,
   };
 
-  // ---------- المصادقة ----------
+  // =====================================================================
+  //  الحفظ على الجهاز
+  // =====================================================================
+  function saveCache() {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        lists: state.lists, members: state.members, meetings: state.meetings, savedAt: new Date().toISOString(),
+      }));
+    } catch (err) { console.warn('cache save failed', err); }
+  }
+  function loadCache() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+      if (!c) return;
+      state.lists = c.lists || [];
+      state.members = c.members || [];
+      state.meetings = (c.meetings || []).map(normMeeting);
+    } catch (_) { /* نسخة تالفة: تُتجاهل */ }
+  }
+
+  // =====================================================================
+  //  صندوق الانتظار: كل تعديل على الاجتماعات يُطبَّق فوراً على الجهاز،
+  //  ويُرفع إلى Supabase بالترتيب متى توفر الإنترنت.
+  // =====================================================================
+  let outbox = [];
+  try { outbox = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); } catch (_) { outbox = []; }
+  const saveOutbox = () => localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+  let flushing = false;
+  let inflight = null;
+  let queuedOffline = false;
+
+  // تطبيق تعديل على نسخة الاجتماعات (يمكن تكراره بلا ضرر)
+  function applyOp(meetings, op) {
+    const find = (id) => meetings.find((m) => m.id === id);
+    switch (op.t) {
+      case 'mcreate':
+        if (!find(op.row.id)) meetings.push(normMeeting(op.row));
+        meetings.sort((a, b) => new Date(b.meeting_date) - new Date(a.meeting_date));
+        break;
+      case 'mupdate': {
+        const m = find(op.id);
+        if (m) Object.assign(m, op.patch);
+        meetings.sort((a, b) => new Date(b.meeting_date) - new Date(a.meeting_date));
+        break;
+      }
+      case 'mdelete': {
+        const i = meetings.findIndex((m) => m.id === op.id);
+        if (i >= 0) meetings.splice(i, 1);
+        break;
+      }
+      case 'status': {
+        const m = find(op.m);
+        if (!m) break;
+        delete m.present[op.member];
+        delete m.late[op.member];
+        if (op.s === 'present') m.present[op.member] = op.at;
+        if (op.s === 'late') m.late[op.member] = op.at;
+        break;
+      }
+      case 'note+': {
+        const m = find(op.m);
+        if (m && !m.notes.some((n) => n.id === op.note.id)) m.notes.push(op.note);
+        break;
+      }
+      case 'note-': {
+        const m = find(op.m);
+        if (m) m.notes = m.notes.filter((n) => n.id !== op.id);
+        break;
+      }
+    }
+    return meetings;
+  }
+
+  // إرسال تعديل إلى Supabase
+  function runOp(op) {
+    switch (op.t) {
+      case 'mcreate':
+        return tbl().upsert({ ...op.row, kind: 'meeting' }, { onConflict: 'id', ignoreDuplicates: true });
+      case 'mupdate':
+        return tbl().update(op.patch).eq('id', op.id).eq('kind', 'meeting');
+      case 'mdelete':
+        return tbl().delete().eq('id', op.id).eq('kind', 'meeting');
+      case 'status':
+        return sb.rpc('meeting_attendance_set_status', { p_meeting: op.m, p_member: op.member, p_status: op.s, p_at: op.at });
+      case 'note+':
+        return sb.rpc('meeting_attendance_add_note',
+          { p_meeting: op.m, p_content: op.note.content, p_id: op.note.id, p_created_at: op.note.created_at });
+      case 'note-':
+        return sb.rpc('meeting_attendance_delete_note', { p_meeting: op.m, p_note: op.id });
+      default:
+        return Promise.resolve({ error: null });
+    }
+  }
+
+  const opMeeting = (o) => o.m || o.id || o.row?.id;
+
+  function enqueue(op) {
+    op.qid = uuid();
+    op.tries = 0;
+    const live = (o) => o.qid === inflight; // التعديل الجاري إرساله لا يُلغى
+    if (op.t === 'status') {
+      // يكفي آخر علامة لكل شخص في الاجتماع
+      outbox = outbox.filter((o) => live(o) || !(o.t === 'status' && o.m === op.m && o.member === op.member));
+    }
+    let skip = false;
+    if (op.t === 'mdelete') {
+      // اجتماع لم يُرفع بعد ثم حُذف: لا داعي لرفعه ولا لحذفه
+      const createdLocally = outbox.some((o) => o.t === 'mcreate' && o.row.id === op.id && !live(o));
+      outbox = outbox.filter((o) => live(o) || opMeeting(o) !== op.id);
+      skip = createdLocally;
+    }
+    if (!skip) outbox.push(op);
+    if (!navigator.onLine) queuedOffline = true;
+    saveOutbox();
+    applyOp(state.meetings, op);
+    saveCache();
+    renderAfterMeetingChange();
+    flush();
+  }
+
+  async function flush() {
+    updateSyncUI();
+    if (flushing || !navigator.onLine || !outbox.length) return;
+    flushing = true;
+    let sent = 0;
+    let retryLater = false;
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return; // يُرفع بعد تسجيل الدخول
+      updateSyncUI();
+      while (outbox.length && navigator.onLine) {
+        const op = outbox[0];
+        inflight = op.qid;
+        const { error } = await runOp(op);
+        inflight = null;
+        if (error) {
+          if (isNetErr(error)) { retryLater = true; break; }
+          op.tries = (op.tries || 0) + 1;
+          if (isDataErr(error) || op.tries >= 5) {
+            console.error('dropped op', op, error);
+            outbox = outbox.filter((o) => o.qid !== op.qid);
+            saveOutbox();
+            toast(`تعذّر رفع تعديل: ${error.message}`, 'err');
+            continue;
+          }
+          saveOutbox();
+          retryLater = true;
+          break;
+        }
+        outbox = outbox.filter((o) => o.qid !== op.qid);
+        saveOutbox();
+        sent++;
+        updateSyncUI();
+      }
+    } catch (err) {
+      retryLater = true;
+      console.warn('flush', err);
+    } finally {
+      flushing = false;
+      inflight = null;
+      updateSyncUI();
+    }
+    if (sent && !outbox.length) {
+      if (queuedOffline) toast(`تم رفع ${sent} تعديل إلى المنصة ✓`);
+      queuedOffline = false;
+      refreshMeetingsSoon();
+    }
+    if (outbox.length && retryLater) setTimeout(flush, 15000);
+  }
+
+  function updateSyncUI() {
+    const el = $('#sync-status');
+    if (!el) return;
+    const n = outbox.length;
+    let text;
+    let cls;
+    if (!navigator.onLine) { text = `📴 بدون إنترنت${n ? ` · ${n} بانتظار الرفع` : ''}`; cls = 'off'; }
+    else if (flushing && n) { text = `⏳ جارٍ الرفع (${n})`; cls = 'busy'; }
+    else if (n) { text = `⏳ ${n} بانتظار الرفع`; cls = 'busy'; }
+    else { text = '✓ محفوظ'; cls = 'ok'; }
+    el.textContent = text;
+    el.className = `sync ${cls}`;
+  }
+
+  window.addEventListener('online', async () => {
+    updateSyncUI();
+    const { data } = await sb.auth.getSession();
+    // دخل بدون إنترنت بجلسة منتهية: يُطلب الدخول الآن (التعديلات المعلّقة تبقى وتُرفع بعده)
+    if (!data.session) return handleSession(null);
+    if (!booted) handleSession(data.session);
+    else { flush(); refreshAll(); }
+  });
+  window.addEventListener('offline', updateSyncUI);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && booted && navigator.onLine) { flush(); refreshAll(); }
+  });
+
+  // =====================================================================
+  //  المصادقة (تعمل بدون إنترنت لمن دخل سابقاً من هذا الجهاز)
+  // =====================================================================
   let booted = false;
   sb.auth.onAuthStateChange((_event, session) => {
     setTimeout(() => handleSession(session), 0);
   });
 
   function handleSession(session) {
-    if (session) {
+    const remembered = localStorage.getItem(USER_KEY);
+    if (session) localStorage.setItem(USER_KEY, displayUser(session.user.email || ''));
+    if (session || (!navigator.onLine && remembered)) {
       show($('#login-screen'), false);
       show($('#app'));
-      $('#user-email').textContent = displayUser(session.user.email || '');
-      if (!booted) { booted = true; boot(); }
+      $('#user-email').textContent = session ? displayUser(session.user.email || '') : remembered;
+      if (!booted) { booted = true; boot(); } else flush();
     } else {
       booted = false;
       show($('#app'), false);
@@ -88,7 +315,6 @@
   }
 
   // الدخول باسم مستخدم: «admin» يصبح admin@attendance.local (هكذا يُنشأ الحساب في Supabase)
-  // ومن يكتب بريداً كاملاً يُستخدم كما هو
   const LOGIN_DOMAIN = 'attendance.local';
   const toLoginEmail = (v) => {
     const s = v.trim().toLowerCase();
@@ -101,33 +327,117 @@
     const f = e.target;
     const btn = f.querySelector('button');
     $('#login-error').textContent = '';
+    if (!navigator.onLine) { $('#login-error').textContent = 'تسجيل الدخول أول مرة يحتاج اتصالاً بالإنترنت'; return; }
     btn.disabled = true;
     const { error } = await sb.auth.signInWithPassword({ email: toLoginEmail(f.email.value), password: f.password.value });
     btn.disabled = false;
-    if (error) $('#login-error').textContent = 'بيانات الدخول غير صحيحة';
+    if (error) $('#login-error').textContent = isNetErr(error) ? 'لا يوجد اتصال بالإنترنت' : 'بيانات الدخول غير صحيحة';
     else f.reset();
   });
 
-  $('#logout-btn').addEventListener('click', () => sb.auth.signOut());
+  $('#logout-btn').addEventListener('click', async () => {
+    if (outbox.length && !confirm(`يوجد ${outbox.length} تعديل لم يُرفع بعد. سيُرفع بعد تسجيل الدخول مجدداً من هذا الجهاز.\nتسجيل الخروج؟`)) return;
+    localStorage.removeItem(USER_KEY);
+    await sb.auth.signOut();
+    handleSession(null);
+  });
 
   async function boot() {
-    // أولاً القوائم والأسماء: بطاقات الاجتماعات تعتمد عليها
-    await loadLists();
-    await loadMembers();
-    await loadMeetings();
+    // 1) ما هو محفوظ على الجهاز (يعمل بدون إنترنت)
+    loadCache();
+    for (const op of outbox) applyOp(state.meetings, op);
+    if (!currentList()) state.currentListId = state.lists[0]?.id || null;
+    renderAll();
     showView('meetings');
+    updateSyncUI();
+    // 2) أحدث نسخة من المنصة، ثم رفع ما ينتظر
+    await refreshAll();
+    flush();
   }
 
-  // ---------- التنقل ----------
+  // =====================================================================
+  //  التحميل من المنصة
+  // =====================================================================
+  async function fetchAll(build) {
+    const all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await build().range(from, from + 999);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < 1000) break;
+    }
+    return all;
+  }
+  const fetchLists = () => fetchAll(() => tbl().select('id, name').eq('kind', 'list').order('created_at'));
+  const fetchMembers = async () => (await fetchAll(() => tbl().select('id, name, list_id, photo_url')
+    .eq('kind', 'member').order('name').order('id')))
+    .map((r) => ({ id: r.id, full_name: r.name, list_id: r.list_id, photo_url: r.photo_url }));
+  const fetchMeetings = async () => (await fetchAll(() => tbl().select(MEETING_COLS)
+    .eq('kind', 'meeting').order('meeting_date', { ascending: false }).order('id')))
+    .map(normMeeting);
+
+  let refreshing = false;
+  async function refreshAll() {
+    if (!navigator.onLine || refreshing) return;
+    refreshing = true;
+    try {
+      const [lists, members, meetings] = await Promise.all([fetchLists(), fetchMembers(), fetchMeetings()]);
+      state.lists = lists;
+      state.members = members;
+      for (const op of outbox) applyOp(meetings, op); // ما لم يُرفع بعد يبقى ظاهراً
+      state.meetings = meetings;
+      if (!currentList()) state.currentListId = state.lists[0]?.id || null;
+      saveCache();
+      renderAll();
+    } catch (err) {
+      if (!isNetErr(err)) fail(err);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  async function refreshMeetings() {
+    if (!navigator.onLine || refreshing || flushing) return;
+    try {
+      const meetings = await fetchMeetings();
+      for (const op of outbox) applyOp(meetings, op);
+      state.meetings = meetings;
+      saveCache();
+      renderAfterMeetingChange();
+    } catch (err) {
+      if (!isNetErr(err)) console.warn(err);
+    }
+  }
+  let refreshTimer;
+  const refreshMeetingsSoon = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshMeetings, 1500); };
+
+  // أثناء فتح اجتماع: جلب ما سجّله الآخرون من أجهزتهم كل 20 ثانية
+  setInterval(() => {
+    if (state.openId && navigator.onLine && !outbox.length && document.visibilityState === 'visible') refreshMeetings();
+  }, 20000);
+
+  // =====================================================================
+  //  التنقل والعرض
+  // =====================================================================
   function showView(name) {
     ['meetings', 'members', 'meeting'].forEach((v) => show($(`#view-${v}`), v === name));
     $$('.tab').forEach((t) => t.classList.toggle('active',
       t.dataset.view === name || (name === 'meeting' && t.dataset.view === 'meetings')));
   }
-  $$('.tab').forEach((t) => t.addEventListener('click', async () => {
-    if (t.dataset.view === 'meetings') await loadMeetings();
+  $$('.tab').forEach((t) => t.addEventListener('click', () => {
+    if (t.dataset.view === 'meetings') { state.openId = null; refreshMeetingsSoon(); }
     showView(t.dataset.view);
   }));
+
+  function renderAll() {
+    renderLists();
+    renderMembers();
+    renderAfterMeetingChange();
+  }
+  function renderAfterMeetingChange() {
+    renderMeetings();
+    if (state.openId) renderMeetingView();
+  }
 
   // =====================================================================
   //  القوائم
@@ -136,13 +446,24 @@
   const currentList = () => state.lists.find((l) => l.id === state.currentListId) || null;
   const membersOf = (listId) => state.members.filter((m) => m.list_id === listId);
 
-  async function loadLists() {
-    const { data, error } = await tbl().select('id, name').eq('kind', 'list').order('created_at');
-    if (error) return fail(error);
-    state.lists = data;
-    if (!currentList()) state.currentListId = state.lists[0]?.id || null;
-    renderLists();
-  }
+  // القوائم المشاركة في اجتماع (الموجودة فعلاً)؛ اجتماع بلا قوائم محددة = كل القوائم
+  const meetingLists = (m) => {
+    const chosen = state.lists.filter((l) => m.list_ids.includes(l.id));
+    return chosen.length ? chosen : state.lists;
+  };
+  const rosterOf = (m) => {
+    const ids = new Set(meetingLists(m).map((l) => l.id));
+    return state.members.filter((x) => ids.has(x.list_id));
+  };
+  const statusOf = (m, id) => (m.present[id] ? 'present' : m.late[id] ? 'late' : null);
+  const countsOf = (m, roster = rosterOf(m)) => {
+    const c = { total: roster.length, present: 0, late: 0, absent: 0 };
+    for (const x of roster) {
+      const s = statusOf(m, x.id);
+      if (s) c[s]++; else c.absent++;
+    }
+    return c;
+  };
 
   function selectList(id) {
     state.currentListId = id;
@@ -174,45 +495,49 @@
   });
 
   $('#new-list-btn').addEventListener('click', async () => {
+    if (!requireOnline()) return;
     const name = cleanName(prompt('اسم القائمة الجديدة (مثل: رؤساء المجموعات):'));
     if (!name) return;
     if (state.lists.some((l) => nameKey(l.name) === nameKey(name))) return toast('توجد قائمة بهذا الاسم', 'err');
     const { data, error } = await tbl().insert({ kind: 'list', name }).select('id, name').single();
     if (error) return fail(error);
     state.lists.push(data);
+    saveCache();
     toast(`تم إنشاء قائمة «${name}»`);
     selectList(data.id);
   });
 
   $('#rename-list-btn').addEventListener('click', async () => {
     const cur = currentList();
-    if (!cur) return;
+    if (!cur || !requireOnline()) return;
     const name = cleanName(prompt('الاسم الجديد للقائمة:', cur.name));
     if (!name || name === cur.name) return;
     const { error } = await tbl().update({ name }).eq('id', cur.id).eq('kind', 'list');
     if (error) return fail(error);
     cur.name = name;
-    renderLists();
+    saveCache();
+    renderAll();
     toast('تمت إعادة التسمية');
   });
 
   $('#delete-list-btn').addEventListener('click', async () => {
     const cur = currentList();
-    if (!cur) return;
+    if (!cur || !requireOnline()) return;
     const n = membersOf(cur.id).length;
-    if (!confirm(`حذف قائمة «${cur.name}» مع أسمائها (${n} اسم)؟\nأسماء الحاضرين في الاجتماعات السابقة تبقى محفوظة في سجلها.`)) return;
+    if (!confirm(`حذف قائمة «${cur.name}» مع أسمائها (${n} اسم)؟\nأسماء الحاضرين والغائبين في الاجتماعات السابقة تبقى محفوظة في سجلها.`)) return;
     const { error } = await tbl().delete().eq('id', cur.id).eq('kind', 'list');
     if (error) return fail(error);
     state.lists = state.lists.filter((l) => l.id !== cur.id);
     state.members = state.members.filter((m) => m.list_id !== cur.id);
+    saveCache();
     toast('تم حذف القائمة');
     selectList(state.lists[0]?.id || null);
+    renderAfterMeetingChange();
   });
 
   // =====================================================================
-  //  الأسماء
+  //  الصور
   // =====================================================================
-  // ---------- الصور ----------
   const isUrl = (s) => /^https?:\/\/\S+$/i.test(String(s ?? '').trim());
 
   // روابط المشاركة الشائعة تُحوَّل إلى رابط صورة مباشر (الرابط الأصلي هو المحفوظ)
@@ -243,7 +568,6 @@
     }
   }, true);
 
-  // تكبير الصورة
   function zoomPhoto(id) {
     const m = state.members.find((x) => x.id === id);
     if (!m?.photo_url) return;
@@ -253,19 +577,15 @@
   }
   $('#photo-dialog').addEventListener('click', () => $('#photo-dialog').close());
 
-  async function loadMembers() {
-    // Supabase يعيد 1000 صف كحد أقصى في الطلب الواحد، فنجلب على دفعات
-    const all = [];
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await tbl().select('id, name, list_id, photo_url').eq('kind', 'member')
-        .order('name').range(from, from + 999);
-      if (error) return fail(error);
-      all.push(...data.map((r) => ({ id: r.id, full_name: r.name, list_id: r.list_id, photo_url: r.photo_url })));
-      if (data.length < 1000) break;
-    }
-    state.members = all;
-    renderLists();
-    renderMembers();
+  // =====================================================================
+  //  الأسماء
+  // =====================================================================
+  async function reloadMembers() {
+    try {
+      state.members = await fetchMembers();
+      saveCache();
+      renderAll();
+    } catch (err) { fail(err); }
   }
 
   function renderMembers() {
@@ -295,7 +615,12 @@
   $('#members-list').addEventListener('click', async (e) => {
     const zoom = e.target.closest('[data-zoom]');
     if (zoom) return zoomPhoto(zoom.dataset.zoom);
+
     const photoId = e.target.dataset.photoEdit;
+    const editId = e.target.dataset.edit;
+    const delId = e.target.dataset.del;
+    if (!(photoId || editId || delId) || !requireOnline()) return;
+
     if (photoId) {
       const m = state.members.find((x) => x.id === photoId);
       const v = prompt(`رابط صورة «${m.full_name}»\n(اتركه فارغاً لحذف الصورة)`, m.photo_url || '');
@@ -305,12 +630,10 @@
       const { error } = await tbl().update({ photo_url: url || null }).eq('id', photoId).eq('kind', 'member');
       if (error) return fail(error);
       m.photo_url = url || null;
-      renderMembers();
+      saveCache();
+      renderAll();
       toast(url ? 'تم حفظ الصورة' : 'تم حذف الصورة');
-      return;
     }
-    const editId = e.target.dataset.edit;
-    const delId = e.target.dataset.del;
     if (editId) {
       const m = state.members.find((x) => x.id === editId);
       const name = cleanName(prompt('تعديل الاسم:', m.full_name));
@@ -318,20 +641,19 @@
       const { error } = await tbl().update({ name }).eq('id', editId).eq('kind', 'member');
       if (error) return fail(error);
       toast('تم تعديل الاسم');
-      loadMembers();
+      reloadMembers();
     }
     if (delId) {
       const m = state.members.find((x) => x.id === delId);
-      if (!confirm(`حذف "${m.full_name}"؟\nلن يظهر بعدها في قوائم الحضور، ومنها الاجتماعات السابقة.`)) return;
+      if (!confirm(`حذف «${m.full_name}»؟\nلن يظهر بعدها في قوائم التفقّد.`)) return;
       const { error } = await tbl().delete().eq('id', delId).eq('kind', 'member');
       if (error) return fail(error);
       toast('تم الحذف');
-      loadMembers();
+      reloadMembers();
     }
   });
 
   // خطة الإضافة إلى قائمة: الأسماء الجديدة، وصور جديدة لأسماء موجودة، والمكرر المتجاهَل
-  // entries: [{ name, photo }]
   function planImport(entries, listId) {
     const existing = new Map(membersOf(listId).map((m) => [nameKey(m.full_name), m]));
     const seen = new Set();
@@ -357,6 +679,7 @@
   }
 
   async function savePlan(plan) {
+    if (!requireOnline()) return false;
     const { listId, fresh, photoUpdates, dup } = plan;
     if (!fresh.length && !photoUpdates.length) {
       toast(dup ? 'كل الأسماء موجودة مسبقاً في هذه القائمة' : 'لا توجد أسماء', 'err');
@@ -365,24 +688,23 @@
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((x) => ({ kind: 'member', name: x.name, list_id: listId, photo_url: x.photo || null }));
       const { error } = await tbl().insert(chunk);
-      if (error) { fail(error); await loadMembers(); return false; }
+      if (error) { fail(error); await reloadMembers(); return false; }
     }
     for (let i = 0; i < photoUpdates.length; i += 20) {
       const results = await Promise.all(photoUpdates.slice(i, i + 20).map((u) =>
         tbl().update({ photo_url: u.photo }).eq('id', u.id).eq('kind', 'member')));
       const err = results.find((r) => r.error)?.error;
-      if (err) { fail(err); await loadMembers(); return false; }
+      if (err) { fail(err); await reloadMembers(); return false; }
     }
     const parts = [];
     if (fresh.length) parts.push(`إضافة ${fresh.length} اسم`);
     if (photoUpdates.length) parts.push(`صور ${photoUpdates.length} اسم موجود`);
     toast(`تم في «${listName(listId)}»: ${parts.join('، ')}${dup ? ` (وتجاهل ${dup} مكرر)` : ''}`);
-    await loadMembers();
+    await reloadMembers();
     return true;
   }
 
-  // ---------- إضافة يدوية ----------
-  // كل سطر اسم، ويمكن أن يتبعه رابط صورة: «أحمد محمد https://...»
+  // ---------- إضافة يدوية: كل سطر اسم، ويمكن أن يتبعه رابط صورة ----------
   $('#manual-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -401,8 +723,7 @@
   // ---------- استيراد Excel ----------
   const HEADER_WORDS = ['الاسم', 'اسم', 'الأسماء', 'الاسماء', 'الاسم الكامل', 'name', 'names', 'full name', 'fullname'];
 
-  // يقرأ من الورقة الأولى: الاسم من العمود الأول، والصورة من أول رابط في بقية الأعمدة
-  // (رابط مكتوب نصاً، أو ارتباط تشعبي على خلية، ومنها خلية الاسم نفسها)
+  // الاسم من العمود الأول، والصورة من أول رابط في بقية الأعمدة (نصاً أو ارتباطاً تشعبياً)
   async function readExcel(file) {
     if (!window.XLSX) throw new Error('تعذّر تحميل مكتبة Excel، تحقق من اتصال الإنترنت');
     const buf = await file.arrayBuffer();
@@ -479,17 +800,10 @@
   });
 
   // =====================================================================
-  //  الاجتماعات
+  //  الاجتماعات (تعمل بدون إنترنت)
   // =====================================================================
-  async function loadMeetings() {
-    const { data, error } = await tbl()
-      .select('id, name, meeting_date, location, present, notes, list_ids')
-      .eq('kind', 'meeting')
-      .order('meeting_date', { ascending: false });
-    if (error) return fail(error);
-    state.meetings = data.map(toMeeting);
-    renderMeetings();
-  }
+  const openMeetingObj = () => state.meetings.find((m) => m.id === state.openId) || null;
+  const isPending = (id) => outbox.some((o) => opMeeting(o) === id);
 
   function renderMeetings() {
     const el = $('#meetings-list');
@@ -498,8 +812,7 @@
       return;
     }
     el.innerHTML = state.meetings.map((m) => {
-      const roster = rosterOf(m);
-      const here = roster.filter((x) => m.present[x.id]).length;
+      const c = countsOf(m);
       const lists = m.list_ids.length ? meetingLists(m).map((l) => l.name).join('، ') : 'كل القوائم';
       return `
         <div class="card meeting-card" data-id="${m.id}" role="button" tabindex="0">
@@ -507,34 +820,33 @@
             <button class="icon-btn" data-edit-meeting="${m.id}" title="تعديل الاجتماع">✎</button>
             <button class="icon-btn del" data-del-meeting="${m.id}" title="حذف الاجتماع">✕</button>
           </div>
-          <h3>${esc(m.title)}</h3>
+          <h3>${esc(m.name)}</h3>
           <p class="muted">${esc(fmtDateTime(m.meeting_date))}</p>
           ${m.location ? `<p class="muted">📍 ${esc(m.location)}</p>` : ''}
           <p class="muted small-inline">📋 ${esc(lists)}</p>
           <div class="meeting-card-foot">
-            <span class="badge present">✓ حضر ${here} من ${roster.length}</span>
+            <span class="badge present">✓ حاضر ${c.present}</span>
+            ${c.late ? `<span class="badge late">⏰ متأخر ${c.late}</span>` : ''}
+            <span class="badge absent">غائب ${c.absent}</span>
             <span class="badge">الملاحظات ${m.notes.length}</span>
+            ${isPending(m.id) ? '<span class="badge pending">⏳ بانتظار الرفع</span>' : ''}
           </div>
         </div>`;
     }).join('');
   }
 
-  async function deleteMeeting(m) {
-    if (!confirm(`حذف اجتماع «${m.title}» مع سجل الحضور والملاحظات؟\nلا يمكن التراجع عن الحذف.`)) return false;
-    const { error } = await tbl().delete().eq('id', m.id).eq('kind', 'meeting');
-    if (error) { fail(error); return false; }
+  function deleteMeeting(m) {
+    if (!confirm(`حذف اجتماع «${m.name}» مع سجل الحضور والملاحظات؟\nلا يمكن التراجع عن الحذف.`)) return false;
+    enqueue({ t: 'mdelete', id: m.id });
     toast('تم حذف الاجتماع');
     return true;
   }
 
-  $('#meetings-list').addEventListener('click', async (e) => {
+  $('#meetings-list').addEventListener('click', (e) => {
     const editId = e.target.dataset.editMeeting;
     const delId = e.target.dataset.delMeeting;
     if (editId) return openMeetingDialog(state.meetings.find((m) => m.id === editId));
-    if (delId) {
-      if (await deleteMeeting(state.meetings.find((m) => m.id === delId))) loadMeetings();
-      return;
-    }
+    if (delId) return deleteMeeting(state.meetings.find((m) => m.id === delId));
     const card = e.target.closest('.meeting-card');
     if (card) openMeeting(card.dataset.id);
   });
@@ -551,10 +863,9 @@
     const f = $('#meeting-form');
     f.reset();
     $('#meeting-dialog-title').textContent = meeting ? 'تعديل الاجتماع' : 'اجتماع جديد';
-    f.title.value = meeting?.title || '';
+    f.title.value = meeting?.name || '';
     f.meeting_date.value = toLocalInput(meeting?.meeting_date);
     f.location.value = meeting?.location || '';
-    // القوائم المشاركة: عند التعديل ما سبق اختياره، وعند الإنشاء كلها
     const chosen = meeting?.list_ids?.length ? meeting.list_ids : state.lists.map((l) => l.id);
     $('#meeting-lists').innerHTML = state.lists.length
       ? state.lists.map((l) => `
@@ -566,200 +877,202 @@
     $('#meeting-dialog').showModal();
   }
   $('#new-meeting-btn').addEventListener('click', () => openMeetingDialog());
-  $('#edit-meeting-btn').addEventListener('click', () => openMeetingDialog(state.meeting));
+  $('#edit-meeting-btn').addEventListener('click', () => openMeetingDialog(openMeetingObj()));
 
-  $('#meeting-form').addEventListener('submit', async (e) => {
+  $('#meeting-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
     const listIds = $$('input[name="list"]:checked', f).map((c) => c.value);
     if (state.lists.length && !listIds.length) return toast('اختر قائمة واحدة على الأقل', 'err');
-    const row = {
+    const fields = {
       name: f.title.value.trim(),
       meeting_date: new Date(f.meeting_date.value).toISOString(),
       location: f.location.value.trim() || null,
       list_ids: listIds,
     };
-    const q = editingMeetingId
-      ? tbl().update(row).eq('id', editingMeetingId).eq('kind', 'meeting')
-      : tbl().insert({ ...row, kind: 'meeting' });
-    const { data, error } = await q.select().single();
-    if (error) return fail(error);
     $('#meeting-dialog').close();
-    if (!editingMeetingId) return openMeeting(data.id);
-    toast('تم تحديث الاجتماع');
-    if (state.meeting?.id === editingMeetingId) {
-      state.meeting = toMeeting(data);
-      renderMeetingHeader();
-      renderAttendance();
+    if (editingMeetingId) {
+      enqueue({ t: 'mupdate', id: editingMeetingId, patch: fields });
+      toast('تم تحديث الاجتماع');
     } else {
-      loadMeetings();
+      const id = uuid();
+      enqueue({ t: 'mcreate', row: { id, ...fields } });
+      openMeeting(id);
     }
   });
 
-  $('#delete-meeting-btn').addEventListener('click', async () => {
-    if (!(await deleteMeeting(state.meeting))) return;
-    state.meeting = null;
-    await loadMeetings();
-    showView('meetings');
+  $('#delete-meeting-btn').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (m && deleteMeeting(m)) closeMeeting();
   });
 
-  $('#back-btn').addEventListener('click', async () => {
-    state.meeting = null;
-    await loadMeetings();
+  function closeMeeting() {
+    state.openId = null;
+    if (listening) stopMic();
+    renderMeetings();
     showView('meetings');
-  });
-
+  }
+  $('#back-btn').addEventListener('click', () => { closeMeeting(); refreshMeetingsSoon(); });
   $('#print-btn').addEventListener('click', () => window.print());
 
-  async function openMeeting(id) {
-    const { data, error } = await tbl().select('*').eq('id', id).eq('kind', 'meeting').single();
-    if (error) return fail(error);
-    state.meeting = toMeeting(data);
-    state.present = new Map(Object.entries(state.meeting.present));
-    state.notes = state.meeting.notes;
+  function openMeeting(id) {
+    state.openId = id;
     state.attSearch = '';
     state.attFilter = 'all';
+    state.attList = 'all';
     $('#att-search').value = '';
     $$('#att-filters .chip').forEach((c) => c.classList.toggle('active', c.dataset.filter === 'all'));
-    renderMeetingHeader();
-    renderAttendance();
-    renderNotes();
+    renderMeetingView();
     showView('meeting');
     window.scrollTo(0, 0);
+    refreshMeetingsSoon();
   }
 
-  function renderMeetingHeader() {
-    const m = state.meeting;
-    $('#m-title').textContent = m.title;
+  function renderMeetingView() {
+    const m = openMeetingObj();
+    if (!m) { closeMeeting(); return; }
+    $('#m-title').textContent = m.name;
     const lists = meetingLists(m).map((l) => l.name).join('، ');
     $('#m-meta').textContent = [fmtDateTime(m.meeting_date), m.location, lists && `📋 ${lists}`].filter(Boolean).join(' · ');
+    renderAttendance(m);
+    renderNotes(m);
   }
 
   // ---------- التفقّد ----------
-  function renderStats() {
-    const roster = rosterOf(state.meeting);
-    const total = roster.length;
-    const here = roster.filter((m) => state.present.has(m.id)).length;
-    const rate = total ? Math.round((here / total) * 100) : 0;
+  function renderStats(m) {
+    const c = countsOf(m);
+    const rate = c.total ? Math.round(((c.present + c.late) / c.total) * 100) : 0;
     $('#m-stats').innerHTML = `
-      <div class="stat present"><b>${here}</b><span>حضر</span></div>
-      <div class="stat absent"><b>${total - here}</b><span>لم يحضر</span></div>
-      <div class="stat"><b>${total}</b><span>المجموع</span></div>
+      <div class="stat present"><b>${c.present}</b><span>حاضر</span></div>
+      <div class="stat late"><b>${c.late}</b><span>متأخر</span></div>
+      <div class="stat absent"><b>${c.absent}</b><span>غائب</span></div>
+      <div class="stat"><b>${c.total}</b><span>المجموع</span></div>
       <div class="stat"><b>${rate}%</b><span>نسبة الحضور</span></div>`;
   }
 
-  function renderAttendance() {
-    renderStats();
+  function renderListFilter(m) {
+    const lists = meetingLists(m);
+    const el = $('#att-list-filter');
+    if (lists.length < 2) { el.innerHTML = ''; state.attList = 'all'; return; }
+    if (state.attList !== 'all' && !lists.some((l) => l.id === state.attList)) state.attList = 'all';
+    el.innerHTML = `<button class="chip list ${state.attList === 'all' ? 'active' : ''}" data-att-list="all">كل القوائم</button>` +
+      lists.map((l) => `<button class="chip list ${state.attList === l.id ? 'active' : ''}" data-att-list="${l.id}">${esc(l.name)}</button>`).join('');
+  }
+
+  function renderAttendance(m) {
+    renderStats(m);
+    renderListFilter(m);
     const el = $('#att-list');
-    if (!rosterOf(state.meeting).length) {
+    if (!rosterOf(m).length) {
       el.innerHTML = `<li class="empty">لا توجد أسماء في قوائم هذا الاجتماع. أضفها من تبويب «الأسماء»، أو غيّر القوائم من «تعديل».</li>`;
       return;
     }
     const q = state.attSearch.trim();
-    const match = (m) => {
-      const isHere = state.present.has(m.id);
-      if (state.attFilter === 'present' && !isHere) return false;
-      if (state.attFilter === 'absent' && isHere) return false;
-      return !q || m.full_name.includes(q);
+    const match = (x) => {
+      const s = statusOf(m, x.id);
+      if (state.attFilter === 'present' && s !== 'present') return false;
+      if (state.attFilter === 'late' && s !== 'late') return false;
+      if (state.attFilter === 'absent' && s) return false;
+      return !q || x.full_name.includes(q);
     };
-    const lists = meetingLists(state.meeting);
-    const showHeads = lists.length > 1;
+    const lists = meetingLists(m).filter((l) => state.attList === 'all' || l.id === state.attList);
+    const showHeads = meetingLists(m).length > 1;
     let html = '';
     for (const l of lists) {
       const inList = membersOf(l.id);
       const items = inList.filter(match);
       if (!items.length) continue;
       if (showHeads) {
-        const here = inList.filter((m) => state.present.has(m.id)).length;
-        html += `<li class="group-head">${esc(l.name)} <span class="muted">${here} / ${inList.length}</span></li>`;
+        const c = countsOf(m, inList);
+        html += `<li class="group-head">${esc(l.name)}
+          <span class="muted">حاضر ${c.present}${c.late ? ` · متأخر ${c.late}` : ''} · غائب ${c.absent} من ${c.total}</span></li>`;
       }
-      html += items.map((m) => {
-        const at = state.present.get(m.id);
+      html += items.map((x) => {
+        const s = statusOf(m, x.id);
+        const at = m.present[x.id] || m.late[x.id];
         return `
-          <li>
-            <label class="att-item ${at ? 'on' : ''}">
-              <input type="checkbox" data-member="${m.id}" ${at ? 'checked' : ''}>
-              <span class="tick" aria-hidden="true">✓</span>
-              ${avatar(m)}
-              <span class="name">${esc(m.full_name)}</span>
-              ${at ? `<small class="muted">${esc(fmtTime(at))}</small>` : ''}
-            </label>
+          <li class="att-row">
+            <button type="button" class="att-item ${s || ''}" data-act="present" data-member="${x.id}">
+              <span class="tick" aria-hidden="true">${s === 'late' ? '⏰' : '✓'}</span>
+              ${avatar(x)}
+              <span class="name">${esc(x.full_name)}</span>
+              ${s ? `<small class="when">${s === 'late' ? 'متأخر · ' : ''}${esc(fmtTime(at))}</small>` : '<small class="when print-only">غائب</small>'}
+            </button>
+            <button type="button" class="late-btn no-print ${s === 'late' ? 'on' : ''}" data-act="late" data-member="${x.id}"
+              title="${s === 'late' ? 'إلغاء التأخر' : 'تسجيله متأخراً'}">⏰ متأخر</button>
           </li>`;
       }).join('');
     }
     el.innerHTML = html || `<li class="empty">لا نتائج.</li>`;
   }
 
-  $('#att-search').addEventListener('input', (e) => { state.attSearch = e.target.value; renderAttendance(); });
+  $('#att-search').addEventListener('input', (e) => { state.attSearch = e.target.value; renderMeetingView(); });
   $('#att-filters').addEventListener('click', (e) => {
     const c = e.target.closest('.chip');
     if (!c) return;
     state.attFilter = c.dataset.filter;
     $$('.chip', e.currentTarget).forEach((x) => x.classList.toggle('active', x === c));
-    renderAttendance();
+    renderMeetingView();
+  });
+  $('#att-list-filter').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-att-list]');
+    if (!c) return;
+    state.attList = c.dataset.attList;
+    renderMeetingView();
   });
 
-  let pendingTicks = 0;
-  $('#att-list').addEventListener('change', async (e) => {
-    const memberId = e.target.dataset.member;
-    if (!memberId) return;
-    const meetingId = state.meeting.id;
-    const checked = e.target.checked;
-    const prev = state.present.get(memberId);
-
-    // تحديث فوري للواجهة ثم الحفظ
-    if (checked) state.present.set(memberId, new Date().toISOString());
-    else state.present.delete(memberId);
-    renderAttendance();
-
-    pendingTicks++;
-    const { data, error } = await sb.rpc('meeting_attendance_set_present',
-      { p_meeting: meetingId, p_member: memberId, p_on: checked });
-    pendingTicks--;
-    if (error) {
-      if (prev) state.present.set(memberId, prev); else state.present.delete(memberId);
-      renderAttendance();
-      return fail(error);
-    }
-    // القائمة المُرجعة تشمل ما سجّله الآخرون من أجهزتهم؛ تُعتمد بعد اكتمال كل الضغطات الجارية
-    if (data && pendingTicks === 0 && state.meeting?.id === meetingId) {
-      state.present = new Map(Object.entries(data));
-      renderAttendance();
-    }
+  $('#att-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const m = openMeetingObj();
+    if (!m) return;
+    const id = b.dataset.member;
+    const cur = statusOf(m, id);
+    const next = b.dataset.act === 'present'
+      ? (cur === 'present' ? null : 'present')
+      : (cur === 'late' ? null : 'late');
+    enqueue({ t: 'status', m: m.id, member: id, s: next, at: new Date().toISOString() });
   });
 
   // ---------- الملاحظات ----------
-  function renderNotes() {
+  function renderNotes(m) {
     const el = $('#notes-list');
-    if (!state.notes.length) { el.innerHTML = `<li class="empty">لا توجد ملاحظات بعد.</li>`; return; }
-    el.innerHTML = state.notes.map((n) => `
+    const total = m.notes.reduce((n, x) => n + countWords(x.content), 0);
+    $('#notes-words').textContent = m.notes.length ? `${m.notes.length} ملاحظة · ${wordsLabel(total)}` : '';
+    if (!m.notes.length) { el.innerHTML = `<li class="empty">لا توجد ملاحظات بعد.</li>`; return; }
+    el.innerHTML = m.notes.map((n) => `
       <li class="note-item">
         <p class="note-content">${esc(n.content)}</p>
         <div class="note-foot">
-          <small class="muted">${esc(fmtTime(n.created_at))}</small>
+          <small class="muted">${esc(fmtTime(n.created_at))} · ${wordsLabel(countWords(n.content))}</small>
           <button class="icon-btn del no-print" data-del-note="${n.id}" title="حذف">✕</button>
         </div>
       </li>`).join('');
   }
 
   const noteForm = $('#note-form');
-  noteForm.addEventListener('submit', async (e) => {
+  const updateWordCount = () => { $('#word-count').textContent = wordsLabel(countWords(noteForm.content.value)); };
+  noteForm.content.addEventListener('input', updateWordCount);
+
+  noteForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    const m = openMeetingObj();
     const content = noteForm.content.value.trim();
-    if (!content) return;
-    const btn = noteForm.querySelector('button');
-    btn.disabled = true;
-    const { data, error } = await sb.rpc('meeting_attendance_add_note',
-      { p_meeting: state.meeting.id, p_content: content });
-    btn.disabled = false;
-    if (error) return fail(error);
-    state.notes.push(data);
-    noteForm.reset();
-    renderNotes();
+    if (!m || !content) return;
+    enqueue({ t: 'note+', m: m.id, note: { id: uuid(), content, created_at: new Date().toISOString() } });
+    noteForm.content.value = '';
+    updateWordCount();
     noteForm.content.focus();
   });
   noteForm.content.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) noteForm.requestSubmit();
+  });
+
+  $('#notes-list').addEventListener('click', (e) => {
+    const id = e.target.dataset.delNote;
+    const m = openMeetingObj();
+    if (!id || !m || !confirm('حذف هذه الملاحظة؟')) return;
+    enqueue({ t: 'note-', m: m.id, id });
   });
 
   // ---------- تحويل الكلام إلى نص (التعرف على الكلام في المتصفح) ----------
@@ -796,9 +1109,14 @@
     const cur = ta.value;
     ta.value = cur + (cur && !/\s$/.test(cur) ? ' ' : '') + t;
     ta.scrollTop = ta.scrollHeight;
+    updateWordCount();
   }
 
   function startMic() {
+    if (!navigator.onLine) {
+      micStatus('تحويل الكلام يحتاج اتصالاً بالإنترنت. يمكنك الكتابة يدوياً الآن.', 'err');
+      return;
+    }
     const r = new SR();
     rec = r;
     r.lang = micLang.value;
@@ -822,6 +1140,7 @@
         listening = false;
         micStatus('لم يُسمح باستخدام الميكروفون. اسمح به من إعدادات المتصفح (رمز القفل بجانب الرابط) ثم أعد المحاولة.', 'err');
       } else if (e.error === 'network') {
+        listening = false;
         micStatus('تحويل الكلام يحتاج اتصالاً بالإنترنت.', 'err');
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
         console.warn('speech error:', e.error);
@@ -829,8 +1148,7 @@
     };
     r.onend = () => {
       if (rec !== r) return; // مُستمِع قديم (بعد تغيير اللهجة): لا يعيد التشغيل
-      // لا نُضيّع آخر كلام لم يكتمل تحويله
-      if (interimText) { appendSpeech(interimText); setInterim(''); }
+      if (interimText) { appendSpeech(interimText); setInterim(''); } // لا نُضيّع آخر كلام
       if (listening) {
         try { r.start(); return; } catch (_) { /* يُعاد التشغيل أدناه */ }
         setTimeout(() => { if (listening) startMic(); }, 250);
@@ -864,20 +1182,10 @@
   } else {
     micBtn.addEventListener('click', () => (listening ? stopMic() : (micStatus(''), startMic())));
   }
-
-  // إيقاف التسجيل عند مغادرة صفحة الاجتماع
-  $('#back-btn').addEventListener('click', () => { if (listening) stopMic(); });
   $$('.tab').forEach((t) => t.addEventListener('click', () => { if (listening) stopMic(); }));
-
-  $('#notes-list').addEventListener('click', async (e) => {
-    const id = e.target.dataset.delNote;
-    if (!id || !confirm('حذف هذه الملاحظة؟')) return;
-    const { error } = await sb.rpc('meeting_attendance_delete_note', { p_meeting: state.meeting.id, p_note: id });
-    if (error) return fail(error);
-    state.notes = state.notes.filter((n) => n.id !== id);
-    renderNotes();
-  });
 
   // ---------- النوافذ ----------
   $$('dialog [data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
+
+  updateSyncUI();
 })();

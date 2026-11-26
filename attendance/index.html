@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>منصة الاجتماعات</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1f6f5c">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
@@ -44,6 +47,7 @@
         <button class="tab" data-view="members">الأسماء</button>
       </nav>
       <div class="user">
+        <span id="sync-status" class="sync" title="حالة الاتصال والرفع"></span>
         <span id="user-email" class="muted" dir="ltr"></span>
         <button id="logout-btn" class="btn ghost sm">خروج</button>
       </div>
@@ -142,16 +146,22 @@
               <h3>تفقّد الحضور</h3>
               <input id="att-search" type="search" class="no-print" placeholder="ابحث عن اسم...">
             </div>
+            <div class="filters no-print" id="att-list-filter"></div>
             <div class="filters no-print" id="att-filters">
               <button class="chip active" data-filter="all">الكل</button>
               <button class="chip" data-filter="present">الحاضرون</button>
-              <button class="chip" data-filter="absent">لم يحضر</button>
+              <button class="chip" data-filter="late">المتأخرون</button>
+              <button class="chip" data-filter="absent">الغائبون</button>
             </div>
+            <p class="muted small-inline no-print att-hint">اضغط على الاسم لتسجيله حاضراً، أو على «⏰ متأخر» لتسجيله متأخراً. الضغط مرة ثانية يلغي العلامة.</p>
             <ul id="att-list" class="att-list"></ul>
           </div>
 
           <div class="card">
-            <div class="card-head"><h3>ملاحظات الاجتماع</h3></div>
+            <div class="card-head">
+              <h3>ملاحظات الاجتماع</h3>
+              <span class="muted small-inline" id="notes-words"></span>
+            </div>
             <form id="note-form" class="note-form no-print">
               <div class="row voice-row">
                 <button type="button" class="btn mic-btn" id="mic-btn">🎤 تحويل الكلام إلى نص</button>
@@ -167,7 +177,10 @@
               <p id="mic-status" class="mic-status hidden"></p>
               <textarea name="content" required rows="4" placeholder="اكتب ملاحظة أو اضغط 🎤 وتكلّم... (Ctrl + Enter للإضافة)"></textarea>
               <p id="mic-interim" class="mic-interim hidden"></p>
-              <button class="btn primary">إضافة ملاحظة</button>
+              <div class="note-actions">
+                <button class="btn primary">إضافة ملاحظة</button>
+                <span class="muted small-inline" id="word-count">0 كلمة</span>
+              </div>
             </form>
             <ol id="notes-list" class="notes-list"></ol>
           </div>
@@ -185,6 +198,7 @@
       <label>المكان (اختياري)<input name="location"></label>
       <fieldset class="lists-field">
         <legend>القوائم المشاركة في الاجتماع</legend>
+        <p class="muted small-inline">يظهر في التفقّد أصحاب القوائم المختارة فقط.</p>
         <div id="meeting-lists"></div>
       </fieldset>
       <div class="dialog-actions">
@@ -202,6 +216,12 @@
 
   <div id="toast" class="toast"></div>
 
+  <script>
+    // الفتح بدون إنترنت: عامل خدمة خاص بمنصة الحضور (نطاقه هذا المجلد فقط)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="config.js"></script>

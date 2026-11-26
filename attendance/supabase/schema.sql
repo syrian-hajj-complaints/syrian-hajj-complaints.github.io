@@ -1,17 +1,20 @@
 -- =====================================================================
 --  منصة الحضور: جدول واحد (meeting_attendance) داخل مشروع Supabase الخاص بالشكاوى
 --  التنفيذ: Supabase → SQL Editor → New query → الصق الملف كاملاً → Run
---  آمن لإعادة التشغيل، ولا يمسّ أي جدول أو دالة من جداول الشكاوى.
+--  آمن لإعادة التشغيل، ولا يمسّ أي جدول أو دالة من جداول الشكاوى، ولا يحذف بيانات.
 --
 --  كل سطر في الجدول أحد ثلاثة أنواع (kind):
---    list     قائمة أسماء          name = اسم القائمة (مثل: رؤساء المجموعات)
---    member   اسم شخص              name = الاسم، list_id = قائمته، photo_url = رابط صورته (اختياري)
---                                  (حذف القائمة يحذف أسماءها، ويبقى سجل الاجتماعات السابقة في attendees)
---    meeting  اجتماع               name = عنوان الاجتماع، meeting_date، location
---                                  list_ids = القوائم المشاركة (فارغ = كل القوائم)
---                                  present = من حضر {"<member id>": "<وقت التفقد>"}
---                                  attendees = أسماء الحاضرين في خانة واحدة: «أحمد، سارة، ...»
---                                  notes   = الملاحظات [{"id","content","created_at"}]
+--    list     قائمة أسماء     name = اسم القائمة (مثل: رؤساء المجموعات)
+--    member   اسم شخص         name = الاسم، list_id = قائمته، photo_url = رابط صورته (اختياري)
+--    meeting  اجتماع          name = العنوان، meeting_date، location
+--                             list_ids = القوائم المشاركة (فارغ = كل القوائم)
+--                             خانات مقروءة تتحدث تلقائياً مع كل تفقّد:
+--                               names_all      أسماء التفقّد (كل المطلوبين)
+--                               names_present  الحاضرون
+--                               names_late     المتأخرون
+--                               names_absent   الغائبون (من لم يُسجَّل حاضراً ولا متأخراً)
+--                             present / late = {"<member id>": "<وقت التفقد>"}
+--                             notes = الملاحظات [{"id","content","created_at"}]
 --
 --  الوصول: المستخدمون المسجّلون في Supabase Auth فقط (منصة الشكاوى لا تستخدم Supabase Auth).
 --  ⚠️ يجب تعطيل التسجيل الذاتي: Authentication → Sign In / Providers → Allow new users to sign up = OFF
@@ -19,7 +22,7 @@
 
 create table if not exists public.meeting_attendance (
   id            uuid primary key default gen_random_uuid(),
-  kind          text not null check (kind in ('member', 'meeting')),
+  kind          text not null,
   name          text not null check (length(trim(name)) > 0),
   meeting_date  timestamptz,
   location      text,
@@ -28,20 +31,22 @@ create table if not exists public.meeting_attendance (
   created_at    timestamptz not null default now()
 );
 
--- أسماء الحاضرين مكتوبة في خانة واحدة (تتحدث تلقائياً مع كل علامة حضور)
-alter table public.meeting_attendance add column if not exists attendees text;
+-- ---------- الخانات ----------
+alter table public.meeting_attendance add column if not exists photo_url     text;
+alter table public.meeting_attendance add column if not exists list_id       uuid
+  references public.meeting_attendance(id) on delete cascade;
+alter table public.meeting_attendance add column if not exists list_ids      uuid[] not null default '{}';
+alter table public.meeting_attendance add column if not exists late          jsonb  not null default '{}'::jsonb;
+alter table public.meeting_attendance add column if not exists names_all     text;
+alter table public.meeting_attendance add column if not exists names_present text;
+alter table public.meeting_attendance add column if not exists names_late    text;
+alter table public.meeting_attendance add column if not exists names_absent  text;
 
--- رابط صورة الشخص (لأسطر member)
-alter table public.meeting_attendance add column if not exists photo_url text;
-
--- القوائم: سطر لكل قائمة (kind = list)، وكل اسم ينتمي لقائمة (list_id)،
--- وكل اجتماع يحدد القوائم المشاركة فيه (list_ids؛ فارغ = كل القوائم)
 alter table public.meeting_attendance drop constraint if exists meeting_attendance_kind_check;
 alter table public.meeting_attendance add constraint meeting_attendance_kind_check
   check (kind in ('list', 'member', 'meeting'));
-alter table public.meeting_attendance add column if not exists list_id uuid
-  references public.meeting_attendance(id) on delete cascade;
-alter table public.meeting_attendance add column if not exists list_ids uuid[] not null default '{}';
+
+create index if not exists meeting_attendance_kind_idx on public.meeting_attendance (kind, meeting_date desc);
 create index if not exists meeting_attendance_list_idx on public.meeting_attendance (list_id);
 
 -- الأسماء المسجّلة قبل إضافة القوائم تُنقل إلى «القائمة العامة»
@@ -54,8 +59,6 @@ begin
   end if;
 end $$;
 
-create index if not exists meeting_attendance_kind_idx on public.meeting_attendance (kind, meeting_date desc);
-
 -- ---------- الصلاحيات: المسجّلون فقط، لا شيء للزوار (anon) ----------
 alter table public.meeting_attendance enable row level security;
 revoke all on public.meeting_attendance from anon;
@@ -65,44 +68,74 @@ drop policy if exists "authenticated full access" on public.meeting_attendance;
 create policy "authenticated full access" on public.meeting_attendance
   for all to authenticated using (true) with check (true);
 
--- ---------- تعديلات ذرّية (حتى لا يمحو جهازان تعديلات بعضهما أثناء الاجتماع) ----------
--- وضع/إزالة علامة الحضور لشخص في اجتماع، وتحديث خانة أسماء الحاضرين؛ تُرجع قائمة الحضور بعد التعديل
-create or replace function public.meeting_attendance_set_present(p_meeting uuid, p_member uuid, p_on boolean)
-returns jsonb language plpgsql security invoker set search_path = public as $$
-declare
-  v_present jsonb;
+-- ---------- الخانات المقروءة: تُحسب تلقائياً عند أي تغيير في الحضور أو القوائم ----------
+create or replace function public.meeting_attendance_names()
+returns trigger language plpgsql security invoker set search_path = public as $$
 begin
-  update public.meeting_attendance
-     set present = case when p_on then present || jsonb_build_object(p_member::text, now())
-                        else present - p_member::text end
-   where id = p_meeting and kind = 'meeting'
-  returning present into v_present;
-  if v_present is null then raise exception 'الاجتماع غير موجود'; end if;
+  if new.kind <> 'meeting' then return new; end if;
+  if tg_op = 'UPDATE'
+     and new.names_all is not null
+     and new.present  is not distinct from old.present
+     and new.late     is not distinct from old.late
+     and new.list_ids is not distinct from old.list_ids then
+    return new;
+  end if;
 
-  update public.meeting_attendance
-     set attendees = (select string_agg(m.name, '، ' order by m.name)
-                        from public.meeting_attendance m
-                       where m.kind = 'member' and v_present ? m.id::text)
-   where id = p_meeting;
-  return v_present;
+  select string_agg(r.name, '، ' order by r.name),
+         string_agg(r.name, '، ' order by r.name) filter (where (new.present ? r.id::text)),
+         string_agg(r.name, '، ' order by r.name) filter (where (new.late ? r.id::text)),
+         string_agg(r.name, '، ' order by r.name) filter (where not (new.present ? r.id::text) and not (new.late ? r.id::text))
+    into new.names_all, new.names_present, new.names_late, new.names_absent
+    from public.meeting_attendance r
+   where r.kind = 'member'
+     and (cardinality(new.list_ids) = 0 or r.list_id = any (new.list_ids));
+  return new;
 end;
 $$;
 
--- تعبئة خانة الأسماء للاجتماعات المسجّلة قبل إضافتها
-update public.meeting_attendance t
-   set attendees = (select string_agg(m.name, '، ' order by m.name)
-                      from public.meeting_attendance m
-                     where m.kind = 'member' and t.present ? m.id::text)
- where t.kind = 'meeting' and t.attendees is null and t.present <> '{}'::jsonb;
+drop trigger if exists meeting_attendance_names_trg on public.meeting_attendance;
+create trigger meeting_attendance_names_trg
+  before insert or update on public.meeting_attendance
+  for each row execute function public.meeting_attendance_names();
 
--- إضافة ملاحظة؛ تُرجع الملاحظة الجديدة
-create or replace function public.meeting_attendance_add_note(p_meeting uuid, p_content text)
+-- ---------- دوال التعديل (ذرّية، وتقبل الوقت الفعلي للتعديل حين يُرفع لاحقاً بعد انقطاع الإنترنت) ----------
+drop function if exists public.meeting_attendance_set_present(uuid, uuid, boolean);
+drop function if exists public.meeting_attendance_add_note(uuid, text);
+alter table public.meeting_attendance drop column if exists attendees;
+
+-- حالة شخص في اجتماع: 'present' حاضر، 'late' متأخر، null بلا علامة
+create or replace function public.meeting_attendance_set_status(
+  p_meeting uuid, p_member uuid, p_status text, p_at timestamptz default now())
 returns jsonb language plpgsql security invoker set search_path = public as $$
 declare
-  v_note jsonb := jsonb_build_object('id', gen_random_uuid(), 'content', trim(p_content), 'created_at', now());
+  k text := p_member::text;
+  v jsonb;
+begin
+  if p_status is not null and p_status not in ('present', 'late') then
+    raise exception 'حالة غير معروفة: %', p_status;
+  end if;
+  update public.meeting_attendance
+     set present = (present - k) || case when p_status = 'present' then jsonb_build_object(k, coalesce(p_at, now())) else '{}'::jsonb end,
+         late    = (late - k)    || case when p_status = 'late'    then jsonb_build_object(k, coalesce(p_at, now())) else '{}'::jsonb end
+   where id = p_meeting and kind = 'meeting'
+  returning jsonb_build_object('present', present, 'late', late) into v;
+  if v is null then raise exception 'الاجتماع غير موجود'; end if;
+  return v;
+end;
+$$;
+
+-- إضافة ملاحظة (برقم يولّده الجهاز، فلا تتكرر إن أُعيد رفعها)
+create or replace function public.meeting_attendance_add_note(
+  p_meeting uuid, p_content text, p_id uuid default null, p_created_at timestamptz default null)
+returns jsonb language plpgsql security invoker set search_path = public as $$
+declare
+  v_id   uuid := coalesce(p_id, gen_random_uuid());
+  v_note jsonb := jsonb_build_object('id', v_id, 'content', trim(p_content), 'created_at', coalesce(p_created_at, now()));
 begin
   if coalesce(trim(p_content), '') = '' then raise exception 'الملاحظة فارغة'; end if;
-  update public.meeting_attendance set notes = notes || jsonb_build_array(v_note)
+  update public.meeting_attendance
+     set notes = case when exists (select 1 from jsonb_array_elements(notes) e where e->>'id' = v_id::text)
+                      then notes else notes || jsonb_build_array(v_note) end
    where id = p_meeting and kind = 'meeting';
   if not found then raise exception 'الاجتماع غير موجود'; end if;
   return v_note;
@@ -117,9 +150,12 @@ returns void language sql security invoker set search_path = public as $$
    where id = p_meeting and kind = 'meeting';
 $$;
 
-revoke all on function public.meeting_attendance_set_present(uuid, uuid, boolean) from public, anon;
-revoke all on function public.meeting_attendance_add_note(uuid, text)            from public, anon;
-revoke all on function public.meeting_attendance_delete_note(uuid, uuid)         from public, anon;
-grant execute on function public.meeting_attendance_set_present(uuid, uuid, boolean) to authenticated;
-grant execute on function public.meeting_attendance_add_note(uuid, text)            to authenticated;
-grant execute on function public.meeting_attendance_delete_note(uuid, uuid)         to authenticated;
+revoke all on function public.meeting_attendance_set_status(uuid, uuid, text, timestamptz)   from public, anon;
+revoke all on function public.meeting_attendance_add_note(uuid, text, uuid, timestamptz)    from public, anon;
+revoke all on function public.meeting_attendance_delete_note(uuid, uuid)                     from public, anon;
+grant execute on function public.meeting_attendance_set_status(uuid, uuid, text, timestamptz) to authenticated;
+grant execute on function public.meeting_attendance_add_note(uuid, text, uuid, timestamptz)  to authenticated;
+grant execute on function public.meeting_attendance_delete_note(uuid, uuid)                   to authenticated;
+
+-- تعبئة الخانات المقروءة للاجتماعات السابقة
+update public.meeting_attendance set names_all = null where kind = 'meeting';
