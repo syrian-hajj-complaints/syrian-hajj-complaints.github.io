@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>منصة الاجتماعات</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- تنبيه الإعداد -->
+  <section id="config-screen" class="screen hidden">
+    <div class="card narrow">
+      <h1>الإعداد غير مكتمل</h1>
+      <p>افتح ملف <code>config.js</code> وضع فيه رابط مشروع Supabase والمفتاح العام (anon key)، ثم أعد تحميل الصفحة.</p>
+    </div>
+  </section>
+
+  <!-- تسجيل الدخول -->
+  <section id="login-screen" class="screen hidden">
+    <form id="login-form" class="card narrow">
+      <h1>منصة الاجتماعات</h1>
+      <p class="muted">سجّل الدخول للمتابعة</p>
+      <label>البريد الإلكتروني
+        <input type="email" name="email" required autocomplete="username" dir="ltr">
+      </label>
+      <label>كلمة المرور
+        <input type="password" name="password" required autocomplete="current-password" dir="ltr">
+      </label>
+      <button type="submit" class="btn primary block">دخول</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </section>
+
+  <!-- التطبيق -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand">منصة الاجتماعات</div>
+      <nav class="tabs">
+        <button class="tab active" data-view="meetings">الاجتماعات</button>
+        <button class="tab" data-view="members">الأسماء</button>
+      </nav>
+      <div class="user">
+        <span id="user-email" class="muted" dir="ltr"></span>
+        <button id="logout-btn" class="btn ghost sm">خروج</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- قائمة الاجتماعات -->
+      <section id="view-meetings" class="view">
+        <div class="view-head">
+          <h2>الاجتماعات</h2>
+          <button class="btn primary" id="new-meeting-btn">+ بدء اجتماع جديد</button>
+        </div>
+        <div id="meetings-list" class="grid"></div>
+      </section>
+
+      <!-- الأسماء -->
+      <section id="view-members" class="view hidden">
+        <div class="view-head">
+          <div>
+            <h2>الأسماء</h2>
+            <p class="muted" id="members-count"></p>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <h3>استيراد من Excel</h3>
+            <p class="muted small">ملف ‎.xlsx أو ‎.xls أو ‎.csv. تُقرأ الأسماء من <b>العمود الأول</b> في الورقة الأولى، ويُتجاهل العنوان والأسماء المكررة تلقائياً.</p>
+            <label class="file-drop" id="file-drop">
+              <input type="file" id="excel-input" accept=".xlsx,.xls,.csv">
+              <span>📄 اختر ملف Excel أو اسحبه هنا</span>
+            </label>
+            <div id="import-preview" class="import-preview hidden">
+              <p id="import-summary"></p>
+              <ul id="import-names" class="import-names"></ul>
+              <div class="row">
+                <button class="btn primary" id="import-confirm">حفظ الأسماء</button>
+                <button class="btn ghost" id="import-cancel">إلغاء</button>
+              </div>
+            </div>
+
+            <hr>
+
+            <h3>إضافة يدوية</h3>
+            <form id="manual-form">
+              <textarea name="names" rows="4" required placeholder="اكتب اسماً، أو عدة أسماء (اسم في كل سطر)"></textarea>
+              <button class="btn primary">إضافة</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>كل الأسماء</h3>
+              <input id="members-search" type="search" placeholder="بحث...">
+            </div>
+            <ul id="members-list" class="members-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- الاجتماع: التفقّد + الملاحظات -->
+      <section id="view-meeting" class="view hidden">
+        <div class="view-head">
+          <div>
+            <button class="btn ghost sm no-print" id="back-btn">→ كل الاجتماعات</button>
+            <h2 id="m-title"></h2>
+            <p class="muted" id="m-meta"></p>
+          </div>
+          <div class="actions no-print">
+            <button class="btn ghost" id="edit-meeting-btn">تعديل</button>
+            <button class="btn ghost" id="print-btn">طباعة المحضر</button>
+            <button class="btn danger" id="delete-meeting-btn">حذف</button>
+          </div>
+        </div>
+
+        <div id="m-stats" class="stats"></div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-head">
+              <h3>تفقّد الحضور</h3>
+              <input id="att-search" type="search" class="no-print" placeholder="ابحث عن اسم...">
+            </div>
+            <div class="filters no-print" id="att-filters">
+              <button class="chip active" data-filter="all">الكل</button>
+              <button class="chip" data-filter="present">الحاضرون</button>
+              <button class="chip" data-filter="absent">لم يحضر</button>
+            </div>
+            <ul id="att-list" class="att-list"></ul>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>ملاحظات الاجتماع</h3></div>
+            <form id="note-form" class="note-form no-print">
+              <textarea name="content" required rows="3" placeholder="اكتب ملاحظة... (Ctrl + Enter للإضافة)"></textarea>
+              <button class="btn primary">إضافة ملاحظة</button>
+            </form>
+            <ol id="notes-list" class="notes-list"></ol>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- نافذة الاجتماع -->
+  <dialog id="meeting-dialog">
+    <form id="meeting-form">
+      <h3 id="meeting-dialog-title">اجتماع جديد</h3>
+      <label>عنوان الاجتماع<input name="title" required></label>
+      <label>التاريخ والوقت<input name="meeting_date" type="datetime-local" required></label>
+      <label>المكان (اختياري)<input name="location"></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>إلغاء</button>
+        <button class="btn primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
