@@ -332,6 +332,19 @@ dialog h3 { margin-bottom: 1rem; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
 .toast.err { background: var(--absent); }
 
+/* ---------- التراجع والقفل ---------- */
+.undo-bar {
+  position: fixed; bottom: 1.25rem; left: 50%; transform: translate(-50%, 160%); z-index: 99;
+  display: flex; align-items: center; gap: 1rem; max-width: 92vw;
+  background: #1d2433; color: #fff; padding: .55rem .6rem .55rem 1rem; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25); transition: transform .25s;
+}
+.undo-bar.show { transform: translate(-50%, 0); }
+.undo-bar #undo-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.undo-bar button { font: inherit; font-weight: 700; border: 0; border-radius: 7px; padding: .35rem .8rem; background: #fff; color: var(--text); cursor: pointer; white-space: nowrap; }
+.lock-btn.on { background: #5b6475; border-color: #5b6475; color: #fff; }
+.att-list.locked .att-item { cursor: not-allowed; }
+
 /* ---------- الشاشات الصغيرة ---------- */
 @media (max-width: 900px) {
   .two-col { grid-template-columns: 1fr; }

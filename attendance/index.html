@@ -181,7 +181,10 @@
           <div class="card">
             <div class="card-head">
               <h3>تفقّد الحضور</h3>
-              <input id="att-search" type="search" class="no-print" placeholder="ابحث عن اسم...">
+              <div class="row no-print">
+                <input id="att-search" type="search" placeholder="ابحث عن اسم...">
+                <button type="button" class="btn sm lock-btn" id="lock-btn"></button>
+              </div>
             </div>
             <div class="filters no-print" id="att-list-filter"></div>
             <div class="filters no-print" id="att-filters">
@@ -283,6 +286,10 @@
   </dialog>
 
   <div id="toast" class="toast"></div>
+  <div id="undo-bar" class="undo-bar" role="status" aria-live="polite">
+    <span id="undo-text"></span>
+    <button type="button" id="undo-btn">↩ تراجع</button>
+  </div>
 
   <script>
     // الفتح بدون إنترنت: عامل خدمة خاص بمنصة الحضور (نطاقه هذا المجلد فقط)

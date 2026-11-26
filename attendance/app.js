@@ -1061,6 +1061,7 @@
 
   function closeMeeting() {
     state.openId = null;
+    hideUndo();
     if (listening) stopMic();
     renderMeetings();
     showView('meetings');
@@ -1115,6 +1116,7 @@
   function renderAttendance(m) {
     renderStats(m);
     renderListFilter(m);
+    renderLock(m);
     const el = $('#att-list');
     if (!rosterOf(m).length) {
       el.innerHTML = `<li class="empty">لا توجد أسماء في قوائم هذا الاجتماع. أضفها من تبويب «الأسماء»، أو غيّر القوائم من «تعديل».</li>`;
@@ -1173,16 +1175,78 @@
     renderMeetingView();
   });
 
+  // ---------- الحماية من الخطأ: القفل والتراجع ----------
+  // القفل محفوظ على الجهاز لكل اجتماع؛ الاجتماعات السابقة (قبل اليوم) مقفلة افتراضياً
+  const LOCKS_KEY = 'att-locks';
+  const locks = (() => { try { return JSON.parse(localStorage.getItem(LOCKS_KEY) || '{}'); } catch (_) { return {}; } })();
+  const isLocked = (m) => (m.id in locks ? locks[m.id]
+    : dayKey(new Date(m.meeting_date)) < dayKey(new Date()));
+  function setLocked(m, on) {
+    locks[m.id] = on;
+    localStorage.setItem(LOCKS_KEY, JSON.stringify(locks));
+    renderMeetingView();
+  }
+  function renderLock(m) {
+    const on = isLocked(m);
+    const b = $('#lock-btn');
+    b.textContent = on ? '🔒 مقفل' : '🔓 قفل التفقّد';
+    b.title = on ? 'التفقّد مقفل: اضغط لفتحه والتعديل' : 'اقفل التفقّد بعد الانتهاء حتى لا يتغير اسم بالخطأ';
+    b.classList.toggle('on', on);
+    $('#att-list').classList.toggle('locked', on);
+  }
+  $('#lock-btn').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (!m) return;
+    if (isLocked(m)) {
+      if (!confirm('فتح التفقّد للتعديل؟')) return;
+      setLocked(m, false);
+      toast('🔓 التفقّد مفتوح للتعديل');
+    } else {
+      setLocked(m, true);
+      hideUndo();
+      toast('🔒 تم قفل التفقّد');
+    }
+  });
+
+  const STATUS_LABEL = { present: '✓ حاضر', late: '⏰ متأخر' };
+  let undoTimer;
+  let undoOp = null;
+  function showUndo(text, op) {
+    undoOp = op;
+    $('#undo-text').textContent = text;
+    $('#undo-bar').classList.add('show');
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndo, 6000);
+  }
+  function hideUndo() {
+    clearTimeout(undoTimer);
+    undoOp = null;
+    $('#undo-bar').classList.remove('show');
+  }
+  $('#undo-btn').addEventListener('click', () => {
+    if (!undoOp) return;
+    enqueue(undoOp);
+    const who = state.members.find((x) => x.id === undoOp.member)?.full_name || '';
+    hideUndo();
+    toast(`↩ أُعيد «${who}» كما كان`);
+  });
+
   $('#att-list').addEventListener('click', (e) => {
     const b = e.target.closest('.att-item[data-member]');
     if (!b) return;
     const m = openMeetingObj();
     if (!m) return;
+    if (isLocked(m)) return toast('🔒 التفقّد مقفل. اضغط «مقفل» أعلى القائمة لفتحه.', 'err');
     const id = b.dataset.member;
     // الضغط المتكرر: بلا علامة ← حاضر ← متأخر ← بلا علامة
     const cur = statusOf(m, id);
+    const curAt = m.present[id] || m.late[id] || null;
     const next = cur === null ? 'present' : cur === 'present' ? 'late' : null;
     enqueue({ t: 'status', m: m.id, member: id, s: next, at: new Date().toISOString() });
+    // التراجع يعيد الحالة السابقة بوقتها الأصلي
+    const who = state.members.find((x) => x.id === id)?.full_name || '';
+    showUndo(`${who}: ${next ? STATUS_LABEL[next] : 'أُلغيت العلامة (غائب)'}`,
+      { t: 'status', m: m.id, member: id, s: cur, at: curAt || new Date().toISOString() });
   });
 
   // ---------- الملاحظات ----------
