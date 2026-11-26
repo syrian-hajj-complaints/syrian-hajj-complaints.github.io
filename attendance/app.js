@@ -1469,28 +1469,53 @@
     $('#minutes-dialog').close();
     toast('تم حفظ بيانات المحضر ✓');
   });
-  $('#minutes-form').addEventListener('submit', async (e) => {
+  // توليد ملف المحضر بعد حفظ بيانات النافذة: { blob, name }
+  async function makeMinutesFile(m) {
+    saveDetails(m, readMinutesForm());
+    const D = await loadDocx();
+    const letterhead = await fetchBytes('../letterhead.jpg');
+    const blob = await D.Packer.toBlob(buildMinutesDoc(D, openMeetingObj(), letterhead));
+    const day = dayKey(new Date(m.meeting_date));
+    return { blob, name: `محضر - ${m.name} - ${day}.docx`.replace(/[\\/:*?"<>|]/g, '-') };
+  }
+  async function withBusy(btn, busyText, task) {
+    const old = btn.textContent;
+    $$('#minutes-dialog .dialog-actions button').forEach((b) => { b.disabled = true; });
+    btn.textContent = busyText;
+    try { await task(); } catch (err) { if (err?.name !== 'AbortError') fail(err); } finally {
+      $$('#minutes-dialog .dialog-actions button').forEach((b) => { b.disabled = false; });
+      btn.textContent = old;
+    }
+  }
+
+  $('#minutes-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const m = openMeetingObj();
     if (!m) return;
-    saveDetails(m, readMinutesForm());
-    const btn = $('#mn-word');
-    btn.disabled = true;
-    btn.textContent = '⏳ جارٍ التجهيز...';
-    try {
-      const D = await loadDocx();
-      const letterhead = await fetchBytes('../letterhead.jpg');
-      const blob = await D.Packer.toBlob(buildMinutesDoc(D, openMeetingObj(), letterhead));
-      const day = dayKey(new Date(m.meeting_date));
-      downloadBlob(blob, `محضر - ${m.name} - ${day}.docx`.replace(/[\\/:*?"<>|]/g, '-'));
+    withBusy($('#mn-word'), '⏳ جارٍ التجهيز...', async () => {
+      const { blob, name } = await makeMinutesFile(m);
+      downloadBlob(blob, name);
       $('#minutes-dialog').close();
       toast('تم تنزيل المحضر ✓');
-    } catch (err) {
-      fail(err);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '📄 تنزيل ملف Word';
-    }
+    });
+  });
+
+  // المشاركة: قائمة المشاركة في الجهاز (واتساب، بريد، ...) مع الملف؛ وإلا يُنزَّل الملف
+  $('#mn-share').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (!m) return;
+    withBusy($('#mn-share'), '⏳ جارٍ التجهيز...', async () => {
+      const { blob, name } = await makeMinutesFile(m);
+      const file = new File([blob], name, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const title = `محضر اجتماع: ${m.name}`;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title, text: `${title} — ${fmtDateTime(m.meeting_date)}` });
+        $('#minutes-dialog').close();
+        return;
+      }
+      downloadBlob(blob, name);
+      toast('هذا المتصفح لا يدعم مشاركة الملفات مباشرة؛ نُزِّل الملف، أرسله من مجلد التنزيلات.', 'err');
+    });
   });
 
   // بناء مستند Word على نموذج «محضر اجتماع»: الترويسة الرسمية، الرقم والعنوان، جدول البيانات والحضور والغياب
