@@ -15,6 +15,7 @@
 --                               names_absent   الغائبون (من لم يُسجَّل حاضراً ولا متأخراً)
 --                             present / late = {"<member id>": "<وقت التفقد>"}
 --                             notes = الملاحظات [{"id","content","created_at"}]
+--                             details = بيانات المحضر والنص المنقّح (summary)
 --
 --  الوصول: المستخدمون المسجّلون في Supabase Auth فقط (منصة الشكاوى لا تستخدم Supabase Auth).
 --  ⚠️ يجب تعطيل التسجيل الذاتي: Authentication → Sign In / Providers → Allow new users to sign up = OFF
@@ -41,6 +42,9 @@ alter table public.meeting_attendance add column if not exists names_all     tex
 alter table public.meeting_attendance add column if not exists names_present text;
 alter table public.meeting_attendance add column if not exists names_late    text;
 alter table public.meeting_attendance add column if not exists names_absent  text;
+-- بيانات المحضر والنص المنقّح للاجتماع:
+-- {ref_no, meeting_no, committee, secretary, end_time, next_meeting, postponed, summary}
+alter table public.meeting_attendance add column if not exists details       jsonb  not null default '{}'::jsonb;
 
 alter table public.meeting_attendance drop constraint if exists meeting_attendance_kind_check;
 alter table public.meeting_attendance add constraint meeting_attendance_kind_check

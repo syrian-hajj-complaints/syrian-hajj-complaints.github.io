@@ -6,7 +6,7 @@
 //  - بيانات Supabase لا تمر من هنا: المنصة تحفظ نسختها وتعديلاتها المعلّقة بنفسها.
 // =======================================================================
 
-const CACHE = 'attendance-v1';
+const CACHE = 'attendance-v2';
 const IMG_CACHE = 'attendance-images-v1';
 const IMG_LIMIT = 600;
 
@@ -14,6 +14,8 @@ const CORE = [
   './', 'index.html', 'app.js', 'styles.css', 'config.js', 'manifest.webmanifest',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4',
   'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
+  '../letterhead.jpg',
   'https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap',
 ];
 const LIBS = /^(cdn\.jsdelivr\.net|cdn\.sheetjs\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)$/;

@@ -114,15 +114,6 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .sync.busy { color: #8a5a0a; background: #fff4d6; }
 .sync.off  { color: #fff; background: #5b6475; }
 
-.ai-btn { background: #10a37f; border-color: #10a37f; color: #fff; }
-.ai-btn:hover { background: #0d8a6b !important; }
-.ai-dialog { width: min(720px, 94vw); }
-.ai-steps { margin: 0 0 .8rem; padding-inline-start: 1.3rem; font-size: .9rem; color: var(--muted); }
-.ai-steps li { margin-bottom: .2rem; }
-.ai-options { justify-content: space-between; margin-bottom: .5rem; }
-.ai-options select { width: auto; }
-#ai-text { font-size: .9rem; line-height: 1.7; }
-.ai-dialog .dialog-actions { flex-wrap: wrap; }
 .note-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 
 /* ---------- الأسماء والاستيراد ---------- */
@@ -391,3 +382,19 @@ dialog h3 { margin-bottom: 1rem; }
   .att-item { border: 0; padding: .2rem; background: none !important; }
   .stats { grid-template-columns: repeat(5, 1fr); }
 }
+
+/* ---------- النص المنقّح والمحضر ---------- */
+.refined-box { border: 1px solid color-mix(in srgb, var(--present) 35%, #fff); background: color-mix(in srgb, var(--present) 5%, #fff); border-radius: 10px; padding: .7rem .85rem; margin-bottom: 1rem; }
+.refined-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .4rem; }
+.refined-head b { color: var(--present); }
+.refined-head .btn { margin-inline-start: auto; }
+.refined-text { white-space: pre-wrap; word-break: break-word; line-height: 1.8; max-height: 320px; overflow: auto; }
+.wide-dialog { width: min(720px, 94vw); }
+.steps { margin: 0 0 .8rem; padding-inline-start: 1.3rem; font-size: .9rem; color: var(--muted); }
+.steps li { margin-bottom: .2rem; }
+.mn-hint { margin: -.4rem 0 .9rem; }
+.mn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .9rem; }
+.mn-grid .span2 { grid-column: 1 / -1; }
+.mn-summary { background: #f3f5f8; border-radius: 8px; padding: .6rem .8rem; font-size: .9rem; line-height: 1.9; }
+.err-text { color: var(--absent); font-weight: 500; }
+@media (max-width: 560px) { .mn-grid { grid-template-columns: 1fr; } }

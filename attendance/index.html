@@ -169,8 +169,9 @@
             <p class="muted" id="m-meta"></p>
           </div>
           <div class="actions no-print">
+            <button class="btn primary" id="minutes-btn">📄 المحضر (Word)</button>
             <button class="btn ghost" id="edit-meeting-btn">تعديل</button>
-            <button class="btn ghost" id="print-btn">طباعة المحضر</button>
+            <button class="btn ghost" id="print-btn">🖨 طباعة</button>
             <button class="btn danger" id="delete-meeting-btn">حذف</button>
           </div>
         </div>
@@ -207,7 +208,18 @@
                 <h3>ملاحظات الاجتماع</h3>
                 <span class="muted small-inline" id="notes-words"></span>
               </div>
-              <button type="button" class="btn sm ai-btn no-print" id="ai-btn">✨ إعادة الصياغة بـ ChatGPT</button>
+              <div class="row no-print">
+                <button type="button" class="btn sm" id="copy-notes-btn" title="نسخ كل الملاحظات نصاً عادياً لتنقيحها في أي أداة ذكاء اصطناعي">📋 نسخ الملاحظات</button>
+                <button type="button" class="btn sm" id="refined-btn" title="لصق النص بعد تنقيحه؛ يُستخدم في المحضر">📥 النص المنقّح</button>
+              </div>
+            </div>
+            <div class="refined-box hidden" id="refined-box">
+              <div class="refined-head">
+                <b>✅ النقاط المنقّحة</b>
+                <span class="muted small-inline">تُستخدم في المحضر بدل الملاحظات · <span id="refined-words"></span></span>
+                <button type="button" class="btn ghost sm no-print" id="refined-edit">تعديل</button>
+              </div>
+              <div class="refined-text" id="refined-text"></div>
             </div>
             <form id="note-form" class="note-form no-print">
               <div class="row voice-row">
@@ -256,29 +268,42 @@
     </form>
   </dialog>
 
-  <!-- إعادة الصياغة بـ ChatGPT -->
-  <dialog id="ai-dialog" class="ai-dialog">
-    <form method="dialog" id="ai-form">
-      <h3>✨ إعادة صياغة الاجتماع بـ ChatGPT</h3>
-      <ol class="ai-steps">
-        <li>راجع النص أدناه (يمكنك تعديله).</li>
-        <li>اضغط «نسخ وفتح ChatGPT». إن لم يظهر النص هناك تلقائياً، الصقه بـ <b>Ctrl + V</b> (أو اضغط مطولاً ← لصق على الجوال).</li>
-        <li>انسخ الصياغة من ChatGPT والصقها في خانة الملاحظات هنا، ثم «إضافة ملاحظة».</li>
+  <!-- النص المنقّح -->
+  <dialog id="refined-dialog" class="wide-dialog">
+    <form method="dialog">
+      <h3>📥 النص المنقّح</h3>
+      <ol class="steps">
+        <li>اضغط «📋 نسخ الملاحظات»، والصقها في أي أداة ذكاء اصطناعي واطلب تنقيحها.</li>
+        <li>انسخ النتيجة والصقها هنا، ثم «حفظ». تُستخدم في المحضر كـ«أهم نقاط الاجتماع»، وتبقى ملاحظاتك الأصلية كما هي.</li>
       </ol>
-      <div class="row ai-options">
-        <label class="check"><input type="checkbox" id="ai-names" checked> تضمين أسماء الحضور والغياب</label>
-        <select id="ai-style" title="شكل الصياغة">
-          <option value="minutes">محضر اجتماع رسمي</option>
-          <option value="summary">ملخص مختصر بنقاط</option>
-          <option value="report">تقرير للإدارة</option>
-        </select>
+      <textarea id="refined-input" rows="14" placeholder="الصق النص المنقّح هنا..."></textarea>
+      <p class="muted small-inline" id="refined-count"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>إلغاء</button>
+        <button type="button" class="btn primary" id="refined-save">حفظ</button>
       </div>
-      <textarea id="ai-text" rows="14" dir="rtl"></textarea>
-      <p class="muted small-inline" id="ai-count"></p>
+    </form>
+  </dialog>
+
+  <!-- بيانات المحضر -->
+  <dialog id="minutes-dialog" class="wide-dialog">
+    <form id="minutes-form">
+      <h3>📄 محضر الاجتماع</h3>
+      <p class="muted small-inline mn-hint">تُحفظ هذه البيانات مع الاجتماع. اسم اللجنة وأمين السر يُقترحان من آخر اجتماع.</p>
+      <div class="mn-grid">
+        <label>الرقم<input name="ref_no" placeholder="رقم المحضر"></label>
+        <label>رقم الاجتماع<input name="meeting_no"></label>
+        <label class="span2">محضر اجتماع…<input name="committee" placeholder="مثال: لجنة التقييم"></label>
+        <label>أمين سر الجلسة<input name="secretary"></label>
+        <label>توقيت انتهاء الاجتماع<input name="end_time" type="time"></label>
+        <label class="span2">موعد الاجتماع القادم<input name="next_meeting" placeholder="مثال: الاجتماع مع المدراء الثلاثاء 31-3-2026 الساعة 10 صباحاً"></label>
+        <label class="span2">المواضيع المؤجّلة للاجتماع القادم<textarea name="postponed" rows="3" placeholder="موضوع في كل سطر"></textarea></label>
+      </div>
+      <div class="mn-summary" id="mn-summary"></div>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" data-close>إغلاق</button>
-        <button type="button" class="btn ghost" id="ai-copy">📋 نسخ فقط</button>
-        <button type="button" class="btn primary" id="ai-open">نسخ وفتح ChatGPT ↗</button>
+        <button type="button" class="btn ghost" id="mn-save">💾 حفظ فقط</button>
+        <button type="submit" class="btn primary" id="mn-word">📄 تنزيل ملف Word</button>
       </div>
     </form>
   </dialog>

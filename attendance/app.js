@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   'use strict';
 
   // =====================================================================
@@ -80,7 +80,7 @@
   // كل البيانات في جدول واحد: list (قائمة) / member (اسم) / meeting (اجتماع)
   const TABLE = 'meeting_attendance';
   const tbl = () => sb.from(TABLE);
-  const MEETING_COLS = 'id, name, meeting_date, location, list_ids, present, late, notes';
+  const MEETING_COLS = 'id, name, meeting_date, location, list_ids, present, late, notes, details';
 
   const CACHE_KEY = 'att-cache-v1';   // آخر نسخة من البيانات (للفتح بدون إنترنت)
   const OUTBOX_KEY = 'att-outbox-v1'; // تعديلات لم تُرفع بعد
@@ -95,6 +95,7 @@
     present: r.present || {},
     late: r.late || {},
     notes: r.notes || [],
+    details: r.details || {},
   });
 
   const state = {
@@ -1277,6 +1278,7 @@
 
   // ---------- الملاحظات ----------
   function renderNotes(m) {
+    renderRefined(m);
     const el = $('#notes-list');
     const total = m.notes.reduce((n, x) => n + countWords(x.content), 0);
     $('#notes-words').textContent = m.notes.length ? `${m.notes.length} ملاحظة · ${wordsLabel(total)}` : '';
@@ -1316,58 +1318,14 @@
     enqueue({ t: 'note-', m: m.id, id });
   });
 
-  // ---------- إعادة الصياغة بـ ChatGPT ----------
-  // تجهيز نص كامل (بيانات الاجتماع + الحضور + الملاحظات + التعليمات)، ونسخه وفتح ChatGPT.
-  const AI_STYLES = {
-    minutes: 'محضر اجتماع رسمي منظّم بالأقسام التالية: بيانات الاجتماع (العنوان، التاريخ، المكان)، الحضور، النقاط التي نوقشت، القرارات، المهام المطلوبة والمسؤول عنها وموعدها إن ذُكرت.',
-    summary: 'ملخص مختصر وواضح على شكل نقاط مرتبة حسب الأهمية، يبدأ بسطر واحد عن الاجتماع، ثم أهم النقاط والقرارات والمهام.',
-    report: 'تقرير رسمي موجّه إلى الإدارة، بمقدمة قصيرة، ثم عرض منظّم لما دار في الاجتماع، ثم القرارات والتوصيات والمهام، ثم خاتمة موجزة.',
-  };
-
-  function buildAiPrompt(m) {
-    const withNames = $('#ai-names').checked;
-    const style = AI_STYLES[$('#ai-style').value] || AI_STYLES.minutes;
-    const roster = rosterOf(m);
-    const c = countsOf(m, roster);
-    const names = (s) => roster.filter((x) => statusOf(m, x.id) === s).map((x) => x.full_name).join('، ') || '—';
-    const lists = meetingLists(m).map((l) => l.name).join('، ');
-    const draft = noteForm.content.value.trim();
-    const notes = m.notes.map((n, i) => `${i + 1}. (${fmtTime(n.created_at)}) ${n.content}`);
-    if (draft) notes.push(`${notes.length + 1}. (لم تُحفظ بعد) ${draft}`);
-
-    const lines = [
-      'أنت كاتب محاضر اجتماعات محترف. أعد صياغة ملاحظات الاجتماع التالية باللغة العربية الفصحى الرسمية.',
-      `الشكل المطلوب: ${style}`,
-      '',
-      'التزم بدقة بما يلي:',
-      '- لا تحذف أي معلومة أو اسم أو رقم أو تاريخ أو قرار ورد في الملاحظات، مهما بدا صغيراً.',
-      '- لا تضف أي معلومة غير موجودة، ولا تستنتج ما لم يُذكر.',
-      '- الملاحظات مكتوبة بلهجة محلية أو منقولة من الكلام: حوّلها إلى فصحى سليمة مع الحفاظ على المعنى تماماً.',
-      '- صحّح الأخطاء الإملائية والنحوية، ورتّب الأفكار المتكررة أو المتفرقة دون إسقاط شيء منها.',
-      '- إن كانت عبارة غير واضحة فاكتبها كما هي واكتب بجانبها [غير واضح].',
-      '',
-      '=== بيانات الاجتماع ===',
-      `العنوان: ${m.name}`,
-      `التاريخ: ${fmtDateTime(m.meeting_date)}`,
-    ];
-    if (m.location) lines.push(`المكان: ${m.location}`);
-    if (lists) lines.push(`القوائم المشاركة: ${lists}`);
-    lines.push(`الحضور: ${c.present} حاضر، ${c.late} متأخر، ${c.absent} غائب، من أصل ${c.total}.`);
-    if (withNames) {
-      lines.push(`الحاضرون: ${names('present')}`);
-      if (c.late) lines.push(`المتأخرون: ${names('late')}`);
-      lines.push(`الغائبون: ${roster.filter((x) => !statusOf(m, x.id)).map((x) => x.full_name).join('، ') || '—'}`);
-    }
-    lines.push('', '=== ملاحظات الاجتماع ===', notes.length ? notes.join('\n') : '(لا توجد ملاحظات)');
-    return lines.join('\n');
-  }
-
-  function refreshAiText() {
-    const m = openMeetingObj();
-    if (!m) return;
-    const t = buildAiPrompt(m);
-    $('#ai-text').value = t;
-    $('#ai-count').textContent = `${wordsLabel(countWords(t))} · ${t.length.toLocaleString('ar')} حرف`;
+  // ---------- نسخ الملاحظات، والنص المنقّح ----------
+  // تُنسخ الملاحظات نصاً عادياً لتنقيحها في أي أداة ذكاء اصطناعي، ثم يُلصق النص المنقّح فيُحفظ مع الاجتماع
+  // (details.summary) ويُستخدم في المحضر بدل الملاحظات؛ الملاحظات الأصلية لا تتغير.
+  const detailsOf = (m) => m.details || {};
+  function saveDetails(m, patch) {
+    const details = { ...detailsOf(m), ...patch };
+    for (const k of Object.keys(details)) if (details[k] === '' || details[k] == null) delete details[k];
+    enqueue({ t: 'mupdate', id: m.id, patch: { details } });
   }
 
   async function copyText(text) {
@@ -1375,40 +1333,285 @@
       await navigator.clipboard.writeText(text);
       return true;
     } catch (_) {
-      const ta = $('#ai-text');
-      ta.focus();
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;opacity:0;top:0';
+      document.body.appendChild(ta);
       ta.select();
-      try { return document.execCommand('copy'); } catch (__) { return false; }
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (__) { ok = false; }
+      ta.remove();
+      return ok;
     }
   }
 
-  $('#ai-btn').addEventListener('click', () => {
+  function notesText(m) {
+    const parts = m.notes.map((n) => n.content.trim());
+    const draft = noteForm.content.value.trim();
+    if (draft) parts.push(draft);
+    return parts.join('\n\n');
+  }
+
+  $('#copy-notes-btn').addEventListener('click', async () => {
     const m = openMeetingObj();
     if (!m) return;
-    if (!m.notes.length && !noteForm.content.value.trim()) return toast('اكتب ملاحظات الاجتماع أولاً', 'err');
-    refreshAiText();
-    $('#ai-dialog').showModal();
-  });
-  $('#ai-names').addEventListener('change', refreshAiText);
-  $('#ai-style').addEventListener('change', refreshAiText);
-  $('#ai-text').addEventListener('input', () => {
-    const t = $('#ai-text').value;
-    $('#ai-count').textContent = `${wordsLabel(countWords(t))} · ${t.length.toLocaleString('ar')} حرف`;
+    const t = notesText(m);
+    if (!t) return toast('لا توجد ملاحظات لنسخها', 'err');
+    toast(await copyText(t)
+      ? `تم نسخ الملاحظات ✓ (${wordsLabel(countWords(t))}). الصقها في أداة الذكاء الاصطناعي، ثم أعد النتيجة بزر «📥 النص المنقّح».`
+      : 'تعذّر النسخ. حدّد الملاحظات وانسخها يدوياً.', 'ok');
   });
 
-  $('#ai-copy').addEventListener('click', async () => {
-    toast(await copyText($('#ai-text').value) ? 'تم النسخ ✓ الصقه في ChatGPT' : 'تعذّر النسخ: حدّد النص وانسخه يدوياً', 'ok');
+  function renderRefined(m) {
+    const s = String(detailsOf(m).summary || '').trim();
+    show($('#refined-box'), !!s);
+    $('#refined-text').textContent = s;
+    $('#refined-words').textContent = s ? wordsLabel(countWords(s)) : '';
+  }
+
+  const refinedCount = () => { $('#refined-count').textContent = wordsLabel(countWords($('#refined-input').value)); };
+  function openRefined() {
+    const m = openMeetingObj();
+    if (!m) return;
+    $('#refined-input').value = detailsOf(m).summary || '';
+    refinedCount();
+    $('#refined-dialog').showModal();
+  }
+  $('#refined-btn').addEventListener('click', openRefined);
+  $('#refined-edit').addEventListener('click', openRefined);
+  $('#refined-input').addEventListener('input', refinedCount);
+  $('#refined-save').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (!m) return;
+    const v = $('#refined-input').value.trim();
+    saveDetails(m, { summary: v || null });
+    $('#refined-dialog').close();
+    toast(v ? 'تم حفظ النص المنقّح ✓ سيُستخدم في المحضر' : 'حُذف النص المنقّح؛ سيُستخدم نص الملاحظات في المحضر');
   });
 
-  $('#ai-open').addEventListener('click', async () => {
-    const text = $('#ai-text').value.trim();
-    if (!text) return;
-    const copied = await copyText(text);
-    // النص القصير يُمرَّر في الرابط فيظهر في ChatGPT مباشرة؛ الطويل يُلصق يدوياً
-    const url = text.length <= 3500 ? `https://chatgpt.com/?q=${encodeURIComponent(text)}` : 'https://chatgpt.com/';
-    window.open(url, '_blank', 'noopener');
-    toast(copied ? 'تم نسخ النص ✓ إن لم يظهر في ChatGPT الصقه بـ Ctrl + V' : 'افتح ChatGPT والصق النص يدوياً', 'ok');
+  // ---------- محضر الاجتماع (ملف Word بالترويسة الرسمية) ----------
+  let docxPromise = null;
+  function loadDocx() {
+    if (window.docx) return Promise.resolve(window.docx);
+    if (!docxPromise) docxPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js';
+      s.onload = () => resolve(window.docx);
+      s.onerror = () => { docxPromise = null; reject(new Error('تعذّر تحميل أداة Word. تحقق من الإنترنت.')); };
+      document.head.appendChild(s);
+    });
+    return docxPromise;
+  }
+  const fetchBytes = async (url) => {
+    try { const r = await fetch(url); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch (_) { return null; }
+  };
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }
+
+  const MN_FIELDS = ['ref_no', 'meeting_no', 'committee', 'secretary', 'end_time', 'next_meeting', 'postponed'];
+  // اسم اللجنة وأمين السر يتكرران عادةً: يُقترحان من أحدث اجتماع آخر
+  const lastDetail = (key, exceptId) => state.meetings.find((x) => x.id !== exceptId && x.details?.[key])?.details[key] || '';
+
+  // الحضور = الحاضرون والمتأخرون معاً؛ الغياب = من لم يُسجَّل (أبجدياً)
+  function minutesPeople(m) {
+    const roster = rosterOf(m).slice().sort((a, b) => collator.compare(a.full_name, b.full_name));
+    return {
+      present: roster.filter((x) => statusOf(m, x.id)).map((x) => x.full_name),
+      absent: roster.filter((x) => !statusOf(m, x.id)).map((x) => x.full_name),
+    };
+  }
+  // أهم نقاط الاجتماع: النص المنقّح إن وُجد (أسطره كما هي)، وإلا الملاحظات (كل ملاحظة تبدأ بـ «-»)
+  function minutesPoints(m) {
+    const s = String(detailsOf(m).summary || '').trim();
+    if (s) return { refined: true, lines: s.split(/\r?\n/) };
+    const lines = [];
+    for (const n of m.notes) {
+      String(n.content).trim().split(/\r?\n/).forEach((line, i) => lines.push(i === 0 ? `- ${line}` : line));
+    }
+    return { refined: false, lines };
+  }
+
+  function openMinutes() {
+    const m = openMeetingObj();
+    if (!m) return;
+    const f = $('#minutes-form');
+    const d = detailsOf(m);
+    for (const k of MN_FIELDS) f[k].value = d[k] || '';
+    if (!f.committee.value) f.committee.value = lastDetail('committee', m.id);
+    if (!f.secretary.value) f.secretary.value = lastDetail('secretary', m.id);
+    const p = minutesPeople(m);
+    const pts = minutesPoints(m);
+    $('#mn-summary').innerHTML = `
+      <div>👥 <b>الحضور:</b> ${p.present.length} (يشمل المتأخرين) · <b>الغياب:</b> ${p.absent.length}</div>
+      <div>📝 <b>أهم نقاط الاجتماع:</b> ${pts.lines.length
+        ? (pts.refined ? 'من النص المنقّح ✅' : `من الملاحظات (${m.notes.length} ملاحظة). لاستخدام نص منقّح: «📥 النص المنقّح».`)
+        : '<span class="err-text">لا توجد ملاحظات بعد</span>'}</div>`;
+    $('#minutes-dialog').showModal();
+  }
+  $('#minutes-btn').addEventListener('click', openMinutes);
+
+  function readMinutesForm() {
+    const f = $('#minutes-form');
+    const out = {};
+    for (const k of MN_FIELDS) out[k] = f[k].value.trim() || null;
+    return out;
+  }
+  $('#mn-save').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (!m) return;
+    saveDetails(m, readMinutesForm());
+    $('#minutes-dialog').close();
+    toast('تم حفظ بيانات المحضر ✓');
   });
+  $('#minutes-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const m = openMeetingObj();
+    if (!m) return;
+    saveDetails(m, readMinutesForm());
+    const btn = $('#mn-word');
+    btn.disabled = true;
+    btn.textContent = '⏳ جارٍ التجهيز...';
+    try {
+      const D = await loadDocx();
+      const letterhead = await fetchBytes('../letterhead.jpg');
+      const blob = await D.Packer.toBlob(buildMinutesDoc(D, openMeetingObj(), letterhead));
+      const day = dayKey(new Date(m.meeting_date));
+      downloadBlob(blob, `محضر - ${m.name} - ${day}.docx`.replace(/[\\/:*?"<>|]/g, '-'));
+      $('#minutes-dialog').close();
+      toast('تم تنزيل المحضر ✓');
+    } catch (err) {
+      fail(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📄 تنزيل ملف Word';
+    }
+  });
+
+  // بناء مستند Word على نموذج «محضر اجتماع»: الترويسة الرسمية، الرقم والعنوان، جدول البيانات والحضور والغياب
+  // وأمين السر، جدول الانتهاء والاجتماع القادم والمواضيع المؤجلة، ثم صفحة «أهم نقاط الاجتماع».
+  // في Word العربي تُكتب خلايا الصف بترتيب معكوس (القيمة ثم العنوان) فيظهر العنوان على اليمين.
+  function buildMinutesDoc(D, m, letterhead) {
+    const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, ShadingType, Header,
+      PageBreak, VerticalAlign, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } = D;
+    const FONT = 'Arial';
+    const SHADE = 'D9D9D9';
+    const det = detailsOf(m);
+    const date = new Date(m.meeting_date);
+    const pad2 = (n) => String(n).padStart(2, '0');
+
+    // نص عربي من اليمين لليسار، والأرقام والتواريخ من اليسار لليمين (حتى لا تنقلب)
+    const runs = (text, o = {}) => {
+      const t = String(text ?? '');
+      if (!t) return [new TextRun({ text: '', font: FONT, size: o.size || 24 })];
+      return t.split(/(\d[\d\-:/ ]*\d|\d)/).filter((x) => x !== '').map((part) => new TextRun({
+        text: part, font: FONT, size: o.size || 24, bold: !!o.bold, rightToLeft: !/^\d/.test(part),
+      }));
+    };
+    const para = (text, o = {}) => new Paragraph({
+      bidirectional: true, alignment: o.align, spacing: { before: o.before || 0, after: o.after ?? 0, line: o.line },
+      children: runs(text, o),
+    });
+    const cell = (content, o = {}) => new TableCell({
+      columnSpan: o.span, rowSpan: o.rowSpan, verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 80, bottom: 80, left: 120, right: 120 },
+      shading: o.head ? { type: ShadingType.CLEAR, fill: SHADE, color: 'auto' } : undefined,
+      children: Array.isArray(content) ? content : [para(content, { align: o.align || 'center', bold: o.bold })],
+    });
+    const label = (text, rowSpan) => cell(text, { head: true, bold: true, rowSpan });
+    const lines = (text, o = {}) => {
+      const arr = String(text || '').split(/\r?\n/);
+      return arr.map((l) => para(l, { after: 60, line: 320, ...o }));
+    };
+
+    // عرض المحتوى 9906 = A4 ناقص الهامشين؛ الأعمدة من اليسار: اسم، رقم، اسم، رقم، العنوان
+    const W = 9906;
+    const LAB = 2300;
+    const NUM = 450;
+    const NAME = Math.floor((W - LAB - 2 * NUM) / 2);
+    const COLS = [NAME, NUM, NAME, NUM, LAB];
+    const valueRow = (lab, val) => new TableRow({ children: [cell(val, { span: 4 }), label(lab)] });
+    // الأسماء في عمودين مرقّمين: 1 يميناً ثم 2 يساراً، وهكذا
+    const namesRows = (lab, names) => {
+      const n = Math.max(1, Math.ceil(names.length / 2));
+      const rows = [];
+      for (let i = 0; i < n; i++) {
+        const a = names[2 * i];
+        const b = names[2 * i + 1];
+        const kids = [
+          cell(b || ''), cell(b ? String(2 * i + 2) : ''),
+          cell(a || (names.length ? '' : '—')), cell(a ? String(2 * i + 1) : ''),
+        ];
+        if (i === 0) kids.push(label(lab, n));
+        rows.push(new TableRow({ children: kids }));
+      }
+      return rows;
+    };
+
+    const hp = Object.fromEntries(new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric', month: 'numeric', year: 'numeric' })
+      .formatToParts(date).map((x) => [x.type, x.value]));
+    const gDate = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+    const hDate = `${hp.day}-${hp.month}-${String(hp.year).replace(/\D/g, '')}`;
+    const people = minutesPeople(m);
+
+    const info = new Table({
+      width: { size: W, type: WidthType.DXA }, columnWidths: COLS,
+      rows: [
+        new TableRow({ children: [
+          cell(`رقم الاجتماع ( ${det.meeting_no || '    '} )`, { span: 2, head: true }),
+          cell(m.name, { span: 2, head: true }),
+          label('عنوان الاجتماع'),
+        ] }),
+        valueRow('يوم وتاريخ الاجتماع', `يوم ${gregWeekday.format(date)} ${gDate} م الموافق ${hDate} هـ`),
+        valueRow('توقيت بدء الاجتماع', `الساعة ${pad2(date.getHours())}:${pad2(date.getMinutes())}`),
+        ...namesRows('السّادة الحضور', people.present),
+        ...namesRows('السّادة الغياب', people.absent),
+        valueRow('أمين سر الجلسة', det.secretary || ''),
+      ],
+    });
+
+    const end = new Table({
+      width: { size: W, type: WidthType.DXA }, columnWidths: [W - LAB, LAB],
+      rows: [
+        new TableRow({ children: [cell(det.end_time ? `الساعة ${det.end_time}` : ''), label('توقيت انتهاء الاجتماع')] }),
+        new TableRow({ children: [cell(det.next_meeting || ''), label('موعد الاجتماع القادم')] }),
+        new TableRow({ children: [cell(lines(det.postponed)), label('المواضيع المؤجّلة للاجتماع القادم')] }),
+      ],
+    });
+
+    const pts = minutesPoints(m);
+    const points = new Table({
+      width: { size: W, type: WidthType.DXA }, columnWidths: [W - LAB, LAB],
+      rows: [new TableRow({ children: [
+        cell(pts.lines.length ? pts.lines.map((l) => para(l, { after: 80, line: 340 })) : [para('—', { align: 'center' })]),
+        label('أهم نقاط الاجتماع'),
+      ] })],
+    });
+
+    const body = [
+      para(`الرقم: ${det.ref_no || ''}`, { bold: true, size: 26, after: 160 }),
+      para(`محضر اجتماع ${det.committee || ''}`.trim(), { bold: true, size: 28, align: 'center', after: 200 }),
+      info,
+      para('', { after: 360 }),
+      end,
+      new Paragraph({ children: [new PageBreak()] }),
+      points,
+    ];
+
+    // الترويسة الرسمية بعرض الصفحة في رأس كل صفحة (كما في ملفات منصة الشكاوى)
+    const headers = letterhead ? { default: new Header({ children: [new Paragraph({ children: [
+      new ImageRun({ data: letterhead, transformation: { width: 794, height: 189 },
+        floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+          verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 }, behindDocument: true } }),
+    ] })] }) } : undefined;
+    const margin = { top: letterhead ? 3300 : 1000, bottom: 1000, left: 1000, right: 1000, header: 0 };
+    return new Document({ sections: [{ headers, properties: { page: { margin } }, children: body }] });
+  }
 
   // ---------- تحويل الكلام إلى نص (التعرف على الكلام في المتصفح) ----------
   // النص المحوَّل يُضاف دائماً إلى آخر الملاحظة ولا يستبدل شيئاً مما كُتب.
