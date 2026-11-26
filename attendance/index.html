@@ -63,15 +63,23 @@
       <section id="view-members" class="view hidden">
         <div class="view-head">
           <div>
-            <h2>الأسماء</h2>
-            <p class="muted" id="members-count"></p>
+            <h2>القوائم والأسماء</h2>
+            <p class="muted">لكل قائمة أسماؤها، مثل «رؤساء المجموعات» و«رؤساء التكتلات».</p>
           </div>
+          <button class="btn primary" id="new-list-btn">+ قائمة جديدة</button>
         </div>
 
-        <div class="two-col">
+        <div class="list-bar" id="list-bar"></div>
+
+        <div id="no-lists" class="card empty hidden">
+          لا توجد قوائم بعد. اضغط «+ قائمة جديدة» وأنشئ أول قائمة، مثل «رؤساء المجموعات».
+        </div>
+
+        <div class="two-col" id="members-body">
           <div class="card">
+            <p class="target-list">الإضافة إلى قائمة: <b id="target-list-name"></b></p>
             <h3>استيراد من Excel</h3>
-            <p class="muted small">ملف ‎.xlsx أو ‎.xls أو ‎.csv. تُقرأ الأسماء من <b>العمود الأول</b> في الورقة الأولى، ويُتجاهل العنوان والأسماء المكررة تلقائياً.</p>
+            <p class="muted small">ملف ‎.xlsx أو ‎.xls أو ‎.csv. الأسماء من <b>العمود الأول</b> في الورقة الأولى، و<b>رابط الصورة</b> (اختياري) في أي عمود آخر. يُتجاهل العنوان والأسماء المكررة تلقائياً.</p>
             <label class="file-drop" id="file-drop">
               <input type="file" id="excel-input" accept=".xlsx,.xls,.csv">
               <span>📄 اختر ملف Excel أو اسحبه هنا</span>
@@ -89,16 +97,23 @@
 
             <h3>إضافة يدوية</h3>
             <form id="manual-form">
-              <textarea name="names" rows="4" required placeholder="اكتب اسماً، أو عدة أسماء (اسم في كل سطر)"></textarea>
+              <textarea name="names" rows="4" required placeholder="اكتب اسماً، أو عدة أسماء (اسم في كل سطر)&#10;ويمكن وضع رابط الصورة بعد الاسم: أحمد محمد https://..."></textarea>
               <button class="btn primary">إضافة</button>
             </form>
           </div>
 
           <div class="card">
             <div class="card-head">
-              <h3>كل الأسماء</h3>
-              <input id="members-search" type="search" placeholder="بحث...">
+              <div>
+                <h3 id="current-list-title"></h3>
+                <p class="muted small-inline" id="members-count"></p>
+              </div>
+              <div class="row">
+                <button class="btn ghost sm" id="rename-list-btn">✎ إعادة تسمية</button>
+                <button class="btn ghost sm danger-text" id="delete-list-btn">✕ حذف القائمة</button>
+              </div>
             </div>
+            <input id="members-search" type="search" placeholder="بحث في هذه القائمة..." class="members-search">
             <ul id="members-list" class="members-list"></ul>
           </div>
         </div>
@@ -168,11 +183,21 @@
       <label>عنوان الاجتماع<input name="title" required></label>
       <label>التاريخ والوقت<input name="meeting_date" type="datetime-local" required></label>
       <label>المكان (اختياري)<input name="location"></label>
+      <fieldset class="lists-field">
+        <legend>القوائم المشاركة في الاجتماع</legend>
+        <div id="meeting-lists"></div>
+      </fieldset>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" data-close>إلغاء</button>
         <button class="btn primary">حفظ</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- تكبير الصورة -->
+  <dialog id="photo-dialog" class="photo-dialog">
+    <img id="photo-dialog-img" alt="" referrerpolicy="no-referrer">
+    <p id="photo-dialog-name"></p>
   </dialog>
 
   <div id="toast" class="toast"></div>

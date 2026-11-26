@@ -117,6 +117,43 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .members-list .num { color: var(--muted); font-size: .85rem; min-width: 2em; }
 .members-list .name { flex: 1; }
 
+/* ---------- القوائم ---------- */
+.list-bar { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.list-chip {
+  font: inherit; font-weight: 500; border: 1px solid var(--border); background: #fff; color: var(--text);
+  border-radius: 10px; padding: .45rem .9rem; cursor: pointer; display: inline-flex; align-items: center; gap: .45rem;
+}
+.list-chip:hover { border-color: var(--primary); }
+.list-chip .count { font-size: .78rem; background: #eef1f5; color: var(--muted); border-radius: 999px; padding: 0 .5rem; }
+.list-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.list-chip.active .count { background: rgba(255, 255, 255, .22); color: #fff; }
+.target-list { font-size: .9rem; color: var(--muted); background: #f3f6f5; border-radius: 8px; padding: .4rem .7rem; margin-bottom: 1rem; }
+.target-list b { color: var(--primary); }
+.small-inline { font-size: .85rem; margin: 0; }
+.members-search { margin-bottom: .6rem; }
+.lists-field { border: 1px solid var(--border); border-radius: 8px; padding: .5rem .8rem .7rem; margin: 0; }
+.lists-field legend { font-weight: 500; padding: 0 .3rem; }
+.lists-field label.check { display: flex; margin: .35rem 0; }
+.group-head { list-style: none; font-weight: 700; color: var(--primary); padding: .8rem .2rem .3rem; border-bottom: 1px solid var(--border); margin-bottom: .3rem; }
+.group-head:first-child { padding-top: 0; }
+.meeting-card { position: relative; }
+.meeting-card h3 { padding-inline-end: 3.5rem; }
+.meeting-card-actions { position: absolute; top: .8rem; inset-inline-end: .8rem; display: flex; gap: .15rem; }
+
+/* ---------- الصور ---------- */
+.avatar {
+  position: relative; flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; overflow: hidden;
+  background: color-mix(in srgb, var(--primary) 14%, #fff); color: var(--primary);
+  display: grid; place-items: center; font-weight: 700; font-size: 1rem;
+}
+.avatar::before { content: attr(data-i); }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.avatar[data-zoom] { cursor: zoom-in; }
+.members-list .avatar { width: 34px; height: 34px; font-size: .9rem; }
+.photo-dialog { padding: .75rem; width: auto; max-width: min(520px, 94vw); text-align: center; cursor: zoom-out; }
+.photo-dialog img { display: block; max-width: 100%; max-height: 75vh; border-radius: 8px; margin: 0 auto; }
+.photo-dialog p { margin-top: .6rem; font-weight: 700; }
+
 /* ---------- الإحصائيات ---------- */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1.25rem; }
 .stat { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .75rem; text-align: center; }

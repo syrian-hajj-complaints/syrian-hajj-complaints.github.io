@@ -3,9 +3,12 @@
 --  التنفيذ: Supabase → SQL Editor → New query → الصق الملف كاملاً → Run
 --  آمن لإعادة التشغيل، ولا يمسّ أي جدول أو دالة من جداول الشكاوى.
 --
---  كل سطر في الجدول أحد نوعين (kind):
---    member   اسم شخص              name = الاسم
+--  كل سطر في الجدول أحد ثلاثة أنواع (kind):
+--    list     قائمة أسماء          name = اسم القائمة (مثل: رؤساء المجموعات)
+--    member   اسم شخص              name = الاسم، list_id = قائمته، photo_url = رابط صورته (اختياري)
+--                                  (حذف القائمة يحذف أسماءها، ويبقى سجل الاجتماعات السابقة في attendees)
 --    meeting  اجتماع               name = عنوان الاجتماع، meeting_date، location
+--                                  list_ids = القوائم المشاركة (فارغ = كل القوائم)
 --                                  present = من حضر {"<member id>": "<وقت التفقد>"}
 --                                  attendees = أسماء الحاضرين في خانة واحدة: «أحمد، سارة، ...»
 --                                  notes   = الملاحظات [{"id","content","created_at"}]
@@ -27,6 +30,29 @@ create table if not exists public.meeting_attendance (
 
 -- أسماء الحاضرين مكتوبة في خانة واحدة (تتحدث تلقائياً مع كل علامة حضور)
 alter table public.meeting_attendance add column if not exists attendees text;
+
+-- رابط صورة الشخص (لأسطر member)
+alter table public.meeting_attendance add column if not exists photo_url text;
+
+-- القوائم: سطر لكل قائمة (kind = list)، وكل اسم ينتمي لقائمة (list_id)،
+-- وكل اجتماع يحدد القوائم المشاركة فيه (list_ids؛ فارغ = كل القوائم)
+alter table public.meeting_attendance drop constraint if exists meeting_attendance_kind_check;
+alter table public.meeting_attendance add constraint meeting_attendance_kind_check
+  check (kind in ('list', 'member', 'meeting'));
+alter table public.meeting_attendance add column if not exists list_id uuid
+  references public.meeting_attendance(id) on delete cascade;
+alter table public.meeting_attendance add column if not exists list_ids uuid[] not null default '{}';
+create index if not exists meeting_attendance_list_idx on public.meeting_attendance (list_id);
+
+-- الأسماء المسجّلة قبل إضافة القوائم تُنقل إلى «القائمة العامة»
+do $$
+declare v_list uuid;
+begin
+  if exists (select 1 from public.meeting_attendance where kind = 'member' and list_id is null) then
+    insert into public.meeting_attendance (kind, name) values ('list', 'القائمة العامة') returning id into v_list;
+    update public.meeting_attendance set list_id = v_list where kind = 'member' and list_id is null;
+  end if;
+end $$;
 
 create index if not exists meeting_attendance_kind_idx on public.meeting_attendance (kind, meeting_date desc);
 
