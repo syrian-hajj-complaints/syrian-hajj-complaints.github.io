@@ -29,6 +29,8 @@
 1. **إنشاء الجدول:** Supabase ← **SQL Editor** ← **New query** ← الصق [supabase/schema.sql](supabase/schema.sql) كاملاً ← **Run**.
 2. **⚠️ تعطيل التسجيل الذاتي (ضروري):** **Authentication ← Sign In / Providers** ← أوقف **Allow new users to sign up**.
    بدون ذلك يستطيع أي شخص إنشاء حساب ورؤية الأسماء. منصة الشكاوى لا تستخدم هذا النظام فلا تتأثر.
-3. **حساب الدخول:** **Authentication ← Users ← Add user ← Create new user**، أدخل البريد وكلمة المرور، وفعّل **Auto Confirm User**. أضف حساباً لكل من يأخذ الحضور.
+3. **حساب الدخول:** **Authentication ← Users ← Add user ← Create new user**، وفعّل **Auto Confirm User**.
+   للدخول باسم مستخدم مثل `admin` أنشئ الحساب ببريد `admin@attendance.local`، ثم اكتب في صفحة الدخول `admin` فقط.
+   (يمكن أيضاً إنشاء الحساب ببريد حقيقي والدخول بالبريد كاملاً.) أضف حساباً لكل من يأخذ الحضور.
 
 بيانات الاتصال في [config.js](config.js) هي نفسها بيانات منصة الشكاوى (المفتاح العام فقط).

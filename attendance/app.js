@@ -65,7 +65,7 @@
     if (session) {
       show($('#login-screen'), false);
       show($('#app'));
-      $('#user-email').textContent = session.user.email;
+      $('#user-email').textContent = displayUser(session.user.email || '');
       if (!booted) { booted = true; boot(); }
     } else {
       booted = false;
@@ -74,13 +74,22 @@
     }
   }
 
+  // الدخول باسم مستخدم: «admin» يصبح admin@attendance.local (هكذا يُنشأ الحساب في Supabase)
+  // ومن يكتب بريداً كاملاً يُستخدم كما هو
+  const LOGIN_DOMAIN = 'attendance.local';
+  const toLoginEmail = (v) => {
+    const s = v.trim().toLowerCase();
+    return s.includes('@') ? s : `${s}@${LOGIN_DOMAIN}`;
+  };
+  const displayUser = (email) => email.endsWith(`@${LOGIN_DOMAIN}`) ? email.slice(0, -LOGIN_DOMAIN.length - 1) : email;
+
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
     const btn = f.querySelector('button');
     $('#login-error').textContent = '';
     btn.disabled = true;
-    const { error } = await sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.password.value });
+    const { error } = await sb.auth.signInWithPassword({ email: toLoginEmail(f.email.value), password: f.password.value });
     btn.disabled = false;
     if (error) $('#login-error').textContent = 'بيانات الدخول غير صحيحة';
     else f.reset();
