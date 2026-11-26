@@ -992,14 +992,13 @@
         const at = m.present[x.id] || m.late[x.id];
         return `
           <li class="att-row">
-            <button type="button" class="att-item ${s || ''}" data-act="present" data-member="${x.id}">
+            <button type="button" class="att-item ${s || ''}" data-member="${x.id}"
+              title="${s === 'present' ? 'اضغط لتسجيله متأخراً' : s === 'late' ? 'اضغط لإلغاء العلامة' : 'اضغط لتسجيله حاضراً'}">
               <span class="tick" aria-hidden="true">${s === 'late' ? '⏰' : '✓'}</span>
               ${avatar(x)}
               <span class="name">${esc(x.full_name)}</span>
               ${s ? `<small class="when">${s === 'late' ? 'متأخر · ' : ''}${esc(fmtTime(at))}</small>` : '<small class="when print-only">غائب</small>'}
             </button>
-            <button type="button" class="late-btn no-print ${s === 'late' ? 'on' : ''}" data-act="late" data-member="${x.id}"
-              title="${s === 'late' ? 'إلغاء التأخر' : 'تسجيله متأخراً'}">⏰ متأخر</button>
           </li>`;
       }).join('');
     }
@@ -1022,15 +1021,14 @@
   });
 
   $('#att-list').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-act]');
+    const b = e.target.closest('.att-item[data-member]');
     if (!b) return;
     const m = openMeetingObj();
     if (!m) return;
     const id = b.dataset.member;
+    // الضغط المتكرر: بلا علامة ← حاضر ← متأخر ← بلا علامة
     const cur = statusOf(m, id);
-    const next = b.dataset.act === 'present'
-      ? (cur === 'present' ? null : 'present')
-      : (cur === 'late' ? null : 'late');
+    const next = cur === null ? 'present' : cur === 'present' ? 'late' : null;
     enqueue({ t: 'status', m: m.id, member: id, s: next, at: new Date().toISOString() });
   });
 
