@@ -7,6 +7,7 @@
 --    member   اسم شخص              name = الاسم
 --    meeting  اجتماع               name = عنوان الاجتماع، meeting_date، location
 --                                  present = من حضر {"<member id>": "<وقت التفقد>"}
+--                                  attendees = أسماء الحاضرين في خانة واحدة: «أحمد، سارة، ...»
 --                                  notes   = الملاحظات [{"id","content","created_at"}]
 --
 --  الوصول: المستخدمون المسجّلون في Supabase Auth فقط (منصة الشكاوى لا تستخدم Supabase Auth).
@@ -24,6 +25,9 @@ create table if not exists public.meeting_attendance (
   created_at    timestamptz not null default now()
 );
 
+-- أسماء الحاضرين مكتوبة في خانة واحدة (تتحدث تلقائياً مع كل علامة حضور)
+alter table public.meeting_attendance add column if not exists attendees text;
+
 create index if not exists meeting_attendance_kind_idx on public.meeting_attendance (kind, meeting_date desc);
 
 -- ---------- الصلاحيات: المسجّلون فقط، لا شيء للزوار (anon) ----------
@@ -36,15 +40,34 @@ create policy "authenticated full access" on public.meeting_attendance
   for all to authenticated using (true) with check (true);
 
 -- ---------- تعديلات ذرّية (حتى لا يمحو جهازان تعديلات بعضهما أثناء الاجتماع) ----------
--- وضع/إزالة علامة الحضور لشخص في اجتماع؛ تُرجع قائمة الحضور بعد التعديل
+-- وضع/إزالة علامة الحضور لشخص في اجتماع، وتحديث خانة أسماء الحاضرين؛ تُرجع قائمة الحضور بعد التعديل
 create or replace function public.meeting_attendance_set_present(p_meeting uuid, p_member uuid, p_on boolean)
-returns jsonb language sql security invoker set search_path = public as $$
+returns jsonb language plpgsql security invoker set search_path = public as $$
+declare
+  v_present jsonb;
+begin
   update public.meeting_attendance
      set present = case when p_on then present || jsonb_build_object(p_member::text, now())
                         else present - p_member::text end
    where id = p_meeting and kind = 'meeting'
-  returning present;
+  returning present into v_present;
+  if v_present is null then raise exception 'الاجتماع غير موجود'; end if;
+
+  update public.meeting_attendance
+     set attendees = (select string_agg(m.name, '، ' order by m.name)
+                        from public.meeting_attendance m
+                       where m.kind = 'member' and v_present ? m.id::text)
+   where id = p_meeting;
+  return v_present;
+end;
 $$;
+
+-- تعبئة خانة الأسماء للاجتماعات المسجّلة قبل إضافتها
+update public.meeting_attendance t
+   set attendees = (select string_agg(m.name, '، ' order by m.name)
+                      from public.meeting_attendance m
+                     where m.kind = 'member' and t.present ? m.id::text)
+ where t.kind = 'meeting' and t.attendees is null and t.present <> '{}'::jsonb;
 
 -- إضافة ملاحظة؛ تُرجع الملاحظة الجديدة
 create or replace function public.meeting_attendance_add_note(p_meeting uuid, p_content text)

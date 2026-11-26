@@ -153,6 +153,14 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 /* ---------- الملاحظات ---------- */
 .note-form { display: flex; flex-direction: column; gap: .5rem; padding-bottom: 1rem; margin-bottom: .75rem; border-bottom: 1px solid var(--border); }
 .note-form .btn { align-self: flex-start; }
+.voice-row select { width: auto; padding: .45rem .6rem; }
+.mic-btn.recording { background: var(--absent); border-color: var(--absent); color: #fff; animation: pulse 1.4s infinite; }
+.mic-btn.recording:hover { background: #a92b2b; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(201, 54, 54, .45); } 50% { box-shadow: 0 0 0 7px rgba(201, 54, 54, 0); } }
+.mic-status { font-size: .88rem; padding: .45rem .7rem; border-radius: 8px; background: #f3f5f8; color: var(--muted); }
+.mic-status.on { background: color-mix(in srgb, var(--absent) 8%, #fff); color: var(--absent); }
+.mic-status.err { background: #fdf3e3; color: #8a5a0a; }
+.mic-interim { font-size: .92rem; color: var(--muted); font-style: italic; padding: 0 .3rem; }
 .notes-list { margin: 0; padding-inline-start: 1.3rem; }
 .note-item { padding: .6rem .2rem; border-bottom: 1px solid var(--border); }
 .note-item:last-child { border-bottom: 0; }

@@ -138,7 +138,20 @@
           <div class="card">
             <div class="card-head"><h3>ملاحظات الاجتماع</h3></div>
             <form id="note-form" class="note-form no-print">
-              <textarea name="content" required rows="3" placeholder="اكتب ملاحظة... (Ctrl + Enter للإضافة)"></textarea>
+              <div class="row voice-row">
+                <button type="button" class="btn mic-btn" id="mic-btn">🎤 تحويل الكلام إلى نص</button>
+                <select id="mic-lang" title="لهجة المتحدث">
+                  <option value="ar-SY">اللهجة السورية</option>
+                  <option value="ar-LB">اللهجة اللبنانية</option>
+                  <option value="ar-JO">اللهجة الأردنية</option>
+                  <option value="ar-IQ">اللهجة العراقية</option>
+                  <option value="ar-SA">اللهجة السعودية</option>
+                  <option value="ar-EG">اللهجة المصرية</option>
+                </select>
+              </div>
+              <p id="mic-status" class="mic-status hidden"></p>
+              <textarea name="content" required rows="4" placeholder="اكتب ملاحظة أو اضغط 🎤 وتكلّم... (Ctrl + Enter للإضافة)"></textarea>
+              <p id="mic-interim" class="mic-interim hidden"></p>
               <button class="btn primary">إضافة ملاحظة</button>
             </form>
             <ol id="notes-list" class="notes-list"></ol>

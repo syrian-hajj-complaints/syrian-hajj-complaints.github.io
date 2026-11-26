@@ -496,6 +496,113 @@
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) noteForm.requestSubmit();
   });
 
+  // ---------- تحويل الكلام إلى نص (التعرف على الكلام في المتصفح) ----------
+  // النص المحوَّل يُضاف دائماً إلى آخر الملاحظة ولا يستبدل شيئاً مما كُتب.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const micBtn = $('#mic-btn');
+  const micLang = $('#mic-lang');
+  let rec = null;
+  let listening = false;
+  let interimText = '';
+
+  micLang.value = localStorage.getItem('mic-lang') || 'ar-SY';
+  micLang.addEventListener('change', () => {
+    localStorage.setItem('mic-lang', micLang.value);
+    if (listening) { stopMic(); setTimeout(startMic, 300); }
+  });
+
+  function micStatus(text, type = '') {
+    const el = $('#mic-status');
+    el.textContent = text;
+    el.className = `mic-status ${type}`;
+    show(el, !!text);
+  }
+  function setInterim(t) {
+    interimText = t;
+    $('#mic-interim').textContent = t;
+    show($('#mic-interim'), !!t);
+  }
+  function appendSpeech(t) {
+    t = t.trim();
+    if (!t) return;
+    const ta = noteForm.content;
+    const cur = ta.value;
+    ta.value = cur + (cur && !/\s$/.test(cur) ? ' ' : '') + t;
+    ta.scrollTop = ta.scrollHeight;
+  }
+
+  function startMic() {
+    const r = new SR();
+    rec = r;
+    r.lang = micLang.value;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    // على أندرويد الوضع المستمر يكرر الكلام، فنستمع لكل جملة ونعيد التشغيل تلقائياً
+    r.continuous = !isAndroid;
+
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) appendSpeech(res[0].transcript); // حتى من مُستمِع قديم: لا نُضيّع كلاماً
+        else interim += res[0].transcript;
+      }
+      if (rec === r) setInterim(interim);
+    };
+    r.onerror = (e) => {
+      if (rec !== r) return;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        listening = false;
+        micStatus('لم يُسمح باستخدام الميكروفون. اسمح به من إعدادات المتصفح (رمز القفل بجانب الرابط) ثم أعد المحاولة.', 'err');
+      } else if (e.error === 'network') {
+        micStatus('تحويل الكلام يحتاج اتصالاً بالإنترنت.', 'err');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        console.warn('speech error:', e.error);
+      }
+    };
+    r.onend = () => {
+      if (rec !== r) return; // مُستمِع قديم (بعد تغيير اللهجة): لا يعيد التشغيل
+      // لا نُضيّع آخر كلام لم يكتمل تحويله
+      if (interimText) { appendSpeech(interimText); setInterim(''); }
+      if (listening) {
+        try { r.start(); return; } catch (_) { /* يُعاد التشغيل أدناه */ }
+        setTimeout(() => { if (listening) startMic(); }, 250);
+        return;
+      }
+      updateMicUI();
+    };
+
+    listening = true;
+    try { r.start(); } catch (err) { listening = false; fail(err); }
+    updateMicUI();
+  }
+
+  function stopMic() {
+    listening = false;
+    if (rec) { try { rec.stop(); } catch (_) {} }
+    updateMicUI();
+  }
+
+  function updateMicUI() {
+    micBtn.classList.toggle('recording', listening);
+    micBtn.textContent = listening ? '⏹ إيقاف التسجيل' : '🎤 تحويل الكلام إلى نص';
+    if (listening) micStatus('🔴 أستمع الآن... تكلّم بوضوح وقرب الجهاز. يُضاف الكلام إلى آخر النص.', 'on');
+    else if (!$('#mic-status').classList.contains('err')) micStatus('');
+  }
+
+  if (!SR) {
+    micBtn.disabled = true;
+    micLang.disabled = true;
+    micStatus('تحويل الكلام غير مدعوم في هذا المتصفح. استخدم Google Chrome أو Microsoft Edge.', 'err');
+  } else {
+    micBtn.addEventListener('click', () => (listening ? stopMic() : (micStatus(''), startMic())));
+  }
+
+  // إيقاف التسجيل عند مغادرة صفحة الاجتماع
+  $('#back-btn').addEventListener('click', () => { if (listening) stopMic(); });
+  $$('.tab').forEach((t) => t.addEventListener('click', () => { if (listening) stopMic(); }));
+
   $('#notes-list').addEventListener('click', async (e) => {
     const id = e.target.dataset.delNote;
     if (!id || !confirm('حذف هذه الملاحظة؟')) return;
