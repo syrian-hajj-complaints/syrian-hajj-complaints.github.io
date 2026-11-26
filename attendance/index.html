@@ -159,8 +159,11 @@
 
           <div class="card">
             <div class="card-head">
-              <h3>ملاحظات الاجتماع</h3>
-              <span class="muted small-inline" id="notes-words"></span>
+              <div>
+                <h3>ملاحظات الاجتماع</h3>
+                <span class="muted small-inline" id="notes-words"></span>
+              </div>
+              <button type="button" class="btn sm ai-btn no-print" id="ai-btn">✨ إعادة الصياغة بـ ChatGPT</button>
             </div>
             <form id="note-form" class="note-form no-print">
               <div class="row voice-row">
@@ -204,6 +207,33 @@
       <div class="dialog-actions">
         <button type="button" class="btn ghost" data-close>إلغاء</button>
         <button class="btn primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- إعادة الصياغة بـ ChatGPT -->
+  <dialog id="ai-dialog" class="ai-dialog">
+    <form method="dialog" id="ai-form">
+      <h3>✨ إعادة صياغة الاجتماع بـ ChatGPT</h3>
+      <ol class="ai-steps">
+        <li>راجع النص أدناه (يمكنك تعديله).</li>
+        <li>اضغط «نسخ وفتح ChatGPT». إن لم يظهر النص هناك تلقائياً، الصقه بـ <b>Ctrl + V</b> (أو اضغط مطولاً ← لصق على الجوال).</li>
+        <li>انسخ الصياغة من ChatGPT والصقها في خانة الملاحظات هنا، ثم «إضافة ملاحظة».</li>
+      </ol>
+      <div class="row ai-options">
+        <label class="check"><input type="checkbox" id="ai-names" checked> تضمين أسماء الحضور والغياب</label>
+        <select id="ai-style" title="شكل الصياغة">
+          <option value="minutes">محضر اجتماع رسمي</option>
+          <option value="summary">ملخص مختصر بنقاط</option>
+          <option value="report">تقرير للإدارة</option>
+        </select>
+      </div>
+      <textarea id="ai-text" rows="14" dir="rtl"></textarea>
+      <p class="muted small-inline" id="ai-count"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>إغلاق</button>
+        <button type="button" class="btn ghost" id="ai-copy">📋 نسخ فقط</button>
+        <button type="button" class="btn primary" id="ai-open">نسخ وفتح ChatGPT ↗</button>
       </div>
     </form>
   </dialog>

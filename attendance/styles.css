@@ -108,6 +108,15 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .sync.busy { color: #8a5a0a; background: #fff4d6; }
 .sync.off  { color: #fff; background: #5b6475; }
 
+.ai-btn { background: #10a37f; border-color: #10a37f; color: #fff; }
+.ai-btn:hover { background: #0d8a6b !important; }
+.ai-dialog { width: min(720px, 94vw); }
+.ai-steps { margin: 0 0 .8rem; padding-inline-start: 1.3rem; font-size: .9rem; color: var(--muted); }
+.ai-steps li { margin-bottom: .2rem; }
+.ai-options { justify-content: space-between; margin-bottom: .5rem; }
+.ai-options select { width: auto; }
+#ai-text { font-size: .9rem; line-height: 1.7; }
+.ai-dialog .dialog-actions { flex-wrap: wrap; }
 .note-actions { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 
 /* ---------- الأسماء والاستيراد ---------- */

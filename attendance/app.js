@@ -1075,6 +1075,100 @@
     enqueue({ t: 'note-', m: m.id, id });
   });
 
+  // ---------- إعادة الصياغة بـ ChatGPT ----------
+  // تجهيز نص كامل (بيانات الاجتماع + الحضور + الملاحظات + التعليمات)، ونسخه وفتح ChatGPT.
+  const AI_STYLES = {
+    minutes: 'محضر اجتماع رسمي منظّم بالأقسام التالية: بيانات الاجتماع (العنوان، التاريخ، المكان)، الحضور، النقاط التي نوقشت، القرارات، المهام المطلوبة والمسؤول عنها وموعدها إن ذُكرت.',
+    summary: 'ملخص مختصر وواضح على شكل نقاط مرتبة حسب الأهمية، يبدأ بسطر واحد عن الاجتماع، ثم أهم النقاط والقرارات والمهام.',
+    report: 'تقرير رسمي موجّه إلى الإدارة، بمقدمة قصيرة، ثم عرض منظّم لما دار في الاجتماع، ثم القرارات والتوصيات والمهام، ثم خاتمة موجزة.',
+  };
+
+  function buildAiPrompt(m) {
+    const withNames = $('#ai-names').checked;
+    const style = AI_STYLES[$('#ai-style').value] || AI_STYLES.minutes;
+    const roster = rosterOf(m);
+    const c = countsOf(m, roster);
+    const names = (s) => roster.filter((x) => statusOf(m, x.id) === s).map((x) => x.full_name).join('، ') || '—';
+    const lists = meetingLists(m).map((l) => l.name).join('، ');
+    const draft = noteForm.content.value.trim();
+    const notes = m.notes.map((n, i) => `${i + 1}. (${fmtTime(n.created_at)}) ${n.content}`);
+    if (draft) notes.push(`${notes.length + 1}. (لم تُحفظ بعد) ${draft}`);
+
+    const lines = [
+      'أنت كاتب محاضر اجتماعات محترف. أعد صياغة ملاحظات الاجتماع التالية باللغة العربية الفصحى الرسمية.',
+      `الشكل المطلوب: ${style}`,
+      '',
+      'التزم بدقة بما يلي:',
+      '- لا تحذف أي معلومة أو اسم أو رقم أو تاريخ أو قرار ورد في الملاحظات، مهما بدا صغيراً.',
+      '- لا تضف أي معلومة غير موجودة، ولا تستنتج ما لم يُذكر.',
+      '- الملاحظات مكتوبة بلهجة محلية أو منقولة من الكلام: حوّلها إلى فصحى سليمة مع الحفاظ على المعنى تماماً.',
+      '- صحّح الأخطاء الإملائية والنحوية، ورتّب الأفكار المتكررة أو المتفرقة دون إسقاط شيء منها.',
+      '- إن كانت عبارة غير واضحة فاكتبها كما هي واكتب بجانبها [غير واضح].',
+      '',
+      '=== بيانات الاجتماع ===',
+      `العنوان: ${m.name}`,
+      `التاريخ: ${fmtDateTime(m.meeting_date)}`,
+    ];
+    if (m.location) lines.push(`المكان: ${m.location}`);
+    if (lists) lines.push(`القوائم المشاركة: ${lists}`);
+    lines.push(`الحضور: ${c.present} حاضر، ${c.late} متأخر، ${c.absent} غائب، من أصل ${c.total}.`);
+    if (withNames) {
+      lines.push(`الحاضرون: ${names('present')}`);
+      if (c.late) lines.push(`المتأخرون: ${names('late')}`);
+      lines.push(`الغائبون: ${roster.filter((x) => !statusOf(m, x.id)).map((x) => x.full_name).join('، ') || '—'}`);
+    }
+    lines.push('', '=== ملاحظات الاجتماع ===', notes.length ? notes.join('\n') : '(لا توجد ملاحظات)');
+    return lines.join('\n');
+  }
+
+  function refreshAiText() {
+    const m = openMeetingObj();
+    if (!m) return;
+    const t = buildAiPrompt(m);
+    $('#ai-text').value = t;
+    $('#ai-count').textContent = `${wordsLabel(countWords(t))} · ${t.length.toLocaleString('ar')} حرف`;
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      const ta = $('#ai-text');
+      ta.focus();
+      ta.select();
+      try { return document.execCommand('copy'); } catch (__) { return false; }
+    }
+  }
+
+  $('#ai-btn').addEventListener('click', () => {
+    const m = openMeetingObj();
+    if (!m) return;
+    if (!m.notes.length && !noteForm.content.value.trim()) return toast('اكتب ملاحظات الاجتماع أولاً', 'err');
+    refreshAiText();
+    $('#ai-dialog').showModal();
+  });
+  $('#ai-names').addEventListener('change', refreshAiText);
+  $('#ai-style').addEventListener('change', refreshAiText);
+  $('#ai-text').addEventListener('input', () => {
+    const t = $('#ai-text').value;
+    $('#ai-count').textContent = `${wordsLabel(countWords(t))} · ${t.length.toLocaleString('ar')} حرف`;
+  });
+
+  $('#ai-copy').addEventListener('click', async () => {
+    toast(await copyText($('#ai-text').value) ? 'تم النسخ ✓ الصقه في ChatGPT' : 'تعذّر النسخ: حدّد النص وانسخه يدوياً', 'ok');
+  });
+
+  $('#ai-open').addEventListener('click', async () => {
+    const text = $('#ai-text').value.trim();
+    if (!text) return;
+    const copied = await copyText(text);
+    // النص القصير يُمرَّر في الرابط فيظهر في ChatGPT مباشرة؛ الطويل يُلصق يدوياً
+    const url = text.length <= 3500 ? `https://chatgpt.com/?q=${encodeURIComponent(text)}` : 'https://chatgpt.com/';
+    window.open(url, '_blank', 'noopener');
+    toast(copied ? 'تم نسخ النص ✓ إن لم يظهر في ChatGPT الصقه بـ Ctrl + V' : 'افتح ChatGPT والصق النص يدوياً', 'ok');
+  });
+
   // ---------- تحويل الكلام إلى نص (التعرف على الكلام في المتصفح) ----------
   // النص المحوَّل يُضاف دائماً إلى آخر الملاحظة ولا يستبدل شيئاً مما كُتب.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
