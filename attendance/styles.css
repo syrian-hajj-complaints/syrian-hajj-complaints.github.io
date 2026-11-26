@@ -43,6 +43,12 @@ input:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--primar
 textarea { resize: vertical; }
 label { display: block; margin-bottom: .8rem; font-weight: 500; }
 label > input, label > textarea { margin-top: .3rem; font-weight: 400; }
+label.check { display: inline-flex; align-items: center; gap: .45rem; font-weight: 400; margin: 0; cursor: pointer; }
+/* مربعات الاختيار: حجم ثابت صغير (لا تأخذ عرض السطر مثل خانات الكتابة) */
+input[type="checkbox"], input[type="radio"] {
+  width: 18px; height: 18px; min-width: 18px; padding: 0; margin: 0; flex: none;
+  accent-color: var(--primary); cursor: pointer;
+}
 
 .btn {
   font: inherit; font-weight: 500; border: 1px solid var(--border); background: #fff; color: var(--text);
@@ -154,7 +160,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .members-search { margin-bottom: .6rem; }
 .lists-field { border: 1px solid var(--border); border-radius: 8px; padding: .5rem .8rem .7rem; margin: 0; }
 .lists-field legend { font-weight: 500; padding: 0 .3rem; }
-.lists-field label.check { display: flex; margin: .35rem 0; }
+.lists-field label.check { display: flex; align-items: center; justify-content: flex-start; gap: .55rem; margin: .45rem 0; }
+.lists-field label.check > span { flex: 1; }
 .group-head { list-style: none; font-weight: 700; color: var(--primary); padding: .8rem .2rem .3rem; border-bottom: 1px solid var(--border); margin-bottom: .3rem; }
 .group-head:first-child { padding-top: 0; }
 .meeting-card { position: relative; }

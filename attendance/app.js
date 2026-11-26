@@ -871,7 +871,7 @@
       ? state.lists.map((l) => `
           <label class="check">
             <input type="checkbox" name="list" value="${l.id}" ${chosen.includes(l.id) ? 'checked' : ''}>
-            ${esc(l.name)} <span class="muted">(${membersOf(l.id).length})</span>
+            <span>${esc(l.name)} <span class="muted">(${membersOf(l.id).length} اسم)</span></span>
           </label>`).join('')
       : `<p class="muted">لا توجد قوائم بعد. أنشئها من تبويب «الأسماء».</p>`;
     $('#meeting-dialog').showModal();
