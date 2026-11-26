@@ -983,11 +983,28 @@
   }
 
   // التاريخ الهجري المقابل للتاريخ المختار في نافذة الاجتماع
+  // اليوم الذي يقع فيه الاجتماع: اسم اليوم بارزاً، ثم التاريخان والوقت
   const updateDateHijri = () => {
     const v = $('#meeting-form').meeting_date.value;
-    $('#date-hijri').textContent = v ? `يوافق: ${gregWeekday.format(new Date(v))} ${hijriFull.format(new Date(v))}` : '';
+    const el = $('#date-hijri');
+    const d = v ? new Date(v) : null;
+    if (!d || isNaN(d)) { el.innerHTML = ''; show(el, false); return; }
+    const gDate = new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+    const rel = (() => {
+      const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(new Date().toDateString())) / 86400000);
+      const n = Math.abs(diff);
+      const days = n === 2 ? 'يومين' : n <= 10 ? `${n} أيام` : `${n} يوماً`;
+      return diff === 0 ? 'اليوم' : diff === 1 ? 'غداً' : diff === -1 ? 'أمس' : diff > 0 ? `بعد ${days}` : `قبل ${days}`;
+    })();
+    el.innerHTML = `
+      <span class="dp-icon">📅</span>
+      <span class="dp-text">
+        <b>${esc(gregWeekday.format(d))}</b> <span class="dp-rel">${esc(rel)}</span><br>
+        ${esc(gDate)} · ${esc(hijriFull.format(d))} · ${esc(timeFmt.format(d))}
+      </span>`;
+    show(el, true);
   };
-  $('#meeting-form').meeting_date.addEventListener('input', updateDateHijri);
+  ['input', 'change'].forEach((ev) => $('#meeting-form').meeting_date.addEventListener(ev, updateDateHijri));
 
   let editingMeetingId = null;
   // presetDay: «2026-11-26» عند إنشاء اجتماع من يوم في التقويم
